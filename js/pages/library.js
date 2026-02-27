@@ -120,7 +120,7 @@ const LibraryPage = (() => {
   async function deleteComic(id, title) {
     App.showModal(`
       <div class="modal-title">Delete Comic</div>
-      <p>Delete <strong>${title}</strong> and all its pages?</p>
+      <p>Delete <strong>${escHtml(title)}</strong> and all its pages?</p>
       <div class="modal-actions">
         <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
         <button class="btn btn-danger btn-sm" onclick="LibraryPage.confirmDelete('${id}')">Delete</button>

@@ -177,7 +177,7 @@ const CharactersPage = (() => {
   async function deleteCharacter(id, name) {
     App.showModal(`
       <div class="modal-title">Delete Character</div>
-      <p>Are you sure you want to delete <strong>${name}</strong>?</p>
+      <p>Are you sure you want to delete <strong>${escHtml(name)}</strong>?</p>
       <div class="modal-actions">
         <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
         <button class="btn btn-danger btn-sm" onclick="CharactersPage.confirmDelete('${id}')">Delete</button>

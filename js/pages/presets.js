@@ -189,7 +189,7 @@ const PresetsPage = (() => {
   async function deletePreset(id, name) {
     App.showModal(`
       <div class="modal-title">Delete Preset</div>
-      <p>Delete preset <strong>${name}</strong>?</p>
+      <p>Delete preset <strong>${escHtml(name)}</strong>?</p>
       <div class="modal-actions">
         <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
         <button class="btn btn-danger btn-sm" onclick="PresetsPage.confirmDelete('${id}')">Delete</button>

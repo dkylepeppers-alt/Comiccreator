@@ -6,7 +6,7 @@
   --bg-input: #0f0f2a;
   --text-primary: #e8e8ff;
   --text-secondary: #9898cc;
-  --text-muted: #6868aa;
+  --text-muted: #7878bb;
   --accent: #7c3aed;
   --accent-hover: #9b5cf6;
   --accent-glow: rgba(124, 58, 237, 0.3);
@@ -300,6 +300,21 @@ img { max-width: 100%; display: block; }
   background: var(--accent);
   box-shadow: 0 2px 8px var(--accent-glow);
   cursor: pointer;
+}
+.range-group input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  border: none;
+}
+.range-group input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 2px 8px var(--accent-glow);
+  cursor: pointer;
+  border: none;
 }
 .range-value {
   min-width: 48px;
@@ -818,8 +833,33 @@ img { max-width: 100%; display: block; }
   .bnav-btn span { font-size: 0.6rem; }
 }
 
+/* === Focus Indicators (Keyboard Navigation) === */
+.btn:focus-visible,
+.chip:focus-visible,
+.genre-card:focus-visible,
+.choice-btn:focus-visible,
+.list-item:focus-visible,
+.nav-link:focus-visible,
+.bnav-btn:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* === Animations === */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 .fade-in { animation: fadeIn 0.3s ease; }
 .slide-up { animation: slideUp 0.4s ease; }
+
+/* === Reduced Motion === */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

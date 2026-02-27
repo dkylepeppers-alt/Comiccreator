@@ -3,9 +3,11 @@
  */
 const HomePage = (() => {
   async function render() {
-    const comics = await DB.getAll(DB.STORES.comics);
-    const characters = await DB.getAll(DB.STORES.characters);
-    const worlds = await DB.getAll(DB.STORES.worlds);
+    const [comics, characters, worlds] = await Promise.all([
+      DB.getAll(DB.STORES.comics),
+      DB.getAll(DB.STORES.characters),
+      DB.getAll(DB.STORES.worlds),
+    ]);
     const recentComics = comics.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)).slice(0, 3);
 
     return `
@@ -103,10 +105,13 @@ const GENRES = [
 
 // Utility functions
 function escHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function timeAgo(ts) {

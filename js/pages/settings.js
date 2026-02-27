@@ -556,9 +556,13 @@ const SettingsPage = (() => {
 
     statusEl.innerHTML = '<p class="text-sm text-muted">Checking for updates...</p>';
 
-    // Save repo setting if changed
+    // Save repo setting if changed (validate format to prevent URL injection)
     const repoInput = document.getElementById('set-update-repo');
     const repo = (repoInput?.value || '').trim() || DEFAULT_UPDATE_REPO;
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+      statusEl.innerHTML = '<p class="text-sm" style="color:var(--danger);">Invalid repository format. Use owner/repo (e.g. user/project).</p>';
+      return;
+    }
     await DB.setSetting('updateRepo', repo);
 
     // Resolve the actual installed version from local version.json so the check
@@ -656,6 +660,14 @@ const SettingsPage = (() => {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+
+      // Validate imported data: each collection must be an array of objects with id fields
+      const validArray = (arr) => Array.isArray(arr) && arr.every(item => item && typeof item === 'object' && item.id);
+      if (data.characters && !validArray(data.characters)) throw new Error('Invalid characters data');
+      if (data.worlds && !validArray(data.worlds)) throw new Error('Invalid worlds data');
+      if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
+      if (data.pages && !validArray(data.pages)) throw new Error('Invalid pages data');
+      if (data.presets && !validArray(data.presets)) throw new Error('Invalid presets data');
 
       if (data.characters) for (const c of data.characters) await DB.put(DB.STORES.characters, c);
       if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, w);
