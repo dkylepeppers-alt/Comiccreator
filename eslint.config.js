@@ -1,0 +1,83 @@
+export default [
+  {
+    files: ['js/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        // Browser globals
+        window: 'readonly',
+        document: 'readonly',
+        navigator: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        Blob: 'readonly',
+        FileReader: 'readonly',
+        FormData: 'readonly',
+        Image: 'readonly',
+        TextDecoder: 'readonly',
+        Uint8Array: 'readonly',
+        AbortController: 'readonly',
+        atob: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        indexedDB: 'readonly',
+        IDBKeyRange: 'readonly',
+        Promise: 'readonly',
+
+        // App globals (IIFEs)
+        DB: 'readonly',
+        API: 'readonly',
+        App: 'readonly',
+        HomePage: 'readonly',
+        CharactersPage: 'readonly',
+        WorldsPage: 'readonly',
+        CreatePage: 'readonly',
+        LibraryPage: 'readonly',
+        PresetsPage: 'readonly',
+        SettingsPage: 'readonly',
+
+        // Shared utilities from home.js
+        escHtml: 'readonly',
+        timeAgo: 'readonly',
+        getGenreEmoji: 'readonly',
+        GENRES: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-undef': 'error',
+      'no-constant-condition': ['error', { checkLoops: false }],
+      'no-debugger': 'error',
+      'no-dupe-keys': 'error',
+      'no-duplicate-case': 'error',
+      'no-empty': ['warn', { allowEmptyCatch: true }],
+      'no-unreachable': 'error',
+      'eqeqeq': ['warn', 'smart'],
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-throw-literal': 'error',
+    },
+  },
+  {
+    // Service worker file
+    files: ['sw.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        Response: 'readonly',
+        Promise: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-undef': 'error',
+    },
+  },
+];

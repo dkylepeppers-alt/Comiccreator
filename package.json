@@ -1,0 +1,19 @@
+{
+  "name": "comic-creator",
+  "version": "1.3.0",
+  "private": true,
+  "description": "AI Comic Creator - A vanilla JS PWA for generating AI-powered comic books",
+  "scripts": {
+    "lint": "eslint js/",
+    "lint:fix": "eslint js/ --fix",
+    "format": "prettier --write 'js/**/*.js' 'css/**/*.css'",
+    "format:check": "prettier --check 'js/**/*.js' 'css/**/*.css'",
+    "test": "node --test test/*.test.js",
+    "check-syntax": "for f in js/*.js js/pages/*.js; do node --check \"$f\" || exit 1; done",
+    "serve": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0"
+  }
+}

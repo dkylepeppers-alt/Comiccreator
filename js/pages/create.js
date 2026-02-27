@@ -18,6 +18,10 @@ const CreatePage = (() => {
     isGenerating: false,
   };
 
+  // Track timeouts and abort controllers for cleanup
+  let streamTimeout = null;
+  let abortController = null;
+
   async function render(param) {
     // If param is a genre id, pre-select it
     if (param && GENRES.find(g => g.id === param)) {
@@ -173,11 +177,13 @@ const CreatePage = (() => {
           <div class="spinner"></div>
           <p>Generating your comic page...</p>
           <p class="text-sm text-muted">This may take a moment</p>
+          <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
         </div>
         <div id="gen-stream" class="hidden">
           <div class="card">
             <h3 class="card-title mb-sm">Generating...</h3>
             <div class="streaming-text" id="stream-output"></div>
+            <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
           </div>
         </div>
       </div>
@@ -438,13 +444,17 @@ const CreatePage = (() => {
       if (state.overrideTopP != null) options.topP = state.overrideTopP;
       if (state.overrideTokens != null) options.maxTokens = state.overrideTokens;
       if (presetData) {
-        if (!state.overrideTemp) options.temperature = presetData.temperature;
-        if (!state.overrideTopP) options.topP = presetData.topP;
-        if (!state.overrideTokens) options.maxTokens = presetData.maxTokens;
+        if (state.overrideTemp == null) options.temperature = presetData.temperature;
+        if (state.overrideTopP == null) options.topP = presetData.topP;
+        if (state.overrideTokens == null) options.maxTokens = presetData.maxTokens;
       }
 
-      // Show streaming
-      setTimeout(() => {
+      // Set up abort controller for this generation
+      abortController = new AbortController();
+      options.signal = abortController.signal;
+
+      // Show streaming after brief delay
+      streamTimeout = setTimeout(() => {
         const streamEl = document.getElementById('gen-stream');
         const loadEl = document.getElementById('gen-loading');
         if (streamEl) streamEl.classList.remove('hidden');
@@ -463,7 +473,7 @@ const CreatePage = (() => {
       // Parse the response
       const pageData = API.parseComicResponse(fullText);
       if (!pageData) {
-        App.toast('Failed to parse comic page. Retrying...', 'error');
+        App.toast('Failed to parse comic page. Please try again.', 'error');
         state.step = 'setup';
         state.isGenerating = false;
         App.refreshPage();
@@ -550,6 +560,7 @@ const CreatePage = (() => {
   }
 
   async function makeChoice(idx) {
+    if (state.isGenerating) return;
     const currentPage = state.pages[state.pages.length - 1];
     if (!currentPage || !currentPage.choices || !currentPage.choices[idx]) return;
 
@@ -566,6 +577,7 @@ const CreatePage = (() => {
   }
 
   async function continueStory() {
+    if (state.isGenerating) return;
     const customDir = document.getElementById('custom-direction')?.value?.trim();
     const userMsg = customDir ?
       `Continue the story with this direction: ${customDir}. Generate the next comic page.` :
@@ -592,6 +604,21 @@ const CreatePage = (() => {
     App.navigate('library');
   }
 
+  function cancelGeneration() {
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+    if (streamTimeout) {
+      clearTimeout(streamTimeout);
+      streamTimeout = null;
+    }
+    state.isGenerating = false;
+    state.step = state.pages.length > 0 ? 'reading' : 'setup';
+    App.toast('Generation cancelled', 'info');
+    App.refreshPage();
+  }
+
   function resetState() {
     state = {
       step: 'setup',
@@ -610,8 +637,19 @@ const CreatePage = (() => {
     };
   }
 
+  function onUnmount() {
+    if (streamTimeout) {
+      clearTimeout(streamTimeout);
+      streamTimeout = null;
+    }
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+  }
+
   return {
-    render, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset,
-    toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, resetState,
+    render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset,
+    toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration, resetState,
   };
 })();

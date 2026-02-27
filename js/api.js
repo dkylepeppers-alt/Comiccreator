@@ -78,14 +78,17 @@ const API = (() => {
       max_tokens: options.maxTokens ?? params.maxTokens,
     };
 
-    const res = await fetch(`${BASE_URL}/chat/completions`, {
+    const fetchOpts = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
-    });
+    };
+    if (options.signal) fetchOpts.signal = options.signal;
+
+    const res = await fetch(`${BASE_URL}/chat/completions`, fetchOpts);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -161,7 +164,7 @@ const API = (() => {
    */
   function dataUrlToBlob(dataUrl) {
     const [header, b64] = dataUrl.split(',');
-    const mime = header.match(/:(.*?);/)[1];
+    const mime = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
