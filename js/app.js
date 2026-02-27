@@ -128,6 +128,9 @@ const App = (() => {
       content.innerHTML = html;
       content.scrollTop = 0;
 
+      // Allow pages to run post-render logic (e.g. async model fetching)
+      if (typeof pages[page].postRender === 'function') {
+        pages[page].postRender(param);
       // Call onMount after DOM is updated, if the page module supports it
       if (typeof pages[page].onMount === 'function') {
         await pages[page].onMount(param);
