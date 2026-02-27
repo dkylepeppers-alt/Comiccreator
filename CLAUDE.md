@@ -1,96 +1,134 @@
 # CLAUDE.md
 
-## Project Overview
+Trust these instructions. Only search the codebase if the information here is incomplete or found to be incorrect.
 
-AI Comic Creator is a vanilla JavaScript Progressive Web App (PWA) that generates AI-powered comic books with interactive narratives, custom characters, and world-building. It uses the NanoGPT API (OpenAI-compatible) for text and image generation.
+## Project Summary
 
-## Architecture
+AI Comic Creator — a vanilla JavaScript Progressive Web App (PWA) that generates AI-powered comic books with interactive narratives, custom characters, and world-building. Uses the NanoGPT API (OpenAI-compatible) for text and image generation.
 
-- **No build system** — pure HTML/CSS/JS, no npm, no bundler, no transpilation
-- **No server-side code** — static files served via any HTTP server
-- **Storage** — IndexedDB (via `js/db.js`) for all persistent data: characters, worlds, comics, pages, presets, settings
-- **API** — NanoGPT (`https://nano-gpt.com/api/v1`, OpenAI-compatible) for chat completions and image generation
-- **Offline** — Service worker (`sw.js`) caches app shell; API calls bypass cache
-
-## File Structure
-
-```
-index.html          App shell and navigation
-manifest.json       PWA manifest
-sw.js               Service worker (cache-first for app shell)
-server.sh           Local dev server launcher
-css/app.css         All styles (dark theme, mobile-first)
-js/
-  db.js             IndexedDB wrapper (6 object stores)
-  api.js            NanoGPT API client with SSE streaming
-  app.js            SPA router and navigation
-  pages/
-    home.js         Dashboard
-    characters.js   Character CRUD
-    worlds.js       World CRUD
-    create.js       Comic generation engine
-    library.js      Comic viewer and PDF export
-    presets.js      Prompt preset editor
-    settings.js     API config and data management
-icons/              PWA icons (SVG + PNG)
-```
+- **~4,000 lines of code** across 22 files (10 JS, 1 CSS, 1 HTML, plus config/scripts)
+- **Zero dependencies** — no npm, no package.json, no bundler, no transpiler, no frameworks
+- **No CI/CD pipelines** — no `.github/workflows`, no pre-commit hooks, no linters configured
+- **No automated tests** — validation is manual (see Validation section below)
+- **Runtime:** Any modern browser (ES2020+). Server is any static HTTP server.
 
 ## Running Locally
 
+Always start the dev server from the repo root:
+
 ```bash
-# Python (default)
 python3 -m http.server 8080
-
-# Or use the helper script
-chmod +x server.sh && ./server.sh
-
-# Node.js alternative
-npx serve -s -l 8080
 ```
 
-Open `http://localhost:8080` in a browser. No install step needed.
+Then open `http://localhost:8080`. Verified working with Python 3.11. No install or build step is required.
 
-## Development Guidelines
+Alternative servers (all verified working):
+```bash
+npx serve -s -l 8080      # Node.js
+php -S 0.0.0.0:8080       # PHP
+```
 
-### Making Changes
+`server.sh` is a Termux-specific launcher script (shebang: `/data/data/com.termux/files/usr/bin/bash`). It auto-detects available HTTP servers and generates placeholder PNG icons if missing. Use `PORT=3000 ./server.sh` for a custom port.
 
-- Edit `.js`, `.css`, or `.html` files directly — changes take effect on browser reload
-- Hard-refresh (`Ctrl+Shift+R`) to bypass the service worker cache during development
-- All modules use ES2020+ syntax (no transpilation target)
+## Validation
 
-### Code Style
+There are no automated tests, linters, or CI checks. Always validate changes manually:
 
-- Vanilla JS only — no frameworks, no libraries, no CDN imports
-- Use `async/await` for asynchronous code
-- Keep page modules self-contained in `js/pages/`
-- Follow the existing pattern: each page module exports a `render()` function called by the router in `app.js`
+1. **Syntax check** — run `node --check <file.js>` on every JS file you modify. All 10 JS files currently pass.
+2. **Serve and load** — start the dev server, open `http://localhost:8080`, and confirm the app loads without console errors.
+3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` (currently `'comic-creator-v3'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
+4. **Page navigation** — click through all 7 pages (Home, Characters, Worlds, Create, Library, Presets, Settings) to verify no render errors.
+
+## Architecture
+
+### Script Loading Order (Critical)
+
+`index.html` loads scripts via `<script>` tags in this exact order — **all are global IIFEs, not ES modules**:
+
+1. `js/db.js` → global `DB` (IndexedDB wrapper)
+2. `js/api.js` → global `API` (NanoGPT client) — depends on `DB`
+3. `js/pages/home.js` → global `HomePage`, **also defines shared globals `escHtml()`, `timeAgo()`, `getGenreEmoji()`, `GENRES`** used by all other page modules
+4. `js/pages/characters.js` → global `CharactersPage`
+5. `js/pages/worlds.js` → global `WorldsPage`
+6. `js/pages/create.js` → global `CreatePage`
+7. `js/pages/library.js` → global `LibraryPage`
+8. `js/pages/presets.js` → global `PresetsPage`
+9. `js/pages/settings.js` → global `SettingsPage`
+10. `js/app.js` → global `App` (SPA router) — depends on all above
+
+**If you add a new script, it must be added as a `<script>` tag in `index.html` AND to the `STATIC_ASSETS` array in `sw.js`.** If load order matters (e.g., new shared utils), place it before the modules that use it.
+
+### Page Module Pattern
+
+Every page module in `js/pages/` is a global IIFE that returns an object. Required and optional methods:
+
+- `render(param)` — **required** — returns HTML string. Called by `App.navigate()`.
+- `postRender(param)` — optional — runs after innerHTML is set (for async init like model fetching).
+- `onMount(param)` — optional — runs after postRender (for event binding).
+- `onUnmount()` — optional — cleanup when navigating away.
+
+The router in `js/app.js` references page modules by name in its `pages` map (line 8). If adding a new page, register it there and in the navigation HTML in `index.html`.
+
+### Key Globals and Shared Functions
+
+| Global | Defined in | Purpose |
+|--------|-----------|---------|
+| `DB` | `js/db.js` | IndexedDB CRUD: `getAll`, `get`, `put`, `del`, `getByIndex`, `uuid`, `getSetting`, `setSetting`, `fileToDataURL`, `seedDefaults` |
+| `API` | `js/api.js` | `chatCompletion`, `chatCompletionStream`, `generateImage`, `buildSystemPrompt`, `parseComicResponse`, `fetchTextModels`, `fetchImageModels`, `BASE_URL` |
+| `App` | `js/app.js` | `navigate(page, param)`, `refreshPage()`, `showModal(html)`, `hideModal()`, `toast(msg, type)` |
+| `escHtml(str)` | `js/pages/home.js:105` | HTML-escapes a string. Used throughout all page modules. |
+| `timeAgo(ts)` | `js/pages/home.js:112` | Formats a timestamp as relative time. |
+| `GENRES` | `js/pages/home.js:92` | Array of 9 genre objects (`{id, name, emoji, desc}`). |
 
 ### Data Model
 
-IndexedDB stores managed by `js/db.js`:
+IndexedDB database: `ComicCreatorDB`, version `1`. Six object stores:
 
-| Store | Key | Description |
-|-------|-----|-------------|
-| `characters` | `id` (auto) | Character profiles |
-| `worlds` | `id` (auto) | World/setting profiles |
-| `comics` | `id` (auto) | Comic metadata |
-| `pages` | `id` (auto) | Individual comic pages |
-| `presets` | `id` (auto) | Prompt presets |
-| `settings` | `key` | App settings (API key, model choices) |
+| Store | keyPath | Indexes | Description |
+|-------|---------|---------|-------------|
+| `characters` | `id` | — | Character profiles (name, role, description, appearance, backstory, powers, imageData) |
+| `worlds` | `id` | — | World settings (name, description, era, atmosphere, details, images[]) |
+| `comics` | `id` | `createdAt` | Comic metadata (title, genre, character/world/preset refs, pageCount, conversation history) |
+| `pages` | `id` | `comicId` | Comic pages (pageNumber, panel data with narration/imagePrompt/dialogue, choices) |
+| `presets` | `id` | — | Prompt presets (name, systemPrompt, temperature, topP, maxTokens) |
+| `settings` | `key` | — | Key-value pairs (apiKey, model, imageModel, temperature, etc.) |
 
 ### API Integration
 
-The NanoGPT API client in `js/api.js` supports:
-- Streaming text via Server-Sent Events (SSE)
-- Image generation (GPT-Image-1, DALL·E 3, Flux, SDXL)
-- Dynamic model listing from `/models` endpoint
+- Base URL: `https://nano-gpt.com/api/v1`
+- Endpoints: `/chat/completions` (text, streaming via SSE), `/images/generations` (images), `/models?detailed=true` (model list, no auth), `/image-models?detailed=true`
+- Auth: Bearer token from `settings.apiKey`
+- Model responses are cached in IndexedDB for 6 hours
 
-API key and model selections are stored in the `settings` IndexedDB store and configured in the Settings page.
+## File Reference
 
-### Service Worker
+```
+index.html              (97 lines)   App shell — topbar, sidebar nav, bottom nav, modal, toast container, script tags
+manifest.json           (32 lines)   PWA manifest — standalone, portrait, dark theme (#0a0a1a)
+sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v3', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
+version.json            (4 lines)    {"version":"1.1.0","updated":"2026-02-27"}
+server.sh               (111 lines)  Termux dev server launcher (auto-detects python3/npx/php/busybox)
+update.sh               (172 lines)  Termux update script (git pull + sw cache bust)
+generate-icons.html                  Browser utility to generate PWA PNG icons from the SVG
+css/app.css             (811 lines)  All styles — dark theme, mobile-first responsive, component styles
+js/db.js                (171 lines)  IndexedDB wrapper — open, CRUD, uuid, settings helpers, seed defaults
+js/api.js               (376 lines)  NanoGPT client — streaming SSE, image gen, system prompt builder, JSON parser, model fetching with fallback lists
+js/app.js               (197 lines)  SPA router — hash-based navigation, sidebar/bottomnav, modal, toast, SW registration
+js/pages/home.js        (128 lines)  Dashboard — stats, recent comics, genre grid. Also: escHtml, timeAgo, GENRES globals
+js/pages/characters.js  (196 lines)  Character CRUD — list, create/edit form, image upload, delete
+js/pages/worlds.js      (213 lines)  World CRUD — list, create/edit form, multi-image upload, delete
+js/pages/create.js      (576 lines)  Comic generation engine — setup wizard, SSE streaming, panel rendering, branching choices
+js/pages/library.js     (239 lines)  Comic viewer — list, page reader, PDF export (opens print dialog with styled HTML)
+js/pages/presets.js     (208 lines)  Preset editor — list, create/edit form, sampler parameter sliders
+js/pages/settings.js    (591 lines)  Settings — API key, model selection modal, image config, sampler defaults, data export/import/clear, update checker
+icons/                               icon.svg, icon-192.png, icon-512.png
+```
 
-`sw.js` uses a cache-first strategy for the app shell. When modifying cached assets, bump the `CACHE_NAME` version constant in `sw.js` to force cache invalidation.
+## Code Style Rules
 
-## No Tests
-
-There are no automated tests. Manual QA: exercise all pages, generate a comic end-to-end, verify offline mode, and test PDF export.
+- **Vanilla JS only** — no frameworks, no libraries, no CDN imports, no npm packages
+- **ES2020+ syntax** — optional chaining (`?.`), nullish coalescing (`??`), `async/await`
+- **No ES modules** — all files use global IIFE pattern (`const X = (() => { ... })()`)
+- **HTML escaping** — always use `escHtml()` when interpolating user data into HTML strings
+- **Self-contained pages** — each `js/pages/*.js` handles its own rendering, event binding, and data operations
+- Keep the `render()` function returning an HTML template string; put post-DOM logic in `postRender()`/`onMount()`
