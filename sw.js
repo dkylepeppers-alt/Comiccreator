@@ -1,7 +1,7 @@
 /**
  * Service Worker - Offline caching for the Comic Creator PWA
  */
-const CACHE_NAME = 'comic-creator-v2';
+const CACHE_NAME = 'comic-creator-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -16,6 +16,7 @@ const STATIC_ASSETS = [
   '/js/pages/library.js',
   '/js/pages/presets.js',
   '/js/pages/settings.js',
+  '/version.json',
   '/manifest.json',
   '/icons/icon.svg',
 ];
