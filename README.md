@@ -190,7 +190,7 @@ Comiccreator/
     └── icon-512.png        PWA icon (large)
 ```
 
-**Zero dependencies.** No npm, no bundler, no framework. Every file is hand-written vanilla HTML, CSS, and JavaScript that runs directly in the browser.
+**Zero dependencies by default.** No npm, no bundler, no framework required. Every file runs directly in the browser as vanilla HTML, CSS, and JavaScript.
 
 ### Data Model
 
