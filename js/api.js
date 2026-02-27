@@ -3,7 +3,7 @@
  * Handles chat completions with streaming support via the NanoGPT OpenAI-compatible API.
  */
 const API = (() => {
-  const BASE_URL = 'https://nano-gpt.com/api';
+  const BASE_URL = 'https://nano-gpt.com/api/v1';
 
   async function getApiKey() {
     return DB.getSetting('apiKey', '');
@@ -272,7 +272,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     }
 
     try {
-      const res = await fetch(`${BASE_URL}/v1/models?detailed=true`);
+      const res = await fetch(`${BASE_URL}/models?detailed=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const models = (data.data || data || []).map(m => ({
@@ -312,7 +312,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     }
 
     try {
-      const res = await fetch(`${BASE_URL}/v1/image-models?detailed=true`);
+      const res = await fetch(`${BASE_URL}/image-models?detailed=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const models = (data.data || data || []).map(m => ({
