@@ -3,6 +3,9 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
+  const APP_VERSION = '1.1.0';
+  const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
+
   // In-memory model lists populated on render
   let textModels = [];
   let imageModels = [];
@@ -18,6 +21,7 @@ const SettingsPage = (() => {
     const maxTokens = await DB.getSetting('maxTokens', 2048);
     const enableImages = await DB.getSetting('enableImages', true);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
+    const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
     // Fallback models used when the API is unreachable
     const fallbackTextModels = [
@@ -163,9 +167,22 @@ const SettingsPage = (() => {
           </div>
         </div>
 
+        <!-- App Updates -->
+        <div class="card mt-md">
+          <h3 class="card-title mb-sm">App Updates</h3>
+          <p class="text-sm text-muted mb-sm">Current version: <strong>v${APP_VERSION}</strong></p>
+          <button class="btn btn-secondary btn-block" onclick="SettingsPage.checkForUpdate()">Check for Updates</button>
+          <div id="update-status" style="margin-top:10px;"></div>
+          <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">Update Repository</label>
+            <input type="text" id="set-update-repo" value="${escHtml(updateRepo)}" placeholder="owner/repo">
+            <div class="form-hint">GitHub repo to check for updates (default: ${escHtml(DEFAULT_UPDATE_REPO)})</div>
+          </div>
+        </div>
+
         <!-- About -->
         <div class="card mt-md text-center">
-          <p class="text-sm text-muted">AI Comic Creator v1.0.0</p>
+          <p class="text-sm text-muted">AI Comic Creator v${APP_VERSION}</p>
           <p class="text-sm text-muted">PWA &middot; Offline Ready &middot; NanoGPT Powered</p>
         </div>
       </div>
@@ -219,6 +236,7 @@ const SettingsPage = (() => {
     }
   }
 
+  /**
    * Called after the settings page HTML is in the DOM.
    * Loads model lists asynchronously so the page renders instantly.
    */
@@ -482,6 +500,64 @@ const SettingsPage = (() => {
     }
   }
 
+  // --- Update Check ---
+
+  function compareVersions(a, b) {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const na = pa[i] || 0;
+      const nb = pb[i] || 0;
+      if (na > nb) return 1;
+      if (na < nb) return -1;
+    }
+    return 0;
+  }
+
+  async function checkForUpdate() {
+    const statusEl = document.getElementById('update-status');
+    if (!statusEl) return;
+
+    statusEl.innerHTML = '<p class="text-sm text-muted">Checking for updates...</p>';
+
+    // Save repo setting if changed
+    const repoInput = document.getElementById('set-update-repo');
+    const repo = (repoInput?.value || '').trim() || DEFAULT_UPDATE_REPO;
+    await DB.setSetting('updateRepo', repo);
+
+    try {
+      const url = `https://raw.githubusercontent.com/${repo}/master/version.json?_=${Date.now()}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const remote = await res.json();
+
+      if (!remote.version) throw new Error('Invalid version data');
+
+      const cmp = compareVersions(remote.version, APP_VERSION);
+      if (cmp > 0) {
+        statusEl.innerHTML = `
+          <div style="padding:10px;border-radius:8px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);">
+            <p class="text-sm" style="color:#ffc107;margin:0 0 4px 0;"><strong>Update available: v${escHtml(remote.version)}</strong></p>
+            <p class="text-sm text-muted" style="margin:0;">You have v${APP_VERSION}. Run <code>./update.sh</code> in Termux to update.</p>
+          </div>`;
+        App.toast(`Update available: v${remote.version}`, 'info');
+      } else {
+        statusEl.innerHTML = `
+          <div style="padding:10px;border-radius:8px;background:rgba(76,175,80,0.15);border:1px solid rgba(76,175,80,0.3);">
+            <p class="text-sm" style="color:#4caf50;margin:0;"><strong>You're up to date! (v${APP_VERSION})</strong></p>
+          </div>`;
+        App.toast('You\'re running the latest version!', 'success');
+      }
+    } catch (e) {
+      statusEl.innerHTML = `
+        <div style="padding:10px;border-radius:8px;background:rgba(244,67,54,0.15);border:1px solid rgba(244,67,54,0.3);">
+          <p class="text-sm" style="color:#f44336;margin:0 0 4px 0;"><strong>Could not check for updates</strong></p>
+          <p class="text-sm text-muted" style="margin:0;">Are you online? (${escHtml(e.message)})</p>
+        </div>`;
+      App.toast('Update check failed', 'error');
+    }
+  }
+
   // --- Save / Export / Import / Clear ---
 
   async function save() {
@@ -496,6 +572,9 @@ const SettingsPage = (() => {
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));
     await DB.setSetting('maxTokens', parseInt(document.getElementById('set-tokens').value));
+
+    const repoInput = document.getElementById('set-update-repo');
+    if (repoInput) await DB.setSetting('updateRepo', repoInput.value.trim() || DEFAULT_UPDATE_REPO);
 
     App.toast('Settings saved!', 'success');
   }
@@ -563,9 +642,10 @@ const SettingsPage = (() => {
     App.refreshPage();
   }
 
-  return { render, postRender, testConnection, save, exportData, importData, clearData, confirmClear };
   return {
-    render, onMount, onUnmount, testConnection, save, exportData, importData, clearData, confirmClear,
+    render, postRender, onMount, onUnmount,
+    testConnection, save, exportData, importData, clearData, confirmClear,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
+    checkForUpdate,
   };
 })();

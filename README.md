@@ -90,6 +90,46 @@ php -S 0.0.0.0:8080
 
 ---
 
+## Updating
+
+### Update Script (Recommended)
+
+The easiest way to update in Termux:
+
+```bash
+chmod +x update.sh
+./update.sh
+```
+
+The script will:
+- Fetch the latest changes from GitHub
+- Stash any local modifications and restore them after updating
+- Invalidate the service worker cache so your browser loads the new version
+- Display the old and new version numbers
+
+### Manual Update
+
+```bash
+git pull origin master
+```
+
+After a manual pull, hard-refresh your browser (`Ctrl+Shift+R`) or clear the site data to bypass the service worker cache.
+
+### In-App Version Check
+
+Go to **Settings → App Updates → Check for Updates** to see if a newer version is available. If an update is found, run `./update.sh` in Termux to apply it.
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `Not a git repository` | Re-clone: `git clone https://github.com/dkylepeppers-alt/Comiccreator.git` |
+| Merge conflicts after pull | Run `git stash && git pull && git stash pop`, or `git reset --hard origin/master` to discard local changes |
+| Browser shows old version after update | Hard-refresh (`Ctrl+Shift+R`), or clear browser site data for localhost |
+| `Check for Updates` fails in-app | Ensure you have internet access; the check fetches from GitHub |
+
+---
+
 ## Configuration
 
 On first launch you'll be directed to **Settings**. The only required configuration is your NanoGPT API key.
@@ -122,7 +162,9 @@ Comiccreator/
 ├── index.html              Main app shell
 ├── manifest.json           PWA manifest
 ├── sw.js                   Service worker (offline caching)
+├── version.json            App version metadata
 ├── server.sh               Termux-optimized HTTP server launcher
+├── update.sh               Termux update script (git pull + cache bust)
 ├── generate-icons.html     Browser-based icon generator utility
 │
 ├── css/
