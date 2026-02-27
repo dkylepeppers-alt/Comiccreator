@@ -93,11 +93,19 @@ const App = (() => {
     document.getElementById('sidebar-overlay').classList.add('hidden');
   }
 
+  let previousPageModule = null;
+
   async function navigate(page, param = null) {
     if (!pages[page]) return;
 
+    // Call onUnmount on the previous page if it has one
+    if (previousPageModule && typeof previousPageModule.onUnmount === 'function') {
+      try { previousPageModule.onUnmount(); } catch (e) { console.warn('onUnmount error:', e); }
+    }
+
     currentPage = page;
     currentParam = param;
+    previousPageModule = pages[page];
 
     // Update URL hash
     window.location.hash = page;
@@ -123,6 +131,9 @@ const App = (() => {
       // Allow pages to run post-render logic (e.g. async model fetching)
       if (typeof pages[page].postRender === 'function') {
         pages[page].postRender(param);
+      // Call onMount after DOM is updated, if the page module supports it
+      if (typeof pages[page].onMount === 'function') {
+        await pages[page].onMount(param);
       }
     } catch (err) {
       console.error('Page render error:', err);
