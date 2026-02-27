@@ -20,6 +20,7 @@ const SettingsPage = (() => {
     const topP = await DB.getSetting('topP', 0.9);
     const maxTokens = await DB.getSetting('maxTokens', 2048);
     const enableImages = await DB.getSetting('enableImages', true);
+    const useRefImages = await DB.getSetting('useRefImages', true);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
@@ -89,6 +90,14 @@ const SettingsPage = (() => {
               Enable AI Image Generation
             </label>
             <div class="form-hint">Disable to save API credits (text-only comics)</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="set-userefimgs" ${useRefImages ? 'checked' : ''} style="width:auto;">
+              Use Reference Images
+            </label>
+            <div class="form-hint">Send character/world images as style references for consistent visuals (uses more credits)</div>
           </div>
 
           <div class="form-group">
@@ -508,6 +517,7 @@ const SettingsPage = (() => {
     await DB.setSetting('model', document.getElementById('set-model').value);
     await DB.setSetting('imageModel', document.getElementById('set-imgmodel').value);
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
+    await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('imageSize', document.getElementById('set-imgsize').value);
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));
