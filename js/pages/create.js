@@ -446,16 +446,16 @@ const CreatePage = (() => {
       // Generate images if enabled
       const enableImages = await DB.getSetting('enableImages', true);
       if (enableImages) {
+        const imageSize = await DB.getSetting('imageSize', '1024x1024');
         for (const panel of pageData.panels) {
           if (panel.imagePrompt) {
             try {
-              const imageSize = await DB.getSetting('imageSize', '1024x1024');
-              const url = await API.generateImage(panel.imagePrompt, { size: imageSize });
-              if (url) {
-                // If it's a URL, fetch and convert to data URL for offline storage
-                if (url.startsWith('http')) {
+              const imageData = await API.generateImage(panel.imagePrompt, { size: imageSize });
+              if (imageData) {
+                if (imageData.startsWith('http')) {
+                  // URL response — try to fetch for offline storage
                   try {
-                    const resp = await fetch(url);
+                    const resp = await fetch(imageData);
                     const blob = await resp.blob();
                     panel.imageUrl = await new Promise((resolve) => {
                       const reader = new FileReader();
@@ -463,14 +463,16 @@ const CreatePage = (() => {
                       reader.readAsDataURL(blob);
                     });
                   } catch {
-                    panel.imageUrl = url; // fallback to direct URL
+                    panel.imageUrl = imageData; // fallback to direct URL
                   }
                 } else {
-                  panel.imageUrl = `data:image/png;base64,${url}`;
+                  // Base64 response — convert to data URL for storage
+                  panel.imageUrl = `data:image/png;base64,${imageData}`;
                 }
               }
             } catch (imgErr) {
               console.warn('Image generation failed for panel:', imgErr);
+              App.toast(`Panel image failed: ${imgErr.message}`, 'error');
             }
           }
         }
