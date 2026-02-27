@@ -23,19 +23,6 @@ const SettingsPage = (() => {
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
-    // Fallback models used when the API is unreachable
-    const fallbackTextModels = [
-      'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano',
-      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
-      'deepseek-chat', 'deepseek-reasoner',
-      'gemini-2.0-flash', 'gemini-2.5-pro-preview-05-06',
-      'llama-3.3-70b', 'mistral-large-latest',
-    ];
-
-    const fallbackImageModels = [
-      'gpt-image-1', 'dall-e-3', 'flux-1.1-pro', 'stable-diffusion-xl',
-    ];
-
     return `
       <div class="slide-up">
         <h2 class="section-title">Settings</h2>
@@ -53,10 +40,7 @@ const SettingsPage = (() => {
           <!-- Text Model Picker -->
           <div class="form-group">
             <label class="form-label">Text Model</label>
-            <select id="set-model">
-              ${fallbackTextModels.map(m => `<option value="${m}" ${model === m ? 'selected' : ''}>${m}</option>`).join('')}
-            </select>
-            <div class="form-hint">Model used for story generation &mdash; <span id="model-count"></span></div>
+            <input type="hidden" id="set-model" value="${escHtml(model)}">
             <div class="model-picker" id="text-model-picker">
               <div class="model-picker-selected" onclick="SettingsPage.togglePicker('text')">
                 <span id="text-model-display">${escHtml(model)}</span>
@@ -70,7 +54,6 @@ const SettingsPage = (() => {
                 <div class="model-picker-list" id="text-model-list"></div>
               </div>
             </div>
-            <input type="hidden" id="set-model" value="${escHtml(model)}">
             <div class="form-hint">
               <span id="text-model-count">--</span> models available &middot;
               <button class="btn-link" onclick="SettingsPage.refreshModels('text')">Refresh list</button>
@@ -80,10 +63,7 @@ const SettingsPage = (() => {
           <!-- Image Model Picker -->
           <div class="form-group">
             <label class="form-label">Image Model</label>
-            <select id="set-imgmodel">
-              ${fallbackImageModels.map(m => `<option value="${m}" ${imageModel === m ? 'selected' : ''}>${m}</option>`).join('')}
-            </select>
-            <div class="form-hint">Model used for panel images &mdash; <span id="imgmodel-count"></span></div>
+            <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
             <div class="model-picker" id="image-model-picker">
               <div class="model-picker-selected" onclick="SettingsPage.togglePicker('image')">
                 <span id="image-model-display">${escHtml(imageModel)}</span>
@@ -97,7 +77,6 @@ const SettingsPage = (() => {
                 <div class="model-picker-list" id="image-model-list"></div>
               </div>
             </div>
-            <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
             <div class="form-hint">
               <span id="image-model-count">--</span> models available &middot;
               <button class="btn-link" onclick="SettingsPage.refreshModels('image')">Refresh list</button>
@@ -191,49 +170,10 @@ const SettingsPage = (() => {
 
   /**
    * Called after the settings HTML is inserted into the DOM.
-   * Fetches the live model catalogues from NanoGPT and replaces the
-   * fallback options in each dropdown while preserving the user's
-   * current selection.
+   * Model loading is handled by onMount() via the custom picker UI.
    */
-  async function postRender() {
-    const modelSelect = document.getElementById('set-model');
-    const imgModelSelect = document.getElementById('set-imgmodel');
-    const modelCount = document.getElementById('model-count');
-    const imgModelCount = document.getElementById('imgmodel-count');
-
-    const currentModel = modelSelect?.value;
-    const currentImgModel = imgModelSelect?.value;
-
-    // Fetch both lists in parallel
-    const [textModels, imageModels] = await Promise.all([
-      API.fetchTextModels(),
-      API.fetchImageModels(),
-    ]);
-
-    if (textModels.length && modelSelect) {
-      // Ensure the user's current selection is in the list
-      const models = textModels.includes(currentModel)
-        ? textModels
-        : [currentModel, ...textModels];
-      modelSelect.innerHTML = models
-        .map(m => `<option value="${m}" ${m === currentModel ? 'selected' : ''}>${m}</option>`)
-        .join('');
-      if (modelCount) modelCount.textContent = `${textModels.length} models available`;
-    } else if (modelCount) {
-      modelCount.textContent = 'using cached list';
-    }
-
-    if (imageModels.length && imgModelSelect) {
-      const imgs = imageModels.includes(currentImgModel)
-        ? imageModels
-        : [currentImgModel, ...imageModels];
-      imgModelSelect.innerHTML = imgs
-        .map(m => `<option value="${m}" ${m === currentImgModel ? 'selected' : ''}>${m}</option>`)
-        .join('');
-      if (imgModelCount) imgModelCount.textContent = `${imageModels.length} models available`;
-    } else if (imgModelCount) {
-      imgModelCount.textContent = 'using cached list';
-    }
+  function postRender() {
+    // No-op: model loading is handled by onMount() / loadModels()
   }
 
   /**
