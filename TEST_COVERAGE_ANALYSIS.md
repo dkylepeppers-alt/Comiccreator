@@ -193,8 +193,6 @@ Two `return` statements — only the first executes. The newer API surface (`onM
 
 ## Recommended Test Infrastructure
 
-Since this is a zero-dependency vanilla JS project with no build system:
-
 1. **Minimal approach**: A `test/` directory with plain Node.js test files using `node:assert`
 2. **IndexedDB mocking**: `fake-indexeddb` (single dev dependency)
 3. **Fetch mocking**: Simple stub function

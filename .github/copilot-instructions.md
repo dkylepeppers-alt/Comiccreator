@@ -4,18 +4,15 @@
 
 AI Comic Creator is a **vanilla JavaScript Progressive Web App (PWA)** that generates AI-powered comic books with interactive narratives, custom characters, and world-building. It uses the NanoGPT API (OpenAI-compatible endpoint at `https://nano-gpt.com/api/v1`) for both text (streaming SSE) and image generation.
 
-**Current version:** 1.1.0
+**Current version:** 1.2.0
 
 ---
 
-## Critical Constraints
+## Development Guidelines
 
-- **No build system.** There is no npm, no bundler, no transpiler. All files are raw HTML/CSS/JS served directly.
-- **No Node.js or server-side code.** All logic runs in the browser.
-- **No test framework.** There are no automated tests. The project has zero npm dependencies. See "Testing" below.
-- **No CDN imports.** All code is self-contained. Do not add external `<script>` tags or imports.
 - **ES2020+ syntax** is fine (optional chaining `?.`, nullish coalescing `??`, `async/await`, `crypto.randomUUID`).
 - **Module pattern:** All JS files use the IIFE module pattern (`const FooModule = (() => { ... return { ... }; })()`). Do **not** convert to ES module `import`/`export` syntax.
+- No automated tests exist yet. See "Testing" below for manual QA steps.
 
 ---
 
@@ -24,8 +21,8 @@ AI Comic Creator is a **vanilla JavaScript Progressive Web App (PWA)** that gene
 ```
 index.html              App shell — all pages are rendered into <main id="content">
 manifest.json           PWA manifest
-sw.js                   Service worker (cache-first, CACHE_NAME = 'comic-creator-v3')
-version.json            { "version": "1.1.0", "updated": "..." }
+sw.js                   Service worker (cache-first, CACHE_NAME = 'comic-creator-v4')
+version.json            { "version": "1.2.0", "updated": "..." }
 server.sh               Local dev server (python3 -m http.server 8080)
 update.sh               Termux update helper (git pull + cache bust)
 generate-icons.html     Browser-based icon generator utility
@@ -184,7 +181,7 @@ Settings keys used: `apiKey`, `model`, `imageModel`, `temperature`, `topP`, `max
 
 ## Service Worker Cache
 
-`sw.js` caches the app shell under `CACHE_NAME = 'comic-creator-v3'`. **Whenever you modify any cached asset** (any file listed in `STATIC_ASSETS`), bump the `CACHE_NAME` version string (e.g. to `'comic-creator-v4'`) to force cache invalidation on existing installs.
+`sw.js` caches the app shell under `CACHE_NAME = 'comic-creator-v4'`. **Whenever you modify any cached asset** (any file listed in `STATIC_ASSETS`), bump the `CACHE_NAME` version string (e.g. to `'comic-creator-v5'`) to force cache invalidation on existing installs.
 
 ---
 

@@ -150,7 +150,7 @@ if [ -f "$SW_FILE" ]; then
   TIMESTAMP=$(date +%s)
   # Replace the CACHE_NAME value with a timestamped version
   if grep -q "const CACHE_NAME" "$SW_FILE"; then
-    sed -i "s/const CACHE_NAME = '.*'/const CACHE_NAME = 'comic-creator-v3-${TIMESTAMP}'/" "$SW_FILE"
+    sed -i "s/const CACHE_NAME = '.*'/const CACHE_NAME = 'comic-creator-v4-${TIMESTAMP}'/" "$SW_FILE"
     echo -e "${CYAN}[*] Service worker cache invalidated${NC}"
   fi
 fi

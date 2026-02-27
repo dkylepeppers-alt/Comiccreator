@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render

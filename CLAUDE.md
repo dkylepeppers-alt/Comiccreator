@@ -36,7 +36,7 @@ There are no automated tests, linters, or CI checks. Always validate changes man
 
 1. **Syntax check** — run `node --check <file.js>` on every JS file you modify. All 10 JS files currently pass.
 2. **Serve and load** — start the dev server, open `http://localhost:8080`, and confirm the app loads without console errors.
-3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` (currently `'comic-creator-v3'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
+3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` (currently `'comic-creator-v4'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
 4. **Page navigation** — click through all 7 pages (Home, Characters, Worlds, Create, Library, Presets, Settings) to verify no render errors.
 
 ## Architecture
@@ -105,8 +105,8 @@ IndexedDB database: `ComicCreatorDB`, version `1`. Six object stores:
 ```
 index.html              (97 lines)   App shell — topbar, sidebar nav, bottom nav, modal, toast container, script tags
 manifest.json           (32 lines)   PWA manifest — standalone, portrait, dark theme (#0a0a1a)
-sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v3', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
-version.json            (4 lines)    {"version":"1.1.0","updated":"2026-02-27"}
+sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v4', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
+version.json            (4 lines)    {"version":"1.2.0","updated":"2026-02-27"}
 server.sh               (111 lines)  Termux dev server launcher (auto-detects python3/npx/php/busybox)
 update.sh               (172 lines)  Termux update script (git pull + sw cache bust)
 generate-icons.html                  Browser utility to generate PWA PNG icons from the SVG
