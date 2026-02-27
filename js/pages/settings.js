@@ -12,77 +12,9 @@ const SettingsPage = (() => {
   let textModelsLoading = false;
   let imageModelsLoading = false;
 
-  // In-memory error log (persists for the lifetime of the page session)
-  let errorLog = [];
-
+  // Delegate error logging to global App.logError
   function logError(context, error, extraDetails) {
-    const entry = {
-      timestamp: new Date().toISOString(),
-      context,
-      message: error?.message || String(error),
-      stack: error?.stack || null,
-      details: extraDetails || null,
-    };
-    errorLog.push(entry);
-    renderErrorLog();
-  }
-
-  function buildErrorLogHtml() {
-    if (errorLog.length === 0) return '';
-    let html = '';
-    for (const entry of errorLog) {
-      html += `<div style="margin-bottom:12px;padding:10px;background:rgba(244,67,54,0.08);border:1px solid rgba(244,67,54,0.2);border-radius:8px;font-size:0.8rem;">`;
-      html += `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:4px;">`;
-      html += `<span style="color:var(--danger);font-weight:600;">${escHtml(entry.context)}</span>`;
-      html += `<span style="color:var(--text-muted);">${escHtml(entry.timestamp.replace('T', ' ').substring(0, 19))} UTC</span>`;
-      html += `</div>`;
-      html += `<div style="color:var(--text-primary);word-break:break-word;margin-bottom:4px;">${escHtml(entry.message)}</div>`;
-      if (entry.details) {
-        html += `<div style="color:var(--text-secondary);word-break:break-word;margin-bottom:4px;">${escHtml(entry.details)}</div>`;
-      }
-      if (entry.stack) {
-        html += `<pre style="white-space:pre-wrap;word-break:break-all;color:var(--text-muted);font-size:0.75rem;margin-top:4px;max-height:120px;overflow-y:auto;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">${escHtml(entry.stack)}</pre>`;
-      }
-      html += `</div>`;
-    }
-    return html;
-  }
-
-  function renderErrorLog() {
-    const card = document.getElementById('error-log-card');
-    const entriesEl = document.getElementById('error-log-entries');
-    if (!card || !entriesEl) return;
-    if (errorLog.length === 0) {
-      card.style.display = 'none';
-      return;
-    }
-    card.style.display = '';
-    entriesEl.innerHTML = buildErrorLogHtml();
-  }
-
-  async function copyErrorLog() {
-    if (errorLog.length === 0) {
-      App.toast('No errors to copy', 'info');
-      return;
-    }
-    const text = errorLog.map(e => {
-      const lines = [`[${e.timestamp}] ${e.context}`, `Message: ${e.message}`];
-      if (e.details) lines.push(`Details: ${e.details}`);
-      if (e.stack) lines.push(`Stack:\n${e.stack}`);
-      return lines.join('\n');
-    }).join('\n\n---\n\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      App.toast('Error log copied to clipboard!', 'success');
-    } catch (err) {
-      App.toast(`Could not copy to clipboard: ${err.message}`, 'error');
-    }
-  }
-
-  function clearErrorLog() {
-    errorLog = [];
-    renderErrorLog();
-    App.toast('Error log cleared', 'info');
+    App.logError(context, error, extraDetails);
   }
 
   async function render() {
@@ -239,18 +171,6 @@ const SettingsPage = (() => {
             <input type="text" id="set-update-repo" value="${escHtml(updateRepo)}" placeholder="owner/repo">
             <div class="form-hint">GitHub repo to check for updates (default: ${escHtml(DEFAULT_UPDATE_REPO)})</div>
           </div>
-        </div>
-
-        <!-- Error Log -->
-        <div class="card mt-md" id="error-log-card"${errorLog.length === 0 ? ' style="display:none;"' : ''}>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-            <h3 class="card-title" style="margin:0;">Error Log</h3>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-secondary btn-sm" onclick="SettingsPage.copyErrorLog()">Copy All</button>
-              <button class="btn btn-secondary btn-sm" onclick="SettingsPage.clearErrorLog()">Clear</button>
-            </div>
-          </div>
-          <div id="error-log-entries">${buildErrorLogHtml()}</div>
         </div>
 
         <!-- About -->
@@ -709,6 +629,6 @@ const SettingsPage = (() => {
     render, postRender, onMount, onUnmount,
     testConnection, save, exportData, importData, clearData, confirmClear,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
-    checkForUpdate, copyErrorLog, clearErrorLog,
+    checkForUpdate,
   };
 })();

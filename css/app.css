@@ -804,6 +804,85 @@ img { max-width: 100%; display: block; }
 }
 .btn-link:hover { color: var(--accent-hover); }
 
+/* === Error Log === */
+.error-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  padding: 0 4px;
+  pointer-events: none;
+}
+#error-panel {
+  position: fixed;
+  top: var(--topbar-h);
+  right: 0;
+  width: 420px;
+  max-width: 100vw;
+  max-height: calc(100vh - var(--topbar-h) - var(--bnav-h));
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  z-index: 450;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 4px 20px rgba(0,0,0,0.4);
+  animation: slideInRight 0.2s ease;
+}
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.error-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.error-panel-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--danger);
+}
+#error-panel-body {
+  overflow-y: auto;
+  flex: 1;
+}
+.error-log-entry {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(244,67,54,0.1);
+}
+.error-log-header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.error-log-context { color: var(--danger); font-weight: 600; font-size: 0.8rem; }
+.error-log-time { color: var(--text-muted); font-size: 0.75rem; }
+.error-log-msg { color: var(--text-primary); word-break: break-word; font-size: 0.85rem; margin-bottom: 4px; }
+.error-log-details { color: var(--text-secondary); word-break: break-word; font-size: 0.8rem; margin-bottom: 4px; }
+.error-log-stack {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  margin-top: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+  padding: 6px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

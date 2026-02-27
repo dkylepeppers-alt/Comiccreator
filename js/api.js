@@ -364,7 +364,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         })),
       };
     } catch (e) {
-      console.error('Failed to parse comic response:', e, text);
+      if (typeof App !== 'undefined') App.logError('parseComicResponse', e, text?.substring(0, 200));
       return null;
     }
   }
@@ -403,7 +403,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       await DB.setSetting(CACHE_TS_KEY, Date.now());
       return models;
     } catch (err) {
-      console.warn('Failed to fetch text models:', err);
+      if (typeof App !== 'undefined') App.logError('fetchTextModels', err);
       // Return cache even if expired, or fallback
       const cached = await DB.getSetting(CACHE_KEY, null);
       if (cached) return cached;
@@ -441,7 +441,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       await DB.setSetting(CACHE_TS_KEY, Date.now());
       return models;
     } catch (err) {
-      console.warn('Failed to fetch image models:', err);
+      if (typeof App !== 'undefined') App.logError('fetchImageModels', err);
       const cached = await DB.getSetting(CACHE_KEY, null);
       if (cached) return cached;
       return FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
