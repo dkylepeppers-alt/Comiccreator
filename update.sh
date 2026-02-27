@@ -164,8 +164,28 @@ echo -e "==================================${NC}"
 echo ""
 echo -e "  ${BOLD}v${CURRENT_VERSION}${NC} -> ${GREEN}${BOLD}v${NEW_VERSION}${NC}"
 echo ""
+
+# Show what changed
+COMMIT_LOG=$(git log --oneline "HEAD@{1}"..HEAD 2>/dev/null | head -5)
+if [ -n "$COMMIT_LOG" ]; then
+  echo -e "${CYAN}[*] What's new:${NC}"
+  while IFS= read -r line; do
+    echo "    • $line"
+  done <<< "$COMMIT_LOG"
+  echo ""
+fi
+
 echo -e "${CYAN}[*] Next steps:${NC}"
-echo "    1. Restart the server:  ./server.sh"
-echo "    2. Hard-refresh your browser (Ctrl+Shift+R)"
-echo "       or clear the browser's site data"
+echo "    • Hard-refresh your browser (Ctrl+Shift+R)"
+echo "      or clear the browser's site data for the server URL"
 echo ""
+
+# Offer to start the server immediately
+if [ -f "$DIR/server.sh" ]; then
+  printf "Start the server now? [Y/n] "
+  read -r LAUNCH_REPLY
+  echo ""
+  if [ -z "$LAUNCH_REPLY" ] || echo "$LAUNCH_REPLY" | grep -qi "^y"; then
+    exec "$DIR/server.sh"
+  fi
+fi

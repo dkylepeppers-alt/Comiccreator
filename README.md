@@ -46,6 +46,22 @@ A fully installable Progressive Web App for creating AI-generated comic books wi
 
 ### Running in Termux (Android)
 
+#### One-command install (recommended)
+
+Paste this into Termux to install everything automatically:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dkylepeppers-alt/Comiccreator/master/install.sh | bash
+```
+
+The installer will:
+- Install `git` and `python3` via `pkg` if they are missing
+- Clone the repository to `~/Comiccreator`
+- Make all scripts executable
+- Offer to start the server immediately
+
+#### Manual install
+
 ```bash
 # 1. Install git and python
 pkg install git python
@@ -59,7 +75,7 @@ chmod +x server.sh
 ./server.sh
 ```
 
-The server starts on **http://localhost:8080** by default. Open this URL in Chrome or Brave on your device.
+The server starts on **http://localhost:8080** by default. Open this URL in Chrome or Brave on your device. The server also displays your LAN IP (`http://192.168.x.x:8080`) for connecting from other devices on the same network.
 
 **Custom port:**
 ```bash
@@ -105,7 +121,8 @@ The script will:
 - Fetch the latest changes from GitHub
 - Stash any local modifications and restore them after updating
 - Invalidate the service worker cache so your browser loads the new version
-- Display the old and new version numbers
+- Display the old and new version numbers and a summary of recent commits
+- Offer to start the server immediately after a successful update
 
 ### Manual Update
 
@@ -165,6 +182,7 @@ Comiccreator/
 ├── version.json            App version metadata
 ├── server.sh               Termux-optimized HTTP server launcher
 ├── update.sh               Termux update script (git pull + cache bust)
+├── install.sh              Termux one-command installer (pkg install + git clone)
 ├── generate-icons.html     Browser-based icon generator utility
 │
 ├── css/

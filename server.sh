@@ -23,13 +23,50 @@ echo "  AI Comic Creator PWA Server"
 echo "=================================="
 echo ""
 
-# Check and install dependencies
-check_dep() {
-  if ! command -v "$1" &> /dev/null; then
-    echo "[*] Installing $1..."
-    pkg install -y "$1" 2>/dev/null || apt install -y "$1" 2>/dev/null
+# Detect if running inside Termux
+IS_TERMUX=false
+[ -d "/data/data/com.termux" ] && IS_TERMUX=true
+
+# Auto-install a package if missing (Termux only)
+ensure_dep() {
+  if ! command -v "$1" &>/dev/null; then
+    if [ "$IS_TERMUX" = true ]; then
+      echo "[*] Installing $1..."
+      pkg install -y "$1" 2>/dev/null || true
+    fi
   fi
 }
+
+# Detect the device's LAN IP for convenient browser access
+get_lan_ip() {
+  # Route a packet to Cloudflare's DNS (1.1.1.1) to find the default outbound
+  # interface address — this reveals the device's LAN IP without needing ifconfig.
+  if command -v ip &>/dev/null; then
+    ip route get 1.1.1.1 2>/dev/null | awk '/src/{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}'
+  elif command -v hostname &>/dev/null; then
+    hostname -I 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+# Check whether the requested port is already in use
+check_port() {
+  if command -v ss &>/dev/null; then
+    ss -ltn 2>/dev/null | grep -qE ":${PORT}[[:space:]]" && return 0
+  elif command -v netstat &>/dev/null; then
+    netstat -ltn 2>/dev/null | grep -qE ":${PORT}[[:space:]]" && return 0
+  fi
+  return 1
+}
+
+if check_port; then
+  echo "[!] Port $PORT is already in use."
+  echo "    Stop the existing server or choose a different port:"
+  echo "      PORT=3000 ./server.sh"
+  exit 1
+fi
+
+# Ensure python3 is available (preferred server in Termux)
+ensure_dep python3
 
 # Generate PNG icons if they don't exist
 generate_icons() {
@@ -73,9 +110,14 @@ print('[+] Icons generated')
 generate_icons
 
 # Try different HTTP servers in order of preference
+LAN_IP=$(get_lan_ip)
+
 echo "[*] Starting server on port $PORT..."
-echo "[*] Open in your browser: http://localhost:$PORT"
-echo "[*] On your device: http://127.0.0.1:$PORT"
+echo "[*] Local:   http://localhost:$PORT"
+echo "[*] Device:  http://127.0.0.1:$PORT"
+if [ -n "$LAN_IP" ]; then
+  echo "[*] Network: http://${LAN_IP}:${PORT}"
+fi
 echo ""
 echo "[*] To install as PWA:"
 echo "    1. Open the URL above in Chrome/Brave"
