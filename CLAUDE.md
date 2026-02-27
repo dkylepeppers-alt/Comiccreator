@@ -66,16 +66,17 @@ There are no automated tests, linters, or CI checks. Always validate changes man
 
 `index.html` loads scripts via `<script>` tags in this exact order — **all are global IIFEs, not ES modules**:
 
-1. `js/db.js` → global `DB` (IndexedDB wrapper)
-2. `js/api.js` → global `API` (NanoGPT client) — depends on `DB`
-3. `js/pages/home.js` → global `HomePage`, **also defines shared globals `escHtml()`, `timeAgo()`, `getGenreEmoji()`, `GENRES`** used by all other page modules
-4. `js/pages/characters.js` → global `CharactersPage`
-5. `js/pages/worlds.js` → global `WorldsPage`
-6. `js/pages/create.js` → global `CreatePage`
-7. `js/pages/library.js` → global `LibraryPage`
-8. `js/pages/presets.js` → global `PresetsPage`
-9. `js/pages/settings.js` → global `SettingsPage`
-10. `js/app.js` → global `App` (SPA router) — depends on all above
+1. `js/utils.js` → shared globals `escHtml()`, `timeAgo()`, `getGenreEmoji()`, `GENRES`
+2. `js/db.js` → global `DB` (IndexedDB wrapper)
+3. `js/api.js` → global `API` (NanoGPT client) — depends on `DB`
+4. `js/pages/home.js` → global `HomePage`
+5. `js/pages/characters.js` → global `CharactersPage`
+6. `js/pages/worlds.js` → global `WorldsPage`
+7. `js/pages/create.js` → global `CreatePage`
+8. `js/pages/library.js` → global `LibraryPage`
+9. `js/pages/presets.js` → global `PresetsPage`
+10. `js/pages/settings.js` → global `SettingsPage`
+11. `js/app.js` → global `App` (SPA router) — depends on all above
 
 **If you add a new script, it must be added as a `<script>` tag in `index.html` AND to the `STATIC_ASSETS` array in `sw.js`.** If load order matters (e.g., new shared utils), place it before the modules that use it.
 
@@ -97,9 +98,9 @@ The router in `js/app.js` references page modules by name in its `pages` map (li
 | `DB` | `js/db.js` | IndexedDB CRUD: `getAll`, `get`, `put`, `del`, `getByIndex`, `uuid`, `getSetting`, `setSetting`, `fileToDataURL`, `seedDefaults` |
 | `API` | `js/api.js` | `chatCompletion`, `chatCompletionStream`, `generateImage`, `buildSystemPrompt`, `parseComicResponse`, `fetchTextModels`, `fetchImageModels`, `BASE_URL` |
 | `App` | `js/app.js` | `navigate(page, param)`, `refreshPage()`, `showModal(html)`, `hideModal()`, `toast(msg, type)` |
-| `escHtml(str)` | `js/pages/home.js:105` | HTML-escapes a string. Used throughout all page modules. |
-| `timeAgo(ts)` | `js/pages/home.js:112` | Formats a timestamp as relative time. |
-| `GENRES` | `js/pages/home.js:92` | Array of 9 genre objects (`{id, name, emoji, desc}`). |
+| `escHtml(str)` | `js/utils.js` | HTML-escapes a string. Used throughout all page modules. |
+| `timeAgo(ts)` | `js/utils.js` | Formats a timestamp as relative time. |
+| `GENRES` | `js/utils.js` | Array of 9 genre objects (`{id, name, emoji}`). |
 
 ### Data Model
 
@@ -135,7 +136,8 @@ css/app.css             (811 lines)  All styles — dark theme, mobile-first res
 js/db.js                (171 lines)  IndexedDB wrapper — open, CRUD, uuid, settings helpers, seed defaults
 js/api.js               (376 lines)  NanoGPT client — streaming SSE, image gen, system prompt builder, JSON parser, model fetching with fallback lists
 js/app.js               (197 lines)  SPA router — hash-based navigation, sidebar/bottomnav, modal, toast, SW registration
-js/pages/home.js        (128 lines)  Dashboard — stats, recent comics, genre grid. Also: escHtml, timeAgo, GENRES globals
+js/utils.js             (new)         Shared pure helpers — escHtml, timeAgo, getGenreEmoji, GENRES
+js/pages/home.js        (current)     Dashboard — stats, recent comics, genre grid
 js/pages/characters.js  (196 lines)  Character CRUD — list, create/edit form, image upload, delete
 js/pages/worlds.js      (213 lines)  World CRUD — list, create/edit form, multi-image upload, delete
 js/pages/create.js      (576 lines)  Comic generation engine — setup wizard, SSE streaming, panel rendering, branching choices

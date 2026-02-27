@@ -83,7 +83,9 @@ describe('API integration', () => {
 
   it('fetchTextModels sorts, caches, force-refreshes and falls back', async () => {
     let mode = 'network';
+    let fetchCalls = 0;
     ctx.fetch = async () => {
+      fetchCalls++;
       if (mode === 'error') throw new Error('down');
       return new Response(JSON.stringify({ data: [{ id: 'z' }, { id: 'a' }] }), { status: 200 });
     };
@@ -94,6 +96,7 @@ describe('API integration', () => {
     assert.deepEqual(cached.map(m => m.id), ['a', 'z']);
     const forced = await ctx.API.fetchTextModels(true);
     assert.deepEqual(forced.map(m => m.id), ['a', 'z']);
+    assert.equal(fetchCalls, 2);
   });
 
   it('fetchImageModels caches and falls back to defaults when empty cache', async () => {
