@@ -520,7 +520,7 @@ const CreatePage = (() => {
               }
             }
           } catch (imgErr) {
-            console.warn('Image generation failed for panel:', imgErr);
+            App.logError('Image generation (panel)', imgErr);
             App.toast(`Panel image failed: ${imgErr.message}`, 'error');
           }
         }));
@@ -551,7 +551,7 @@ const CreatePage = (() => {
       App.refreshPage();
 
     } catch (err) {
-      console.error('Generation error:', err);
+      App.logError('Comic generation', err);
       App.toast(err.message || 'Generation failed', 'error');
       state.step = 'reading';
       state.isGenerating = false;

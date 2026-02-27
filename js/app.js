@@ -100,7 +100,7 @@ const App = (() => {
 
     // Call onUnmount on the previous page if it has one
     if (previousPageModule && typeof previousPageModule.onUnmount === 'function') {
-      try { previousPageModule.onUnmount(); } catch (e) { console.warn('onUnmount error:', e); }
+      try { previousPageModule.onUnmount(); } catch (e) { logError('onUnmount', e); }
     }
 
     currentPage = page;
@@ -137,7 +137,7 @@ const App = (() => {
         await pages[page].onMount(param);
       }
     } catch (err) {
-      console.error('Page render error:', err);
+      logError(`Page render (${page})`, err);
       content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">&#9888;</div><div class="empty-state-text">Error loading page: ${escHtml(err.message)}</div></div>`;
     }
   }
@@ -170,13 +170,109 @@ const App = (() => {
     }, 3000);
   }
 
+  // --- Global Error Log ---
+  let errorLog = [];
+  let errorPanelOpen = false;
+
+  function logError(context, error, extraDetails) {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      context,
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+      details: extraDetails || null,
+    };
+    errorLog.push(entry);
+    updateErrorBadge();
+    if (errorPanelOpen) renderErrorPanel();
+  }
+
+  function updateErrorBadge() {
+    const badge = document.getElementById('error-badge');
+    if (!badge) return;
+    if (errorLog.length === 0) {
+      badge.classList.add('hidden');
+    } else {
+      badge.classList.remove('hidden');
+      badge.textContent = errorLog.length > 99 ? '99+' : errorLog.length;
+    }
+  }
+
+  function toggleErrorPanel() {
+    errorPanelOpen = !errorPanelOpen;
+    const panel = document.getElementById('error-panel');
+    if (!panel) return;
+    if (errorPanelOpen) {
+      renderErrorPanel();
+      panel.classList.remove('hidden');
+    } else {
+      panel.classList.add('hidden');
+    }
+  }
+
+  function renderErrorPanel() {
+    const body = document.getElementById('error-panel-body');
+    if (!body) return;
+    if (errorLog.length === 0) {
+      body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">No errors logged.</div>';
+      return;
+    }
+    let html = '';
+    for (let i = errorLog.length - 1; i >= 0; i--) {
+      const e = errorLog[i];
+      html += `<div class="error-log-entry">`;
+      html += `<div class="error-log-header"><span class="error-log-context">${escHtml(e.context)}</span>`;
+      html += `<span class="error-log-time">${escHtml(e.timestamp.replace('T', ' ').substring(0, 19))}</span></div>`;
+      html += `<div class="error-log-msg">${escHtml(e.message)}</div>`;
+      if (e.details) html += `<div class="error-log-details">${escHtml(e.details)}</div>`;
+      if (e.stack) html += `<pre class="error-log-stack">${escHtml(e.stack)}</pre>`;
+      html += `</div>`;
+    }
+    body.innerHTML = html;
+  }
+
+  async function copyErrorLog() {
+    if (errorLog.length === 0) { toast('No errors to copy', 'info'); return; }
+    const text = errorLog.map(e => {
+      const lines = [`[${e.timestamp}] ${e.context}`, `Message: ${e.message}`];
+      if (e.details) lines.push(`Details: ${e.details}`);
+      if (e.stack) lines.push(`Stack:\n${e.stack}`);
+      return lines.join('\n');
+    }).join('\n\n---\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Error log copied!', 'success');
+    } catch (err) {
+      toast(`Copy failed: ${err.message}`, 'error');
+    }
+  }
+
+  function clearErrorLog() {
+    errorLog = [];
+    updateErrorBadge();
+    renderErrorPanel();
+    toast('Error log cleared', 'info');
+  }
+
+  function getErrorLog() {
+    return errorLog;
+  }
+
+  // Global error handlers
+  window.addEventListener('error', (event) => {
+    logError('Uncaught Error', event.error || new Error(event.message));
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    logError('Unhandled Promise', event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
+  });
+
   // Service Worker
   function registerSW() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
         console.log('SW registered:', reg.scope);
       }).catch(err => {
-        console.warn('SW registration failed:', err);
+        logError('SW registration', err);
       });
     }
   }
@@ -193,5 +289,5 @@ const App = (() => {
     init();
   }
 
-  return { navigate, refreshPage, showModal, hideModal, toast };
+  return { navigate, refreshPage, showModal, hideModal, toast, logError, toggleErrorPanel, copyErrorLog, clearErrorLog, getErrorLog };
 })();
