@@ -255,6 +255,109 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     }
   }
 
+  /**
+   * Fetch all available text/chat models from NanoGPT.
+   * Endpoint does not require authentication.
+   * Returns array of model objects with id, name, owned_by, etc.
+   */
+  async function fetchTextModels(forceRefresh = false) {
+    const CACHE_KEY = 'cachedTextModels';
+    const CACHE_TS_KEY = 'cachedTextModelsAt';
+    const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+    if (!forceRefresh) {
+      const cached = await DB.getSetting(CACHE_KEY, null);
+      const cachedAt = await DB.getSetting(CACHE_TS_KEY, 0);
+      if (cached && (Date.now() - cachedAt) < CACHE_TTL) return cached;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/v1/models?detailed=true`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const models = (data.data || data || []).map(m => ({
+        id: m.id,
+        name: m.name || m.id,
+        owned_by: m.owned_by || '',
+        context_length: m.context_length || null,
+        pricing: m.pricing || null,
+        supports_vision: m.supports_vision || false,
+        supports_tools: m.supports_tools || false,
+      })).sort((a, b) => a.id.localeCompare(b.id));
+
+      await DB.setSetting(CACHE_KEY, models);
+      await DB.setSetting(CACHE_TS_KEY, Date.now());
+      return models;
+    } catch (err) {
+      console.warn('Failed to fetch text models:', err);
+      // Return cache even if expired, or fallback
+      const cached = await DB.getSetting(CACHE_KEY, null);
+      if (cached) return cached;
+      return FALLBACK_TEXT_MODELS.map(id => ({ id, name: id, owned_by: '' }));
+    }
+  }
+
+  /**
+   * Fetch all available image generation models from NanoGPT.
+   */
+  async function fetchImageModels(forceRefresh = false) {
+    const CACHE_KEY = 'cachedImageModels';
+    const CACHE_TS_KEY = 'cachedImageModelsAt';
+    const CACHE_TTL = 6 * 60 * 60 * 1000;
+
+    if (!forceRefresh) {
+      const cached = await DB.getSetting(CACHE_KEY, null);
+      const cachedAt = await DB.getSetting(CACHE_TS_KEY, 0);
+      if (cached && (Date.now() - cachedAt) < CACHE_TTL) return cached;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/v1/image-models?detailed=true`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const models = (data.data || data || []).map(m => ({
+        id: m.id || m.model,
+        name: m.name || m.id || m.model,
+        owned_by: m.owned_by || m.provider || '',
+        pricing: m.pricing || null,
+        supports_edit: m.supports_edit || false,
+      })).sort((a, b) => a.id.localeCompare(b.id));
+
+      await DB.setSetting(CACHE_KEY, models);
+      await DB.setSetting(CACHE_TS_KEY, Date.now());
+      return models;
+    } catch (err) {
+      console.warn('Failed to fetch image models:', err);
+      const cached = await DB.getSetting(CACHE_KEY, null);
+      if (cached) return cached;
+      return FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
+    }
+  }
+
+  // Fallback lists used only when API is unreachable and no cache exists
+  const FALLBACK_TEXT_MODELS = [
+    'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano',
+    'chatgpt-4o-latest', 'gpt-4.5-preview',
+    'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
+    'claude-3-opus-20240229', 'claude-3-haiku-20240307',
+    'deepseek-chat', 'deepseek-reasoner',
+    'gemini-2.0-flash', 'gemini-2.5-pro-preview-05-06',
+    'gemini-1.5-pro', 'gemini-1.5-flash',
+    'llama-3.3-70b', 'llama-3.1-405b',
+    'mistral-large-latest', 'mistral-small-latest',
+    'grok-2', 'grok-2-mini',
+    'qwen-2.5-72b-instruct', 'qwen-2.5-coder-32b-instruct',
+    'command-r-plus', 'command-r',
+    'yi-large', 'phi-4',
+  ];
+
+  const FALLBACK_IMAGE_MODELS = [
+    'gpt-image-1', 'dall-e-3', 'gpt-4o-image',
+    'flux-pro', 'flux-kontext', 'flux-schnell',
+    'stable-diffusion-xl', 'stable-diffusion-3',
+    'hidream', 'midjourney',
+  ];
+
   return {
     chatCompletion,
     chatCompletionStream,
@@ -264,6 +367,10 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     getApiKey,
     getModel,
     getModelParams,
+    fetchTextModels,
+    fetchImageModels,
+    FALLBACK_TEXT_MODELS,
+    FALLBACK_IMAGE_MODELS,
     BASE_URL,
   };
 })();

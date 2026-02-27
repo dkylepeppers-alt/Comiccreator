@@ -1,7 +1,13 @@
 /**
  * Settings Page
+ * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
+  // In-memory model lists populated on render
+  let textModels = [];
+  let imageModels = [];
+  let textModelsLoading = false;
+  let imageModelsLoading = false;
 
   async function render() {
     const apiKey = await DB.getSetting('apiKey', '');
@@ -12,18 +18,6 @@ const SettingsPage = (() => {
     const maxTokens = await DB.getSetting('maxTokens', 2048);
     const enableImages = await DB.getSetting('enableImages', true);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
-
-    const models = [
-      'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano',
-      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
-      'deepseek-chat', 'deepseek-reasoner',
-      'gemini-2.0-flash', 'gemini-2.5-pro-preview-05-06',
-      'llama-3.3-70b', 'mistral-large-latest',
-    ];
-
-    const imageModels = [
-      'gpt-image-1', 'dall-e-3', 'flux-1.1-pro', 'stable-diffusion-xl',
-    ];
 
     return `
       <div class="slide-up">
@@ -38,19 +32,50 @@ const SettingsPage = (() => {
             <div class="form-hint">Get your key from <a href="https://nano-gpt.com" target="_blank">nano-gpt.com</a></div>
           </div>
 
+          <!-- Text Model Picker -->
           <div class="form-group">
             <label class="form-label">Text Model</label>
-            <select id="set-model">
-              ${models.map(m => `<option value="${m}" ${model === m ? 'selected' : ''}>${m}</option>`).join('')}
-            </select>
-            <div class="form-hint">Model used for story generation</div>
+            <div class="model-picker" id="text-model-picker">
+              <div class="model-picker-selected" onclick="SettingsPage.togglePicker('text')">
+                <span id="text-model-display">${escHtml(model)}</span>
+                <span class="model-picker-arrow">&#9662;</span>
+              </div>
+              <div class="model-picker-dropdown hidden" id="text-model-dropdown">
+                <div class="model-picker-search-wrap">
+                  <input type="text" class="model-picker-search" id="text-model-search" placeholder="Search 500+ models..." oninput="SettingsPage.filterModels('text', this.value)">
+                </div>
+                <div class="model-picker-status" id="text-model-status">Loading models...</div>
+                <div class="model-picker-list" id="text-model-list"></div>
+              </div>
+            </div>
+            <input type="hidden" id="set-model" value="${escHtml(model)}">
+            <div class="form-hint">
+              <span id="text-model-count">--</span> models available &middot;
+              <button class="btn-link" onclick="SettingsPage.refreshModels('text')">Refresh list</button>
+            </div>
           </div>
 
+          <!-- Image Model Picker -->
           <div class="form-group">
             <label class="form-label">Image Model</label>
-            <select id="set-imgmodel">
-              ${imageModels.map(m => `<option value="${m}" ${imageModel === m ? 'selected' : ''}>${m}</option>`).join('')}
-            </select>
+            <div class="model-picker" id="image-model-picker">
+              <div class="model-picker-selected" onclick="SettingsPage.togglePicker('image')">
+                <span id="image-model-display">${escHtml(imageModel)}</span>
+                <span class="model-picker-arrow">&#9662;</span>
+              </div>
+              <div class="model-picker-dropdown hidden" id="image-model-dropdown">
+                <div class="model-picker-search-wrap">
+                  <input type="text" class="model-picker-search" id="image-model-search" placeholder="Search image models..." oninput="SettingsPage.filterModels('image', this.value)">
+                </div>
+                <div class="model-picker-status" id="image-model-status">Loading models...</div>
+                <div class="model-picker-list" id="image-model-list"></div>
+              </div>
+            </div>
+            <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
+            <div class="form-hint">
+              <span id="image-model-count">--</span> models available &middot;
+              <button class="btn-link" onclick="SettingsPage.refreshModels('image')">Refresh list</button>
+            </div>
           </div>
 
           <div class="form-group">
@@ -124,6 +149,232 @@ const SettingsPage = (() => {
       </div>
     `;
   }
+
+  /**
+   * Called after the settings page HTML is in the DOM.
+   * Loads model lists asynchronously so the page renders instantly.
+   */
+  async function onMount() {
+    await Promise.all([
+      loadModels('text'),
+      loadModels('image'),
+    ]);
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', handleOutsideClick);
+  }
+
+  function onUnmount() {
+    document.removeEventListener('click', handleOutsideClick);
+  }
+
+  function handleOutsideClick(e) {
+    if (!e.target.closest('#text-model-picker')) closePicker('text');
+    if (!e.target.closest('#image-model-picker')) closePicker('image');
+  }
+
+  // --- Model Picker Logic ---
+
+  async function loadModels(type, forceRefresh = false) {
+    const statusEl = document.getElementById(`${type}-model-status`);
+    const countEl = document.getElementById(`${type}-model-count`);
+
+    if (statusEl) statusEl.textContent = 'Loading models...';
+    if (statusEl) statusEl.classList.remove('hidden');
+
+    try {
+      if (type === 'text') {
+        textModelsLoading = true;
+        textModels = await API.fetchTextModels(forceRefresh);
+        textModelsLoading = false;
+      } else {
+        imageModelsLoading = true;
+        imageModels = await API.fetchImageModels(forceRefresh);
+        imageModelsLoading = false;
+      }
+
+      const models = type === 'text' ? textModels : imageModels;
+      if (countEl) countEl.textContent = models.length;
+      if (statusEl) statusEl.classList.add('hidden');
+
+      renderModelList(type, models);
+    } catch (err) {
+      if (statusEl) statusEl.textContent = 'Failed to load models. Using fallback list.';
+      const fallback = type === 'text'
+        ? API.FALLBACK_TEXT_MODELS.map(id => ({ id, name: id, owned_by: '' }))
+        : API.FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
+
+      if (type === 'text') textModels = fallback;
+      else imageModels = fallback;
+
+      if (countEl) countEl.textContent = fallback.length;
+      renderModelList(type, fallback);
+    }
+  }
+
+  function renderModelList(type, models) {
+    const listEl = document.getElementById(`${type}-model-list`);
+    if (!listEl) return;
+
+    const currentValue = document.getElementById(type === 'text' ? 'set-model' : 'set-imgmodel')?.value || '';
+
+    // Group models by provider/owned_by
+    const groups = {};
+    for (const m of models) {
+      const provider = extractProvider(m);
+      if (!groups[provider]) groups[provider] = [];
+      groups[provider].push(m);
+    }
+
+    // Sort provider groups, putting popular ones first
+    const providerOrder = ['openai', 'anthropic', 'google', 'meta', 'x-ai', 'deepseek', 'mistral', 'qwen', 'alibaba'];
+    const sortedProviders = Object.keys(groups).sort((a, b) => {
+      const ai = providerOrder.indexOf(a.toLowerCase());
+      const bi = providerOrder.indexOf(b.toLowerCase());
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    let html = '';
+    for (const provider of sortedProviders) {
+      const providerModels = groups[provider];
+      html += `<div class="model-group">`;
+      html += `<div class="model-group-header">${escHtml(provider)} <span class="text-muted text-sm">(${providerModels.length})</span></div>`;
+      for (const m of providerModels) {
+        const isSelected = m.id === currentValue;
+        const details = buildModelDetails(m);
+        html += `<div class="model-option ${isSelected ? 'selected' : ''}" data-model-id="${escHtml(m.id)}" onclick="SettingsPage.selectModel('${type}', '${escHtml(m.id)}')">`;
+        html += `<div class="model-option-name">${escHtml(m.name || m.id)}</div>`;
+        if (m.name && m.name !== m.id) {
+          html += `<div class="model-option-id">${escHtml(m.id)}</div>`;
+        }
+        if (details) {
+          html += `<div class="model-option-details">${details}</div>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+
+    listEl.innerHTML = html || '<div class="model-picker-empty">No models found</div>';
+  }
+
+  function extractProvider(model) {
+    // Try owned_by first
+    if (model.owned_by) return model.owned_by;
+    // Try to extract from model id (e.g. "openai/gpt-4o" -> "openai")
+    const slashIdx = model.id.indexOf('/');
+    if (slashIdx > 0) return model.id.substring(0, slashIdx);
+    // Guess from common prefixes
+    const id = model.id.toLowerCase();
+    if (id.startsWith('gpt-') || id.startsWith('chatgpt') || id.startsWith('dall-e') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) return 'OpenAI';
+    if (id.startsWith('claude')) return 'Anthropic';
+    if (id.startsWith('gemini')) return 'Google';
+    if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
+    if (id.startsWith('mistral') || id.startsWith('codestral') || id.startsWith('pixtral')) return 'Mistral';
+    if (id.startsWith('deepseek')) return 'DeepSeek';
+    if (id.startsWith('grok')) return 'xAI';
+    if (id.startsWith('qwen')) return 'Qwen';
+    if (id.startsWith('command')) return 'Cohere';
+    if (id.startsWith('flux') || id.startsWith('schnell')) return 'Black Forest Labs';
+    if (id.startsWith('stable-diffusion') || id.startsWith('sdxl') || id.startsWith('sd3')) return 'Stability AI';
+    if (id.startsWith('yi-')) return '01.AI';
+    if (id.startsWith('phi-')) return 'Microsoft';
+    if (id.startsWith('nova-') || id.startsWith('amazon')) return 'Amazon';
+    if (id.startsWith('glm')) return 'Zhipu';
+    if (id.startsWith('kimi')) return 'Moonshot';
+    if (id.startsWith('hidream')) return 'HiDream';
+    if (id.startsWith('midjourney')) return 'Midjourney';
+    return 'Other';
+  }
+
+  function buildModelDetails(m) {
+    const parts = [];
+    if (m.context_length) parts.push(`${(m.context_length / 1000).toFixed(0)}K ctx`);
+    if (m.supports_vision) parts.push('vision');
+    if (m.supports_tools) parts.push('tools');
+    if (m.supports_edit) parts.push('edit');
+    if (m.pricing) {
+      if (typeof m.pricing === 'object') {
+        if (m.pricing.prompt) parts.push(`$${m.pricing.prompt}/1K in`);
+      } else if (typeof m.pricing === 'string') {
+        parts.push(m.pricing);
+      }
+    }
+    return parts.length > 0 ? parts.join(' &middot; ') : '';
+  }
+
+  function togglePicker(type) {
+    const dropdown = document.getElementById(`${type}-model-dropdown`);
+    const isOpen = !dropdown.classList.contains('hidden');
+    // Close the other picker
+    closePicker(type === 'text' ? 'image' : 'text');
+    if (isOpen) {
+      dropdown.classList.add('hidden');
+    } else {
+      dropdown.classList.remove('hidden');
+      const search = document.getElementById(`${type}-model-search`);
+      if (search) { search.value = ''; search.focus(); }
+      // Reset filter
+      filterModels(type, '');
+    }
+  }
+
+  function closePicker(type) {
+    const dropdown = document.getElementById(`${type}-model-dropdown`);
+    if (dropdown) dropdown.classList.add('hidden');
+  }
+
+  function filterModels(type, query) {
+    const models = type === 'text' ? textModels : imageModels;
+    const q = query.toLowerCase().trim();
+    if (!q) {
+      renderModelList(type, models);
+      return;
+    }
+    const filtered = models.filter(m => {
+      const searchStr = `${m.id} ${m.name || ''} ${m.owned_by || ''}`.toLowerCase();
+      return searchStr.includes(q);
+    });
+    renderModelList(type, filtered);
+
+    // Update status if no results
+    const statusEl = document.getElementById(`${type}-model-status`);
+    if (filtered.length === 0 && statusEl) {
+      statusEl.textContent = `No models matching "${query}"`;
+      statusEl.classList.remove('hidden');
+    } else if (statusEl) {
+      statusEl.classList.add('hidden');
+    }
+  }
+
+  function selectModel(type, modelId) {
+    if (type === 'text') {
+      document.getElementById('set-model').value = modelId;
+      document.getElementById('text-model-display').textContent = modelId;
+    } else {
+      document.getElementById('set-imgmodel').value = modelId;
+      document.getElementById('image-model-display').textContent = modelId;
+    }
+    closePicker(type);
+
+    // Update selected state in the list
+    const listEl = document.getElementById(`${type}-model-list`);
+    if (listEl) {
+      listEl.querySelectorAll('.model-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.modelId === modelId);
+      });
+    }
+  }
+
+  async function refreshModels(type) {
+    App.toast(`Refreshing ${type} model list...`, 'info');
+    await loadModels(type, true);
+    App.toast(`${type === 'text' ? 'Text' : 'Image'} models refreshed!`, 'success');
+  }
+
+  // --- Save / Export / Import / Clear ---
 
   async function save() {
     const apiKey = document.getElementById('set-apikey').value.trim();
@@ -204,5 +455,8 @@ const SettingsPage = (() => {
     App.refreshPage();
   }
 
-  return { render, save, exportData, importData, clearData, confirmClear };
+  return {
+    render, onMount, onUnmount, save, exportData, importData, clearData, confirmClear,
+    togglePicker, closePicker, filterModels, selectModel, refreshModels,
+  };
 })();

@@ -93,11 +93,19 @@ const App = (() => {
     document.getElementById('sidebar-overlay').classList.add('hidden');
   }
 
+  let previousPageModule = null;
+
   async function navigate(page, param = null) {
     if (!pages[page]) return;
 
+    // Call onUnmount on the previous page if it has one
+    if (previousPageModule && typeof previousPageModule.onUnmount === 'function') {
+      try { previousPageModule.onUnmount(); } catch (e) { console.warn('onUnmount error:', e); }
+    }
+
     currentPage = page;
     currentParam = param;
+    previousPageModule = pages[page];
 
     // Update URL hash
     window.location.hash = page;
@@ -119,6 +127,11 @@ const App = (() => {
       const html = await pages[page].render(param);
       content.innerHTML = html;
       content.scrollTop = 0;
+
+      // Call onMount after DOM is updated, if the page module supports it
+      if (typeof pages[page].onMount === 'function') {
+        await pages[page].onMount(param);
+      }
     } catch (err) {
       console.error('Page render error:', err);
       content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">&#9888;</div><div class="empty-state-text">Error loading page: ${escHtml(err.message)}</div></div>`;
