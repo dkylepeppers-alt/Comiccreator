@@ -139,7 +139,7 @@ const API = (() => {
       model: options.model || imageModel,
       prompt,
       size: options.size || '1024x1024',
-      response_format: 'url',
+      response_format: 'b64_json',
     };
 
     const res = await fetch(`${BASE_URL}/images/generations`, {
@@ -153,7 +153,7 @@ const API = (() => {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Image API error: ${res.status}`);
+      throw new Error(err.error?.message || err.message || `Image API error: ${res.status}`);
     }
 
     const data = await res.json();
