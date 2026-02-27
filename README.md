@@ -55,10 +55,11 @@ curl -fsSL https://raw.githubusercontent.com/dkylepeppers-alt/Comiccreator/maste
 ```
 
 The installer will:
-- Install `git` and `python3` via `pkg` if they are missing
+- Install `git` and `python` via `pkg` if they are missing (the `python` package provides the `python3` binary in Termux)
 - Clone the repository to `~/Comiccreator`
 - Make all scripts executable
 - Offer to start the server immediately
+- If the repository already exists at `~/Comiccreator`, run `update.sh` automatically instead of cloning again
 
 #### Manual install
 
@@ -76,6 +77,13 @@ chmod +x server.sh
 ```
 
 The server starts on **http://localhost:8080** by default. Open this URL in Chrome or Brave on your device. The server also displays your LAN IP (`http://192.168.x.x:8080`) for connecting from other devices on the same network.
+
+`server.sh` has several built-in improvements:
+
+- **Port conflict detection** — if the requested port is already in use, the script exits with a clear error instead of silently failing
+- **Auto icon generation** — if `icons/icon-192.png` or `icons/icon-512.png` are missing, the script generates minimal placeholder PNGs automatically using Python
+- **Multiple server fallbacks** — tries `python3`, `python`, `npx serve`, `php`, and `busybox httpd` in order, so it works in any environment where at least one of these is available
+- **Network binding** — binds to `0.0.0.0` so the app is reachable from other devices on the same network via the displayed LAN IP
 
 **Custom port:**
 ```bash
@@ -118,6 +126,7 @@ chmod +x update.sh
 ```
 
 The script will:
+- Auto-detect the default branch (`master` or `main`) so you don't need to specify it
 - Fetch the latest changes from GitHub
 - Stash any local modifications and restore them after updating
 - Invalidate the service worker cache so your browser loads the new version
@@ -341,7 +350,7 @@ Requires a browser with support for:
 
 **Every merge to `master` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
 
-For each merge, update **both** of these files:
+For each merge, update **all three** of these files:
 
 1. **`version.json`** — increment the version number and update the date:
    ```json
@@ -356,10 +365,15 @@ For each merge, update **both** of these files:
    const CACHE_NAME = 'comic-creator-v1.4.0';
    ```
 
+3. **`js/pages/settings.js`** — set `APP_VERSION` to match the new version:
+   ```js
+   const APP_VERSION = '1.4.0';
+   ```
+
 > **Versioning convention:** Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 > Increment `PATCH` for bug fixes, `MINOR` for new features, `MAJOR` for breaking changes.
 
-Keeping `CACHE_NAME` in sync with `version.json` lets `update.sh` set the correct cache name after `git pull`, which forces browsers to load the updated app shell.
+Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` lets `update.sh` set the correct cache name after `git pull`, which forces browsers to load the updated app shell, and ensures the Settings page displays the correct version number.
 
 ---
 
