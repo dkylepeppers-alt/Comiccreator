@@ -473,48 +473,47 @@ const CreatePage = (() => {
       // Add assistant response to conversation
       state.conversationHistory.push({ role: 'assistant', content: fullText });
 
-      // Generate images if enabled
+      // Generate images if enabled — all panels in parallel
       const enableImages = await DB.getSetting('enableImages', true);
       if (enableImages) {
         const imageSize = await DB.getSetting('imageSize', '1024x1024');
-        for (const panel of pageData.panels) {
-          if (panel.imagePrompt) {
-            try {
-              const imageOpts = { size: imageSize };
-              if (state.referenceImages.length === 1) {
-                imageOpts.imageDataUrl = state.referenceImages[0];
-              } else if (state.referenceImages.length > 1) {
-                imageOpts.imageDataUrls = state.referenceImages;
-              }
-              const imageData = await API.generateImage(panel.imagePrompt, imageOpts);
-              if (imageData) {
-                if (imageData.startsWith('http')) {
-                  // URL response — try to fetch for offline storage
-                  try {
-                    const resp = await fetch(imageData);
-                    const blob = await resp.blob();
-                    panel.imageUrl = await new Promise((resolve) => {
-                      const reader = new FileReader();
-                      reader.onload = () => resolve(reader.result);
-                      reader.readAsDataURL(blob);
-                    });
-                  } catch {
-                    panel.imageUrl = imageData; // fallback to direct URL
-                  }
-                } else if (imageData.startsWith('data:')) {
-                  // Already a complete data URL
-                  panel.imageUrl = imageData;
-                } else {
-                  // Raw base64 — convert to data URL for storage
-                  panel.imageUrl = `data:image/png;base64,${imageData}`;
-                }
-              }
-            } catch (imgErr) {
-              console.warn('Image generation failed for panel:', imgErr);
-              App.toast(`Panel image failed: ${imgErr.message}`, 'error');
-            }
-          }
+        const imageOpts = { size: imageSize };
+        if (state.referenceImages.length === 1) {
+          imageOpts.imageDataUrl = state.referenceImages[0];
+        } else if (state.referenceImages.length > 1) {
+          imageOpts.imageDataUrls = state.referenceImages;
         }
+        await Promise.all(pageData.panels.map(async (panel) => {
+          if (!panel.imagePrompt) return;
+          try {
+            const imageData = await API.generateImage(panel.imagePrompt, imageOpts);
+            if (imageData) {
+              if (imageData.startsWith('http')) {
+                // URL response — try to fetch for offline storage
+                try {
+                  const resp = await fetch(imageData);
+                  const blob = await resp.blob();
+                  panel.imageUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                  });
+                } catch {
+                  panel.imageUrl = imageData; // fallback to direct URL
+                }
+              } else if (imageData.startsWith('data:')) {
+                // Already a complete data URL
+                panel.imageUrl = imageData;
+              } else {
+                // Raw base64 — convert to data URL for storage
+                panel.imageUrl = `data:image/png;base64,${imageData}`;
+              }
+            }
+          } catch (imgErr) {
+            console.warn('Image generation failed for panel:', imgErr);
+            App.toast(`Panel image failed: ${imgErr.message}`, 'error');
+          }
+        }));
       }
 
       // Save page
