@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate Icons</title></head>
+<body>
+<p>Open this file in a browser to generate PNG icons, then right-click to save them.</p>
+<canvas id="c192" width="192" height="192"></canvas>
+<canvas id="c512" width="512" height="512"></canvas>
+<script>
+function drawIcon(canvas) {
+  const ctx = canvas.getContext('2d');
+  const s = canvas.width;
+  const scale = s / 512;
+
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, s, s);
+  grad.addColorStop(0, '#7c3aed');
+  grad.addColorStop(1, '#c084fc');
+  ctx.fillStyle = grad;
+  roundRect(ctx, 0, 0, s, s, 96 * scale);
+  ctx.fill();
+
+  // White page
+  ctx.fillStyle = '#fff';
+  roundRect(ctx, 96*scale, 80*scale, 320*scale, 352*scale, 16*scale);
+  ctx.fill();
+
+  // Panel borders
+  ctx.strokeStyle = '#1a1a3e';
+  ctx.lineWidth = 6 * scale;
+  roundRect(ctx, 112*scale, 96*scale, 288*scale, 320*scale, 8*scale);
+  ctx.stroke();
+
+  // Panel dividers
+  ctx.lineWidth = 4 * scale;
+  ctx.beginPath();
+  ctx.moveTo(256*scale, 96*scale);
+  ctx.lineTo(256*scale, 256*scale);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(112*scale, 256*scale);
+  ctx.lineTo(400*scale, 256*scale);
+  ctx.stroke();
+
+  // AI text
+  ctx.fillStyle = '#7c3aed';
+  ctx.font = `bold ${48*scale}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('AI', 328*scale, 192*scale);
+
+  // Star
+  ctx.font = `${40*scale}px sans-serif`;
+  ctx.fillText('\u2605', 184*scale, 188*scale);
+
+  // POW!
+  ctx.fillStyle = '#1a1a3e';
+  ctx.font = `bold ${24*scale}px sans-serif`;
+  ctx.fillText('POW!', 328*scale, 344*scale);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+drawIcon(document.getElementById('c192'));
+drawIcon(document.getElementById('c512'));
+
+// Auto-download
+['c192','c512'].forEach(id => {
+  const canvas = document.getElementById(id);
+  const link = document.createElement('a');
+  link.download = `icon-${canvas.width}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+</script>
+</body>
+</html>

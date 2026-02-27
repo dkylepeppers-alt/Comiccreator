@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a1a">
+  <meta name="description" content="AI Comic Creator - Generate unique comic books with AI-powered artwork and narratives">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Comic Creator">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>AI Comic Creator</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top Bar -->
+    <header id="topbar">
+      <button id="menu-btn" aria-label="Menu">&#9776;</button>
+      <h1 id="page-title">AI Comic Creator</h1>
+      <button id="settings-btn" aria-label="Settings">&#9881;</button>
+    </header>
+
+    <!-- Side Navigation -->
+    <nav id="sidebar" class="closed">
+      <div class="sidebar-header">
+        <span class="logo-text">Comic Creator</span>
+        <button id="sidebar-close" aria-label="Close menu">&times;</button>
+      </div>
+      <ul class="nav-list">
+        <li><a href="#" data-page="home" class="nav-link active">Home</a></li>
+        <li><a href="#" data-page="characters" class="nav-link">Character Builder</a></li>
+        <li><a href="#" data-page="worlds" class="nav-link">World Builder</a></li>
+        <li><a href="#" data-page="create" class="nav-link">Create Comic</a></li>
+        <li><a href="#" data-page="library" class="nav-link">My Comics</a></li>
+        <li><a href="#" data-page="presets" class="nav-link">Prompt Presets</a></li>
+        <li><a href="#" data-page="settings" class="nav-link">Settings</a></li>
+      </ul>
+      <div class="sidebar-footer">
+        <small>v1.0.0 &middot; PWA</small>
+      </div>
+    </nav>
+    <div id="sidebar-overlay" class="hidden"></div>
+
+    <!-- Main Content Area -->
+    <main id="content">
+      <!-- Pages are rendered dynamically by JS -->
+    </main>
+
+    <!-- Bottom Navigation (mobile) -->
+    <nav id="bottomnav">
+      <button data-page="home" class="bnav-btn active" aria-label="Home">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+        <span>Home</span>
+      </button>
+      <button data-page="characters" class="bnav-btn" aria-label="Characters">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Characters</span>
+      </button>
+      <button data-page="create" class="bnav-btn create-btn" aria-label="Create">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Create</span>
+      </button>
+      <button data-page="worlds" class="bnav-btn" aria-label="Worlds">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span>Worlds</span>
+      </button>
+      <button data-page="library" class="bnav-btn" aria-label="Library">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        <span>Library</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Modal Container -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal-content"></div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/db.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/pages/home.js"></script>
+  <script src="js/pages/characters.js"></script>
+  <script src="js/pages/worlds.js"></script>
+  <script src="js/pages/create.js"></script>
+  <script src="js/pages/library.js"></script>
+  <script src="js/pages/presets.js"></script>
+  <script src="js/pages/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
