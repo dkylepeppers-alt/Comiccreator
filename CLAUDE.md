@@ -41,7 +41,7 @@ There are no automated tests, linters, or CI checks. Always validate changes man
 
 ## Version Management
 
-**Every merge to `master` must bump both of these files:**
+**Every merge to `master` must bump ALL THREE of these files — no exceptions:**
 
 1. **`version.json`** — increment the version (semver `MAJOR.MINOR.PATCH`) and update `updated`:
    ```json
@@ -51,8 +51,14 @@ There are no automated tests, linters, or CI checks. Always validate changes man
    ```js
    const CACHE_NAME = 'comic-creator-v1.3.0';
    ```
+3. **`js/pages/settings.js`** — set `APP_VERSION` to the new version:
+   ```js
+   const APP_VERSION = '1.3.0';
+   ```
 
 `CACHE_NAME` must always equal `'comic-creator-v' + version.json.version`. This allows `update.sh` to correctly write the matching cache name after `git pull`, forcing users' browsers to load the updated app shell.
+
+`APP_VERSION` must always equal `version.json.version`. A mismatch causes the Settings page to display the wrong version number and the update checker to produce false "Update available" results.
 
 ## Architecture
 
@@ -120,8 +126,8 @@ IndexedDB database: `ComicCreatorDB`, version `1`. Six object stores:
 ```
 index.html              (97 lines)   App shell — topbar, sidebar nav, bottom nav, modal, toast container, script tags
 manifest.json           (32 lines)   PWA manifest — standalone, portrait, dark theme (#0a0a1a)
-sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v4', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
-version.json            (4 lines)    {"version":"1.2.0","updated":"2026-02-27"}
+sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v1.3.0', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
+version.json            (4 lines)    {"version":"1.3.0","updated":"2026-02-27"}
 server.sh               (111 lines)  Termux dev server launcher (auto-detects python3/npx/php/busybox)
 update.sh               (172 lines)  Termux update script (git pull + sw cache bust)
 generate-icons.html                  Browser utility to generate PWA PNG icons from the SVG
@@ -135,7 +141,7 @@ js/pages/worlds.js      (213 lines)  World CRUD — list, create/edit form, mult
 js/pages/create.js      (576 lines)  Comic generation engine — setup wizard, SSE streaming, panel rendering, branching choices
 js/pages/library.js     (239 lines)  Comic viewer — list, page reader, PDF export (opens print dialog with styled HTML)
 js/pages/presets.js     (208 lines)  Preset editor — list, create/edit form, sampler parameter sliders
-js/pages/settings.js    (591 lines)  Settings — API key, model selection modal, image config, sampler defaults, data export/import/clear, update checker
+js/pages/settings.js    (702 lines)  Settings — API key, model selection modal, image config, sampler defaults, data export/import/clear, update checker
 icons/                               icon.svg, icon-192.png, icon-512.png
 ```
 

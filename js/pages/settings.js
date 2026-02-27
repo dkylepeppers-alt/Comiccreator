@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.3.0';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render
@@ -561,6 +561,18 @@ const SettingsPage = (() => {
     const repo = (repoInput?.value || '').trim() || DEFAULT_UPDATE_REPO;
     await DB.setSetting('updateRepo', repo);
 
+    // Resolve the actual installed version from local version.json so the check
+    // stays accurate even after update.sh updates version.json without reloading
+    // the page (avoids stale hardcoded APP_VERSION constant causing false positives).
+    let localVersion = APP_VERSION;
+    try {
+      const localRes = await fetch(`/version.json?_=${Date.now()}`);
+      if (localRes.ok) {
+        const localData = await localRes.json();
+        if (localData.version) localVersion = localData.version;
+      }
+    } catch (_) { /* fall back to hardcoded APP_VERSION */ }
+
     try {
       const url = `https://raw.githubusercontent.com/${repo}/master/version.json?_=${Date.now()}`;
       const res = await fetch(url);
@@ -569,18 +581,18 @@ const SettingsPage = (() => {
 
       if (!remote.version) throw new Error('Invalid version data');
 
-      const cmp = compareVersions(remote.version, APP_VERSION);
+      const cmp = compareVersions(remote.version, localVersion);
       if (cmp > 0) {
         statusEl.innerHTML = `
           <div style="padding:10px;border-radius:8px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);">
             <p class="text-sm" style="color:#ffc107;margin:0 0 4px 0;"><strong>Update available: v${escHtml(remote.version)}</strong></p>
-            <p class="text-sm text-muted" style="margin:0;">You have v${APP_VERSION}. Run <code>./update.sh</code> in Termux to update.</p>
+            <p class="text-sm text-muted" style="margin:0;">You have v${escHtml(localVersion)}. Run <code>./update.sh</code> in Termux to update.</p>
           </div>`;
         App.toast(`Update available: v${remote.version}`, 'info');
       } else {
         statusEl.innerHTML = `
           <div style="padding:10px;border-radius:8px;background:rgba(76,175,80,0.15);border:1px solid rgba(76,175,80,0.3);">
-            <p class="text-sm" style="color:#4caf50;margin:0;"><strong>You're up to date! (v${APP_VERSION})</strong></p>
+            <p class="text-sm" style="color:#4caf50;margin:0;"><strong>You're up to date! (v${escHtml(localVersion)})</strong></p>
           </div>`;
         App.toast('You\'re running the latest version!', 'success');
       }
