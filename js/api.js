@@ -139,8 +139,15 @@ const API = (() => {
       model: options.model || imageModel,
       prompt,
       size: options.size || '1024x1024',
-      response_format: 'b64_json',
     };
+
+    // Add reference images for image-to-image models
+    if (options.imageDataUrl) {
+      body.imageDataUrl = options.imageDataUrl;
+    }
+    if (options.imageDataUrls?.length > 0) {
+      body.imageDataUrls = options.imageDataUrls;
+    }
 
     const res = await fetch(`${BASE_URL}/images/generations`, {
       method: 'POST',
@@ -153,11 +160,15 @@ const API = (() => {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || err.message || `Image API error: ${res.status}`);
+      const msg = err.error?.message || err.message || `Image API error: ${res.status} ${res.statusText}`;
+      console.error('Image generation error:', res.status, err);
+      throw new Error(msg);
     }
 
     const data = await res.json();
-    return data.data?.[0]?.url || data.data?.[0]?.b64_json;
+    const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+    if (!result) throw new Error('No image data in API response');
+    return result;
   }
 
   /**
@@ -188,7 +199,7 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene in detail (for AI art generation)
+- A vivid imagePrompt describing the visual scene in detail (for AI art generation). Include each character's physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 

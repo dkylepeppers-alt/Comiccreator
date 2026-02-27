@@ -14,6 +14,7 @@ const CreatePage = (() => {
     storyPrompt: '',
     pages: [],
     conversationHistory: [],
+    referenceImages: [],
     isGenerating: false,
   };
 
@@ -195,7 +196,7 @@ const CreatePage = (() => {
         </div>
 
         <!-- Render current page panels -->
-        <div class="comic-page" id="comic-display">
+        <div class="comic-page${currentPage?.panels?.length >= 3 ? ' layout-grid' : ''}" id="comic-display">
           ${currentPage ? renderComicPage(currentPage) : '<p class="text-muted text-center">No content yet</p>'}
         </div>
 
@@ -351,6 +352,21 @@ const CreatePage = (() => {
     }
     const world = state.selectedWorld ? await DB.get(DB.STORES.worlds, state.selectedWorld) : null;
 
+    // Collect reference images for image-to-image generation
+    const useRefImages = await DB.getSetting('useRefImages', true);
+    const refImages = [];
+    if (useRefImages) {
+      for (const c of characters) {
+        if (c.imageData) refImages.push(c.imageData);
+      }
+      if (world?.images) {
+        for (const img of world.images) {
+          if (img) refImages.push(img);
+        }
+      }
+    }
+    state.referenceImages = refImages;
+
     let presetData = null;
     if (state.selectedPreset) {
       presetData = await DB.get(DB.STORES.presets, state.selectedPreset);
@@ -401,8 +417,22 @@ const CreatePage = (() => {
     await generatePage(presetData);
   }
 
+  /**
+   * Trim conversation history to prevent payload overflow.
+   * Keeps system prompt, first user message, and the most recent exchanges.
+   */
+  function trimConversationHistory(maxExchanges = 6) {
+    if (state.conversationHistory.length <= 2 + maxExchanges * 2) return;
+    const system = state.conversationHistory[0];
+    const firstUser = state.conversationHistory[1];
+    const recent = state.conversationHistory.slice(-(maxExchanges * 2));
+    state.conversationHistory = [system, firstUser, ...recent];
+  }
+
   async function generatePage(presetData) {
     try {
+      trimConversationHistory();
+
       const options = {};
       if (state.overrideTemp != null) options.temperature = state.overrideTemp;
       if (state.overrideTopP != null) options.topP = state.overrideTopP;
@@ -450,7 +480,13 @@ const CreatePage = (() => {
         for (const panel of pageData.panels) {
           if (panel.imagePrompt) {
             try {
-              const imageData = await API.generateImage(panel.imagePrompt, { size: imageSize });
+              const imageOpts = { size: imageSize };
+              if (state.referenceImages.length === 1) {
+                imageOpts.imageDataUrl = state.referenceImages[0];
+              } else if (state.referenceImages.length > 1) {
+                imageOpts.imageDataUrls = state.referenceImages;
+              }
+              const imageData = await API.generateImage(panel.imagePrompt, imageOpts);
               if (imageData) {
                 if (imageData.startsWith('http')) {
                   // URL response — try to fetch for offline storage
@@ -465,8 +501,11 @@ const CreatePage = (() => {
                   } catch {
                     panel.imageUrl = imageData; // fallback to direct URL
                   }
+                } else if (imageData.startsWith('data:')) {
+                  // Already a complete data URL
+                  panel.imageUrl = imageData;
                 } else {
-                  // Base64 response — convert to data URL for storage
+                  // Raw base64 — convert to data URL for storage
                   panel.imageUrl = `data:image/png;base64,${imageData}`;
                 }
               }
@@ -567,6 +606,7 @@ const CreatePage = (() => {
       storyPrompt: '',
       pages: [],
       conversationHistory: [],
+      referenceImages: [],
       isGenerating: false,
     };
   }

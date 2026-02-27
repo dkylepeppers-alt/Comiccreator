@@ -395,6 +395,20 @@ img { max-width: 100%; display: block; }
   margin-bottom: 16px;
   box-shadow: var(--shadow);
 }
+.comic-page.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.comic-page.layout-grid .comic-panel:first-child {
+  grid-column: 1 / -1;
+}
+.comic-page.layout-grid .comic-panel:last-child:nth-child(even) {
+  grid-column: 1 / -1;
+}
+@media (max-width: 500px) {
+  .comic-page.layout-grid { grid-template-columns: 1fr; }
+}
 .comic-panel {
   background: var(--bg-input);
   border: 2px solid #333;

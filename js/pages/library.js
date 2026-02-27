@@ -77,10 +77,11 @@ const LibraryPage = (() => {
         <div id="comic-render-area">
           ${pages.map((p, i) => `
             <div class="card">
-              <div class="card-header">
+              <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
                 <span class="card-title">Page ${i + 1}${p.data?.title ? ': ' + escHtml(p.data.title) : ''}</span>
+                <button class="btn btn-sm btn-secondary" onclick="LibraryPage.downloadPageImage(${i})">&#128247; Save Image</button>
               </div>
-              <div class="comic-page">
+              <div class="comic-page${p.data?.panels?.length >= 3 ? ' layout-grid' : ''}">
                 ${renderPanels(p.data)}
               </div>
             </div>
@@ -204,6 +205,9 @@ const LibraryPage = (() => {
   .dialogue-bubble::after { content:''; position:absolute; bottom:-10px; left:24px; width:0; height:0; border-left:10px solid transparent; border-right:10px solid transparent; border-top:10px solid #000; }
   .speaker { font-weight: bold; font-size: 0.8rem; color: #555; margin-bottom: 4px; }
   .img-placeholder { background: #eee; padding: 30px; text-align: center; color: #999; font-style: italic; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+  .panels-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .panels-grid .panel:first-child { grid-column: 1 / -1; }
+  .panels-grid .panel:last-child:nth-child(even) { grid-column: 1 / -1; }
 </style>
 </head>
 <body>
@@ -216,6 +220,7 @@ const LibraryPage = (() => {
   ${pages.map((p, i) => `
     <div class="page-container">
       <div class="page-title">Page ${i + 1}${p.data?.title ? ': ' + escHtml(p.data.title) : ''}</div>
+      <div class="${(p.data?.panels?.length >= 3) ? 'panels-grid' : ''}">
       ${(p.data?.panels || []).map((panel, pi) => `
         <div class="panel">
           ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${pi+1}">` :
@@ -229,11 +234,172 @@ const LibraryPage = (() => {
           `).join('')}
         </div>
       `).join('')}
+      </div>
     </div>
   `).join('')}
 </body>
 </html>`;
   }
 
-  return { render, backToList, deleteComic, confirmDelete, exportPDF };
+  /**
+   * Render a comic page to Canvas and download as PNG image.
+   */
+  async function downloadPageImage(pageIdx) {
+    if (!viewingComicId) return;
+
+    const pages = await DB.getByIndex(DB.STORES.pages, 'comicId', viewingComicId);
+    pages.sort((a, b) => a.pageNum - b.pageNum);
+    const page = pages[pageIdx];
+    if (!page?.data) return App.toast('Page not found', 'error');
+
+    App.toast('Rendering page image...', 'info');
+    const panels = page.data.panels || [];
+    const W = 800;
+    const PAD = 16;
+    const panelW = W - PAD * 2;
+
+    // Pre-load all panel images
+    const loadedImages = await Promise.all(panels.map(p => {
+      if (!p.imageUrl) return Promise.resolve(null);
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = p.imageUrl;
+      });
+    }));
+
+    // Calculate total height
+    let totalH = PAD;
+    const panelHeights = panels.map((panel, i) => {
+      let h = 0;
+      const img = loadedImages[i];
+      if (img) {
+        h += panelW * (img.naturalHeight / img.naturalWidth);
+      } else {
+        h += 200;
+      }
+      if (panel.narration) h += 50;
+      if (panel.dialogue) h += panel.dialogue.length * 60;
+      return h + PAD;
+    });
+    totalH += panelHeights.reduce((a, b) => a + b, 0) + PAD;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = totalH;
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, totalH);
+
+    // Title
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 18px sans-serif';
+    const titleText = `Page ${pageIdx + 1}${page.data.title ? ': ' + page.data.title : ''}`;
+    ctx.fillText(titleText, PAD, PAD + 14, panelW);
+
+    let y = PAD + 30;
+
+    for (let i = 0; i < panels.length; i++) {
+      const panel = panels[i];
+      const img = loadedImages[i];
+      const x = PAD;
+
+      // Panel border
+      ctx.strokeStyle = '#333333';
+      ctx.lineWidth = 3;
+
+      if (img) {
+        const imgH = panelW * (img.naturalHeight / img.naturalWidth);
+        ctx.drawImage(img, x, y, panelW, imgH);
+        ctx.strokeRect(x, y, panelW, imgH);
+        y += imgH;
+      } else {
+        ctx.fillStyle = '#eeeeff';
+        ctx.fillRect(x, y, panelW, 200);
+        ctx.strokeRect(x, y, panelW, 200);
+        if (panel.imagePrompt) {
+          ctx.fillStyle = '#666688';
+          ctx.font = 'italic 13px sans-serif';
+          ctx.fillText(panel.imagePrompt.slice(0, 80) + '...', x + 16, y + 105, panelW - 32);
+        }
+        y += 200;
+      }
+
+      // Narration box
+      if (panel.narration) {
+        ctx.fillStyle = '#fffde7';
+        ctx.fillRect(x + 8, y + 4, panelW - 16, 40);
+        ctx.strokeStyle = '#e6d85e';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 8, y + 4, panelW - 16, 40);
+        ctx.fillStyle = '#333333';
+        ctx.font = 'italic 14px sans-serif';
+        ctx.fillText(panel.narration.slice(0, 100), x + 16, y + 28, panelW - 32);
+        y += 50;
+      }
+
+      // Dialogue bubbles
+      for (const d of (panel.dialogue || [])) {
+        const bx = x + 16, by = y + 4, bw = panelW - 32, bh = 48, r = 12;
+
+        // Rounded rect bubble
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(bx + r, by);
+        ctx.lineTo(bx + bw - r, by);
+        ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+        ctx.lineTo(bx + bw, by + bh - r);
+        ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+        ctx.lineTo(bx + r, by + bh);
+        ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+        ctx.lineTo(bx, by + r);
+        ctx.quadraticCurveTo(bx, by, bx + r, by);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Bubble tail
+        ctx.beginPath();
+        ctx.moveTo(bx + 20, by + bh);
+        ctx.lineTo(bx + 28, by + bh + 10);
+        ctx.lineTo(bx + 34, by + bh);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.stroke();
+
+        // Speaker name
+        ctx.fillStyle = '#555555';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(d.speaker, bx + 12, by + 16);
+
+        // Dialogue text
+        ctx.fillStyle = '#000000';
+        ctx.font = '13px sans-serif';
+        ctx.fillText(d.text.slice(0, 90), bx + 12, by + 36, bw - 24);
+
+        y += 60;
+      }
+
+      y += PAD;
+    }
+
+    // Export as PNG download
+    canvas.toBlob(blob => {
+      if (!blob) return App.toast('Failed to render image', 'error');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `page-${pageIdx + 1}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      App.toast('Page image downloaded!', 'success');
+    }, 'image/png');
+  }
+
+  return { render, backToList, deleteComic, confirmDelete, exportPDF, downloadPageImage };
 })();
