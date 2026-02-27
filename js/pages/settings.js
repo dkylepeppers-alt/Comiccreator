@@ -43,6 +43,7 @@ const SettingsPage = (() => {
             <label class="form-label">NanoGPT API Key *</label>
             <input type="password" id="set-apikey" value="${escHtml(apiKey)}" placeholder="Enter your NanoGPT API key">
             <div class="form-hint">Get your key from <a href="https://nano-gpt.com" target="_blank">nano-gpt.com</a></div>
+            <button class="btn btn-secondary btn-sm" id="test-conn-btn" onclick="SettingsPage.testConnection()" style="margin-top:8px;">Test Connection</button>
           </div>
 
           <!-- Text Model Picker -->
@@ -441,6 +442,46 @@ const SettingsPage = (() => {
     App.toast(`${type === 'text' ? 'Text' : 'Image'} models refreshed!`, 'success');
   }
 
+  // --- API Connection Test ---
+
+  async function testConnection() {
+    const apiKey = document.getElementById('set-apikey').value.trim();
+    if (!apiKey) return App.toast('Enter an API key first', 'error');
+
+    const btn = document.getElementById('test-conn-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Testing\u2026'; }
+
+    try {
+      const model = document.getElementById('set-model')?.value || 'gpt-4o-mini';
+      const res = await fetch(`${API.BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+          max_tokens: 10,
+          temperature: 0,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `API error ${res.status}`);
+      }
+
+      const data = await res.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || '(no reply)';
+      App.toast(`Connection OK \u2014 AI replied: \u201c${reply}\u201d`, 'success');
+    } catch (e) {
+      App.toast(`Connection failed: ${e.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Test Connection'; }
+    }
+  }
+
   // --- Save / Export / Import / Clear ---
 
   async function save() {
@@ -522,9 +563,9 @@ const SettingsPage = (() => {
     App.refreshPage();
   }
 
-  return { render, postRender, save, exportData, importData, clearData, confirmClear };
+  return { render, postRender, testConnection, save, exportData, importData, clearData, confirmClear };
   return {
-    render, onMount, onUnmount, save, exportData, importData, clearData, confirmClear,
+    render, onMount, onUnmount, testConnection, save, exportData, importData, clearData, confirmClear,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
   };
 })();
