@@ -256,47 +256,6 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
   }
 
   /**
-   * Fetch available text models from NanoGPT API
-   */
-  async function fetchTextModels() {
-    try {
-      const res = await fetch(`${BASE_URL}/v1/models`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.data && Array.isArray(data.data)) {
-        return data.data
-          .map(m => m.id)
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b));
-      }
-      return [];
-    } catch (e) {
-      console.warn('Failed to fetch text models:', e);
-      return [];
-    }
-  }
-
-  /**
-   * Fetch available image models from NanoGPT API
-   */
-  async function fetchImageModels() {
-    try {
-      const res = await fetch(`${BASE_URL}/v1/image-models`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.data && Array.isArray(data.data)) {
-        return data.data
-          .map(m => m.id)
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b));
-      }
-      return [];
-    } catch (e) {
-      console.warn('Failed to fetch image models:', e);
-      return [];
-    }
-  }
-
    * Fetch all available text/chat models from NanoGPT.
    * Endpoint does not require authentication.
    * Returns array of model objects with id, name, owned_by, etc.
