@@ -36,8 +36,23 @@ There are no automated tests, linters, or CI checks. Always validate changes man
 
 1. **Syntax check** — run `node --check <file.js>` on every JS file you modify. All 10 JS files currently pass.
 2. **Serve and load** — start the dev server, open `http://localhost:8080`, and confirm the app loads without console errors.
-3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` (currently `'comic-creator-v4'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
+3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` to match the new version (e.g. `'comic-creator-v1.3.0'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
 4. **Page navigation** — click through all 7 pages (Home, Characters, Worlds, Create, Library, Presets, Settings) to verify no render errors.
+
+## Version Management
+
+**Every merge to `master` must bump both of these files:**
+
+1. **`version.json`** — increment the version (semver `MAJOR.MINOR.PATCH`) and update `updated`:
+   ```json
+   { "version": "1.3.0", "updated": "2026-03-01" }
+   ```
+2. **`sw.js`** — set `CACHE_NAME` to `'comic-creator-v{new version}'`:
+   ```js
+   const CACHE_NAME = 'comic-creator-v1.3.0';
+   ```
+
+`CACHE_NAME` must always equal `'comic-creator-v' + version.json.version`. This allows `update.sh` to correctly write the matching cache name after `git pull`, forcing users' browsers to load the updated app shell.
 
 ## Architecture
 

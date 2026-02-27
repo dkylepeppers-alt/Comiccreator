@@ -144,19 +144,19 @@ if [ "$STASHED" = true ]; then
   fi
 fi
 
+# Show new version
+NEW_VERSION=$(get_version)
+
 # Bump service worker cache to force refresh
 SW_FILE="$DIR/sw.js"
 if [ -f "$SW_FILE" ]; then
-  TIMESTAMP=$(date +%s)
-  # Replace the CACHE_NAME value with a timestamped version
+  # Replace the CACHE_NAME value with one based on the new version number
   if grep -q "const CACHE_NAME" "$SW_FILE"; then
-    sed -i "s/const CACHE_NAME = '.*'/const CACHE_NAME = 'comic-creator-v4-${TIMESTAMP}'/" "$SW_FILE"
-    echo -e "${CYAN}[*] Service worker cache invalidated${NC}"
+    sed -i "s/const CACHE_NAME = '.*'/const CACHE_NAME = 'comic-creator-v${NEW_VERSION}'/" "$SW_FILE"
+    echo -e "${CYAN}[*] Service worker cache invalidated (comic-creator-v${NEW_VERSION})${NC}"
   fi
 fi
 
-# Show new version
-NEW_VERSION=$(get_version)
 echo ""
 echo -e "${GREEN}=================================="
 echo -e "  Update complete!"
