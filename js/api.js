@@ -128,6 +128,35 @@ const API = (() => {
   }
 
   /**
+   * Compress a base64 data URL to a smaller JPEG to avoid 413 payloads.
+   * Resizes so neither dimension exceeds maxDim, re-encodes as JPEG at given quality.
+   */
+  function compressDataUrl(dataUrl, maxDim = 768, quality = 0.75) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round(height * maxDim / width);
+            width = maxDim;
+          } else {
+            width = Math.round(width * maxDim / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(dataUrl); // fallback to original on error
+      img.src = dataUrl;
+    });
+  }
+
+  /**
    * Generate image via NanoGPT image API
    */
   async function generateImage(prompt, options = {}) {
@@ -141,12 +170,15 @@ const API = (() => {
       size: options.size || '1024x1024',
     };
 
-    // Add reference images for image-to-image models
+    // Add reference images for image-to-image models.
+    // Compress first to avoid 413 Request Entity Too Large errors.
+    // Cap at 3 images to keep payload manageable.
     if (options.imageDataUrl) {
-      body.imageDataUrl = options.imageDataUrl;
+      body.imageDataUrl = await compressDataUrl(options.imageDataUrl);
     }
     if (options.imageDataUrls?.length > 0) {
-      body.imageDataUrls = options.imageDataUrls;
+      const capped = options.imageDataUrls.slice(0, 3);
+      body.imageDataUrls = await Promise.all(capped.map(u => compressDataUrl(u)));
     }
 
     const res = await fetch(`${BASE_URL}/images/generations`, {
