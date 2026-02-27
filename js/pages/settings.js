@@ -13,7 +13,8 @@ const SettingsPage = (() => {
     const enableImages = await DB.getSetting('enableImages', true);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
 
-    const models = [
+    // Fallback models used when the API is unreachable
+    const fallbackTextModels = [
       'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano',
       'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
       'deepseek-chat', 'deepseek-reasoner',
@@ -21,7 +22,7 @@ const SettingsPage = (() => {
       'llama-3.3-70b', 'mistral-large-latest',
     ];
 
-    const imageModels = [
+    const fallbackImageModels = [
       'gpt-image-1', 'dall-e-3', 'flux-1.1-pro', 'stable-diffusion-xl',
     ];
 
@@ -41,16 +42,17 @@ const SettingsPage = (() => {
           <div class="form-group">
             <label class="form-label">Text Model</label>
             <select id="set-model">
-              ${models.map(m => `<option value="${m}" ${model === m ? 'selected' : ''}>${m}</option>`).join('')}
+              ${fallbackTextModels.map(m => `<option value="${m}" ${model === m ? 'selected' : ''}>${m}</option>`).join('')}
             </select>
-            <div class="form-hint">Model used for story generation</div>
+            <div class="form-hint">Model used for story generation &mdash; <span id="model-count"></span></div>
           </div>
 
           <div class="form-group">
             <label class="form-label">Image Model</label>
             <select id="set-imgmodel">
-              ${imageModels.map(m => `<option value="${m}" ${imageModel === m ? 'selected' : ''}>${m}</option>`).join('')}
+              ${fallbackImageModels.map(m => `<option value="${m}" ${imageModel === m ? 'selected' : ''}>${m}</option>`).join('')}
             </select>
+            <div class="form-hint">Model used for panel images &mdash; <span id="imgmodel-count"></span></div>
           </div>
 
           <div class="form-group">
@@ -123,6 +125,53 @@ const SettingsPage = (() => {
         </div>
       </div>
     `;
+  }
+
+  /**
+   * Called after the settings HTML is inserted into the DOM.
+   * Fetches the live model catalogues from NanoGPT and replaces the
+   * fallback options in each dropdown while preserving the user's
+   * current selection.
+   */
+  async function postRender() {
+    const modelSelect = document.getElementById('set-model');
+    const imgModelSelect = document.getElementById('set-imgmodel');
+    const modelCount = document.getElementById('model-count');
+    const imgModelCount = document.getElementById('imgmodel-count');
+
+    const currentModel = modelSelect?.value;
+    const currentImgModel = imgModelSelect?.value;
+
+    // Fetch both lists in parallel
+    const [textModels, imageModels] = await Promise.all([
+      API.fetchTextModels(),
+      API.fetchImageModels(),
+    ]);
+
+    if (textModels.length && modelSelect) {
+      // Ensure the user's current selection is in the list
+      const models = textModels.includes(currentModel)
+        ? textModels
+        : [currentModel, ...textModels];
+      modelSelect.innerHTML = models
+        .map(m => `<option value="${m}" ${m === currentModel ? 'selected' : ''}>${m}</option>`)
+        .join('');
+      if (modelCount) modelCount.textContent = `${textModels.length} models available`;
+    } else if (modelCount) {
+      modelCount.textContent = 'using cached list';
+    }
+
+    if (imageModels.length && imgModelSelect) {
+      const imgs = imageModels.includes(currentImgModel)
+        ? imageModels
+        : [currentImgModel, ...imageModels];
+      imgModelSelect.innerHTML = imgs
+        .map(m => `<option value="${m}" ${m === currentImgModel ? 'selected' : ''}>${m}</option>`)
+        .join('');
+      if (imgModelCount) imgModelCount.textContent = `${imageModels.length} models available`;
+    } else if (imgModelCount) {
+      imgModelCount.textContent = 'using cached list';
+    }
   }
 
   async function save() {
@@ -204,5 +253,5 @@ const SettingsPage = (() => {
     App.refreshPage();
   }
 
-  return { render, save, exportData, importData, clearData, confirmClear };
+  return { render, postRender, save, exportData, importData, clearData, confirmClear };
 })();

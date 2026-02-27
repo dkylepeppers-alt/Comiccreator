@@ -119,6 +119,11 @@ const App = (() => {
       const html = await pages[page].render(param);
       content.innerHTML = html;
       content.scrollTop = 0;
+
+      // Allow pages to run post-render logic (e.g. async model fetching)
+      if (typeof pages[page].postRender === 'function') {
+        pages[page].postRender(param);
+      }
     } catch (err) {
       console.error('Page render error:', err);
       content.innerHTML = `<div class="empty-state"><div class="empty-state-icon">&#9888;</div><div class="empty-state-text">Error loading page: ${escHtml(err.message)}</div></div>`;
