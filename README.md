@@ -328,14 +328,14 @@ For each merge, update **both** of these files:
 1. **`version.json`** — increment the version number and update the date:
    ```json
    {
-     "version": "1.3.0",
+     "version": "1.4.0",
      "updated": "2026-03-01"
    }
    ```
 
 2. **`sw.js`** — set `CACHE_NAME` to match the new version:
    ```js
-   const CACHE_NAME = 'comic-creator-v1.3.0';
+   const CACHE_NAME = 'comic-creator-v1.4.0';
    ```
 
 > **Versioning convention:** Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.

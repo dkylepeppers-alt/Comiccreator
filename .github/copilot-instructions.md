@@ -181,11 +181,11 @@ Settings keys used: `apiKey`, `model`, `imageModel`, `temperature`, `topP`, `max
 
 ## Service Worker Cache
 
-`sw.js` caches the app shell under `CACHE_NAME = 'comic-creator-v1.2.0'`. **Whenever you modify any cached asset** (any file listed in `STATIC_ASSETS`), bump the `CACHE_NAME` version string to match the new `version.json` version (e.g. `'comic-creator-v1.3.0'`) to force cache invalidation on existing installs.
+`sw.js` caches the app shell under `CACHE_NAME = 'comic-creator-v1.4.0'`. **Whenever you modify any cached asset** (any file listed in `STATIC_ASSETS`), bump the `CACHE_NAME` version string to match the new `version.json` version (e.g. `'comic-creator-v1.4.0'`) to force cache invalidation on existing installs.
 
 **Every merge to `master` must bump both of these files:**
 1. **`version.json`** — increment `version` (semver `MAJOR.MINOR.PATCH`) and update the `updated` date.
-2. **`sw.js`** — set `CACHE_NAME` to `'comic-creator-v{new version}'` (e.g. `'comic-creator-v1.3.0'`).
+2. **`sw.js`** — set `CACHE_NAME` to `'comic-creator-v{new version}'` (e.g. `'comic-creator-v1.4.0'`).
 
 `CACHE_NAME` must always equal `'comic-creator-v' + version.json.version`. This allows `update.sh` to correctly write the matching cache name after `git pull`, forcing users' browsers to load the updated app shell.
 

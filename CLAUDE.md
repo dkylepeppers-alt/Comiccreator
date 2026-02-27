@@ -36,7 +36,7 @@ There are no automated tests, linters, or CI checks. Always validate changes man
 
 1. **Syntax check** — run `node --check <file.js>` on every JS file you modify. All 10 JS files currently pass.
 2. **Serve and load** — start the dev server, open `http://localhost:8080`, and confirm the app loads without console errors.
-3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` to match the new version (e.g. `'comic-creator-v1.3.0'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
+3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` to match the new version (e.g. `'comic-creator-v1.4.0'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
 4. **Page navigation** — click through all 7 pages (Home, Characters, Worlds, Create, Library, Presets, Settings) to verify no render errors.
 
 ## Version Management
@@ -45,15 +45,15 @@ There are no automated tests, linters, or CI checks. Always validate changes man
 
 1. **`version.json`** — increment the version (semver `MAJOR.MINOR.PATCH`) and update `updated`:
    ```json
-   { "version": "1.3.0", "updated": "2026-03-01" }
+   { "version": "1.4.0", "updated": "2026-03-01" }
    ```
 2. **`sw.js`** — set `CACHE_NAME` to `'comic-creator-v{new version}'`:
    ```js
-   const CACHE_NAME = 'comic-creator-v1.3.0';
+   const CACHE_NAME = 'comic-creator-v1.4.0';
    ```
 3. **`js/pages/settings.js`** — set `APP_VERSION` to the new version:
    ```js
-   const APP_VERSION = '1.3.0';
+   const APP_VERSION = '1.4.0';
    ```
 
 `CACHE_NAME` must always equal `'comic-creator-v' + version.json.version`. This allows `update.sh` to correctly write the matching cache name after `git pull`, forcing users' browsers to load the updated app shell.
@@ -126,8 +126,8 @@ IndexedDB database: `ComicCreatorDB`, version `1`. Six object stores:
 ```
 index.html              (97 lines)   App shell — topbar, sidebar nav, bottom nav, modal, toast container, script tags
 manifest.json           (32 lines)   PWA manifest — standalone, portrait, dark theme (#0a0a1a)
-sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v1.3.0', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
-version.json            (4 lines)    {"version":"1.3.0","updated":"2026-02-27"}
+sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v1.4.0', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
+version.json            (4 lines)    {"version":"1.4.0","updated":"2026-02-27"}
 server.sh               (111 lines)  Termux dev server launcher (auto-detects python3/npx/php/busybox)
 update.sh               (172 lines)  Termux update script (git pull + sw cache bust)
 generate-icons.html                  Browser utility to generate PWA PNG icons from the SVG
