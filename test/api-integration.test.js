@@ -107,4 +107,41 @@ describe('API integration', () => {
     assert.ok(Array.isArray(fallback));
     assert.ok(fallback.length > 0);
   });
+
+  it('generateImage retries with safe size on 500 errors', async () => {
+    await ctx.DB.setSetting('imageModel', 'unstable-model');
+    const calls = [];
+    ctx.fetch = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return new Response('{}', { status: 500 });
+      return new Response(JSON.stringify({ data: [{ url: 'https://img.test/success.png' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene', { size: '1792x1024' });
+    assert.equal(result, 'https://img.test/success.png');
+    assert.deepEqual(calls.map(c => [c.model, c.size]), [
+      ['unstable-model', '1792x1024'],
+      ['unstable-model', '1024x1024'],
+    ]);
+  });
+
+  it('generateImage falls back to gpt-image-1 after repeated 500 errors', async () => {
+    await ctx.DB.setSetting('imageModel', 'unstable-model');
+    const calls = [];
+    ctx.fetch = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length < 3) return new Response('{}', { status: 500 });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'abcd' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene', { size: '1792x1024' });
+    assert.equal(result, 'abcd');
+    assert.deepEqual(calls.map(c => [c.model, c.size]), [
+      ['unstable-model', '1792x1024'],
+      ['unstable-model', '1024x1024'],
+      ['gpt-image-1', '1024x1024'],
+    ]);
+  });
 });

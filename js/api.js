@@ -245,33 +245,54 @@ const API = (() => {
       return generateImageWithEdit(prompt, modelId, options);
     }
 
-    // Standard text-to-image — no reference images in this path
-    const body = {
-      model: modelId,
-      prompt,
-      size: options.size || '1024x1024',
-    };
+    const imageSize = options.size || '1024x1024';
 
-    const res = await fetch(`${BASE_URL}/images/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    async function requestImage(model, size) {
+      const body = { model, prompt, size };
+      const res = await fetch(`${BASE_URL}/images/generations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const msg = err.error?.message || err.message || `Image API error: ${res.status} ${res.statusText}`;
-      console.error('Image generation error:', res.status, err);
-      throw new Error(msg);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const msg = err.error?.message || err.message || `Image API error: ${res.status} ${res.statusText}`;
+        console.error('Image generation error:', res.status, err);
+        const error = new Error(msg);
+        error.status = res.status;
+        throw error;
+      }
+
+      const data = await res.json();
+      const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+      if (!result) throw new Error('No image data in API response');
+      return result;
     }
 
-    const data = await res.json();
-    const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
-    if (!result) throw new Error('No image data in API response');
-    return result;
+    try {
+      return await requestImage(modelId, imageSize);
+    } catch (err) {
+      const isServerError = err?.status === 500 || /Image API error: 500/.test(err?.message || '');
+      if (!isServerError) throw err;
+
+      if (imageSize !== '1024x1024') {
+        try {
+          return await requestImage(modelId, '1024x1024');
+        } catch (sizeRetryErr) {
+          err = sizeRetryErr;
+        }
+      }
+
+      if (modelId !== 'gpt-image-1') {
+        return requestImage('gpt-image-1', '1024x1024');
+      }
+
+      throw err;
+    }
   }
 
   /**
