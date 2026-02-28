@@ -156,6 +156,26 @@ const DB = (() => {
     }
   }
 
+  async function dedupePresets() {
+    const all = await getAll(STORES.presets);
+    const sorted = [...all].sort((a, b) => (b?.updatedAt ?? b?.createdAt ?? 0) - (a?.updatedAt ?? a?.createdAt ?? 0));
+    const seen = new Set();
+    const unique = [];
+    for (const item of sorted) {
+      const key = ((item?.name || '').trim().toLowerCase()) || item?.id || '';
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    if (unique.length !== all.length) {
+      const keepIds = new Set(unique.map(p => p.id));
+      for (const row of all) {
+        if (!keepIds.has(row.id)) await del(STORES.presets, row.id);
+      }
+    }
+    return unique;
+  }
+
   return {
     open,
     STORES,
@@ -169,5 +189,6 @@ const DB = (() => {
     setSetting,
     fileToDataURL,
     seedDefaults,
+    dedupePresets,
   };
 })();

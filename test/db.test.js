@@ -89,4 +89,15 @@ describe('DB module', () => {
     const second = await DB.getAll(DB.STORES.presets);
     assert.equal(second.length, 3);
   });
+
+  it('dedupePresets removes older duplicates by name', async () => {
+    await DB.put(DB.STORES.presets, { id: 'old', name: 'Storm', createdAt: 1 });
+    await DB.put(DB.STORES.presets, { id: 'new', name: 'storm', updatedAt: 5 });
+    const deduped = await DB.dedupePresets();
+    assert.equal(deduped.length, 1);
+    assert.equal(deduped[0].id, 'new');
+    const rows = await DB.getAll(DB.STORES.presets);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, 'new');
+  });
 });
