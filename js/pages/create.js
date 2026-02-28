@@ -246,10 +246,32 @@ const CreatePage = (() => {
     state.comicId = comicId;
     state.title = comic.title;
     state.genre = comic.genre;
+    state.selectedCharacters = comic.characterIds || [];
+    state.selectedWorld = comic.worldId || null;
+    state.selectedPreset = comic.presetId || null;
     state.pages = pages.map(p => p.data);
     state.conversationHistory = comic.conversationHistory || [];
     state.step = 'reading';
     state.isGenerating = false;
+
+    // Restore reference images so continued generation maintains visual consistency
+    const useRefImages = await DB.getSetting('useRefImages', true);
+    const refImages = [];
+    if (useRefImages) {
+      for (const cid of state.selectedCharacters) {
+        const c = await DB.get(DB.STORES.characters, cid);
+        if (c?.imageData) refImages.push(c.imageData);
+      }
+      if (state.selectedWorld) {
+        const world = await DB.get(DB.STORES.worlds, state.selectedWorld);
+        if (world?.images) {
+          for (const img of world.images) {
+            if (img) refImages.push(img);
+          }
+        }
+      }
+    }
+    state.referenceImages = refImages;
 
     return renderReading();
   }
