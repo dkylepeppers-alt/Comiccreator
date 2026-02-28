@@ -4,6 +4,7 @@
  */
 const API = (() => {
   const BASE_URL = 'https://nano-gpt.com/api/v1';
+  const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
 
   async function getApiKey() {
     return DB.getSetting('apiKey', '');
@@ -227,7 +228,7 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+    const imageModel = await DB.getSetting('imageModel', DEFAULT_IMAGE_MODEL);
     const modelId = options.model || imageModel;
 
     // Check whether reference images can actually be used with this model
@@ -245,33 +246,54 @@ const API = (() => {
       return generateImageWithEdit(prompt, modelId, options);
     }
 
-    // Standard text-to-image — no reference images in this path
-    const body = {
-      model: modelId,
-      prompt,
-      size: options.size || '1024x1024',
-    };
+    const imageSize = options.size || '1024x1024';
 
-    const res = await fetch(`${BASE_URL}/images/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    async function requestImage(model, size) {
+      const body = { model, prompt, size };
+      const res = await fetch(`${BASE_URL}/images/generations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const msg = err.error?.message || err.message || `Image API error: ${res.status} ${res.statusText}`;
-      console.error('Image generation error:', res.status, err);
-      throw new Error(msg);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const msg = err.error?.message || err.message || `Image API error: ${res.status} ${res.statusText}`;
+        console.error('Image generation error:', res.status, err);
+        const error = new Error(msg);
+        error.status = res.status;
+        throw error;
+      }
+
+      const data = await res.json();
+      const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+      if (!result) throw new Error('No image data in API response');
+      return result;
     }
 
-    const data = await res.json();
-    const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
-    if (!result) throw new Error('No image data in API response');
-    return result;
+    try {
+      return await requestImage(modelId, imageSize);
+    } catch (err) {
+      if (err?.status !== 500) throw err;
+      let lastError = err;
+
+      if (imageSize !== '1024x1024') {
+        try {
+          return await requestImage(modelId, '1024x1024');
+        } catch (sizeRetryErr) {
+          lastError = sizeRetryErr;
+        }
+      }
+
+      if (modelId !== DEFAULT_IMAGE_MODEL) {
+        return requestImage(DEFAULT_IMAGE_MODEL, '1024x1024');
+      }
+
+      throw lastError;
+    }
   }
 
   /**
