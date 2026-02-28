@@ -14,7 +14,30 @@ function loadApiContext(fetchImpl) {
     crypto: globalThis.crypto || require('node:crypto').webcrypto,
     atob: globalThis.atob,
     Blob: globalThis.Blob,
+    FormData: globalThis.FormData,
     TextDecoder: globalThis.TextDecoder,
+    Image: class {
+      set src(_value) {
+        this.width = 256;
+        this.height = 256;
+        if (this.onload) this.onload();
+      }
+    },
+    document: {
+      createElement(tag) {
+        if (tag !== 'canvas') return {};
+        return {
+          width: 0,
+          height: 0,
+          getContext() {
+            return { drawImage() {} };
+          },
+          toDataURL() {
+            return 'data:image/jpeg;base64,aGVsbG8=';
+          },
+        };
+      },
+    },
     fetch: fetchImpl,
     console,
     Date,
@@ -143,5 +166,49 @@ describe('API integration', () => {
       ['unstable-model', '1024x1024'],
       ['gpt-image-1', '1024x1024'],
     ]);
+  });
+
+  it('generateImage sends reference images to /images/edits as multipart image fields', async () => {
+    await ctx.DB.setSetting('imageModel', 'edit-model');
+    const calls = [];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, opts });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'edited-img' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene', {
+      imageDataUrls: [
+        'data:image/png;base64,aGVsbG8=',
+        'data:image/png;base64,aGVsbG8=',
+      ],
+    });
+
+    assert.equal(result, 'edited-img');
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.endsWith('/images/edits'));
+    const body = calls[0].opts.body;
+    assert.equal(body.get('model'), 'edit-model');
+    assert.equal(body.get('prompt'), 'draw scene');
+    assert.equal(body.getAll('image').length, 2);
+  });
+
+  it('generateImage falls back to /images/generations when /images/edits fails', async () => {
+    await ctx.DB.setSetting('imageModel', 'mixed-model');
+    const calls = [];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, opts });
+      if (url.endsWith('/images/edits')) {
+        return new Response(JSON.stringify({ error: { message: 'unsupported' } }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ data: [{ url: 'https://img.test/fallback.png' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene', {
+      imageDataUrl: 'data:image/png;base64,aGVsbG8=',
+    });
+
+    assert.equal(result, 'https://img.test/fallback.png');
+    assert.ok(calls[0].url.endsWith('/images/edits'));
+    assert.ok(calls[1].url.endsWith('/images/generations'));
   });
 });
