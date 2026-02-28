@@ -40,7 +40,7 @@ const CreatePage = (() => {
   async function renderSetup() {
     const characters = await DB.getAll(DB.STORES.characters);
     const worlds = await DB.getAll(DB.STORES.worlds);
-    const presets = await DB.getAll(DB.STORES.presets);
+    const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
 
     return `
       <div class="slide-up">

@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { escHtml, timeAgo, getGenreEmoji, GENRES } = require('../js/utils');
+const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest } = require('../js/utils');
 
 describe('utils escHtml', () => {
   it('handles nullish and empty', () => {
@@ -53,5 +53,30 @@ describe('utils genres', () => {
       assert.ok(genre.name);
       assert.ok(genre.emoji);
     }
+  });
+});
+
+describe('utils dedupeByNameLatest', () => {
+  it('removes duplicate names and keeps the most recent entry', () => {
+    const items = [
+      { id: '1', name: 'Alpha', createdAt: 1 },
+      { id: '2', name: 'alpha', updatedAt: 10 },
+      { id: '3', name: 'Beta', createdAt: 5 },
+    ];
+    const result = dedupeByNameLatest(items);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].id, '2');
+    assert.equal(result[1].id, '3');
+  });
+
+  it('falls back to id when name is missing', () => {
+    const items = [
+      { id: 'x', name: '', createdAt: 1 },
+      { id: 'y', createdAt: 2 },
+    ];
+    const result = dedupeByNameLatest(items);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].id, 'y');
+    assert.equal(result[1].id, 'x');
   });
 });
