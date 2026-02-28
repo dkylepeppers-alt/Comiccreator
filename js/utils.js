@@ -39,8 +39,24 @@
     return g ? g.emoji : '&#128214;';
   }
 
+  // Deduplicate items by name (case-insensitive), keeping the most recently updated/created entry
+  function dedupeByNameLatest(list) {
+    if (!Array.isArray(list)) return [];
+    const sorted = [...list].sort((a, b) => (b?.updatedAt ?? b?.createdAt ?? 0) - (a?.updatedAt ?? a?.createdAt ?? 0));
+    const seen = new Set();
+    const unique = [];
+    for (const item of sorted) {
+      const key = ((item?.name || '').trim().toLowerCase()) || item?.id || '';
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item);
+    }
+    return unique;
+  }
+
   exports.GENRES = GENRES;
   exports.escHtml = escHtml;
   exports.timeAgo = timeAgo;
   exports.getGenreEmoji = getGenreEmoji;
+  exports.dedupeByNameLatest = dedupeByNameLatest;
 })(typeof module !== 'undefined' ? module.exports : this);

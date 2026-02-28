@@ -23,15 +23,7 @@ const PresetsPage = (() => {
   }
 
   async function renderList() {
-    const allPresets = await DB.getAll(DB.STORES.presets);
-    // Deduplicate by ID (defensive guard against DB anomalies)
-    const seen = new Set();
-    const presets = allPresets.filter(p => {
-      if (seen.has(p.id)) return false;
-      seen.add(p.id);
-      return true;
-    });
-    presets.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
 
     return `
       <div class="slide-up">
