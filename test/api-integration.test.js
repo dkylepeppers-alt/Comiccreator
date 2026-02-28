@@ -131,6 +131,43 @@ describe('API integration', () => {
     assert.ok(fallback.length > 0);
   });
 
+  it('generateImage retries with safe size on 400 errors (invalid size/model)', async () => {
+    await ctx.DB.setSetting('imageModel', 'custom-model');
+    const calls = [];
+    ctx.fetch = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length === 1) return new Response('', { status: 400 });
+      return new Response(JSON.stringify({ data: [{ url: 'https://img.test/ok.png' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene', { size: '512x512' });
+    assert.equal(result, 'https://img.test/ok.png');
+    assert.deepEqual(calls.map(c => [c.model, c.size]), [
+      ['custom-model', '512x512'],
+      ['custom-model', '1024x1024'],
+    ]);
+  });
+
+  it('generateImage falls back to gpt-image-1 after 400 errors', async () => {
+    await ctx.DB.setSetting('imageModel', 'unsupported-model');
+    const calls = [];
+    ctx.fetch = async (_url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push(body);
+      if (calls.length < 3) return new Response('', { status: 400 });
+      return new Response(JSON.stringify({ data: [{ url: 'https://img.test/fallback.png' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene', { size: '512x512' });
+    assert.equal(result, 'https://img.test/fallback.png');
+    assert.deepEqual(calls.map(c => [c.model, c.size]), [
+      ['unsupported-model', '512x512'],
+      ['unsupported-model', '1024x1024'],
+      ['gpt-image-1', '1024x1024'],
+    ]);
+  });
+
   it('generateImage retries with safe size on 500 errors', async () => {
     await ctx.DB.setSetting('imageModel', 'unstable-model');
     const calls = [];
