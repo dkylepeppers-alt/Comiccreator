@@ -161,66 +161,11 @@ const API = (() => {
   }
 
   /**
-   * Convert a base64 data URL to a Blob for multipart/form-data uploads.
-   */
-  function dataUrlToBlob(dataUrl) {
-    const [header, b64] = dataUrl.split(',');
-    const mime = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mime });
-  }
-
-  /**
-   * Image-to-image via /images/edits with multipart/form-data.
-   * Used when reference images are provided.
-   * Caps at 3 reference images; compresses each before upload.
-   */
-  async function generateImageWithEdit(prompt, modelId, options) {
-    const apiKey = await getApiKey();
-
-    // Collect and compress reference images (cap at 3)
-    const rawRefs = options.imageDataUrls?.length > 0
-      ? options.imageDataUrls.slice(0, 3)
-      : [options.imageDataUrl];
-    const compressed = await Promise.all(rawRefs.map(u => compressDataUrl(u)));
-
-    const form = new FormData();
-    form.append('model', modelId);
-    form.append('prompt', prompt);
-    form.append('size', options.size || '1024x1024');
-    if (options.showExplicitContent) form.append('showExplicitContent', 'true');
-    for (let i = 0; i < compressed.length; i++) {
-      form.append('image', dataUrlToBlob(compressed[i]), `reference-${i + 1}.jpg`);
-    }
-
-    // Do NOT set Content-Type — the browser must set it with the multipart boundary
-    const res = await fetch(`${BASE_URL}/images/edits`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      body: form,
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const msg = err.error?.message || err.message || `Image edit API error: ${res.status} ${res.statusText}`;
-      console.error('Image edit error:', res.status, err);
-      throw new Error(msg);
-    }
-
-    const data = await res.json();
-    const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
-    if (!result) throw new Error('No image data in API response');
-    return result;
-  }
-
-  /**
    * Generate image via NanoGPT image API.
    *
-   * Two-call strategy:
-   *   1. If reference images are provided, first try /images/edits with multipart/form-data.
-   *   2. If that fails (unsupported model/endpoint/etc.), fallback to /images/generations JSON.
+   * Sends a JSON POST to /images/generations with optional imageDataUrls
+   * for reference-image-guided generation. Compresses reference images to
+   * keep payloads manageable (capped at 3).
    */
   async function generateImage(prompt, options = {}) {
     const apiKey = await getApiKey();
@@ -230,25 +175,29 @@ const API = (() => {
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const modelId = options.model || imageModel;
 
-    const hasRefImages = !!(options.imageDataUrl || options.imageDataUrls?.length > 0);
-    if (hasRefImages) {
-      try {
-        return await generateImageWithEdit(prompt, modelId, { ...options, showExplicitContent });
-      } catch (editErr) {
-        console.warn('Image edit failed; falling back to text-to-image generation', editErr);
-      }
+    // Collect and compress reference images (cap at 3)
+    const rawRefs = options.imageDataUrls?.length > 0
+      ? options.imageDataUrls.slice(0, 3)
+      : options.imageDataUrl ? [options.imageDataUrl] : [];
+    let compressedRefs = null;
+    if (rawRefs.length > 0) {
+      compressedRefs = await Promise.all(rawRefs.map(u => compressDataUrl(u)));
     }
 
-    const imageSize = options.size || '1024x1024';
+    const imageResolution = options.resolution || '1024x1024';
 
-    async function requestImage(model, size) {
-      const body = { model, prompt, size };
+    async function requestImage(model, resolution) {
+      const body = { model, prompt, resolution, nImages: 1 };
       if (showExplicitContent) body.showExplicitContent = true;
+      if (compressedRefs && compressedRefs.length > 0) {
+        body.imageDataUrls = compressedRefs;
+      }
+
       const res = await fetch(`${BASE_URL}/images/generations`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'x-api-key': apiKey,
         },
         body: JSON.stringify(body),
       });
@@ -269,16 +218,16 @@ const API = (() => {
     }
 
     try {
-      return await requestImage(modelId, imageSize);
+      return await requestImage(modelId, imageResolution);
     } catch (err) {
       if (err?.status !== 500) throw err;
       let lastError = err;
 
-      if (imageSize !== '1024x1024') {
+      if (imageResolution !== '1024x1024') {
         try {
           return await requestImage(modelId, '1024x1024');
-        } catch (sizeRetryErr) {
-          lastError = sizeRetryErr;
+        } catch (resRetryErr) {
+          lastError = resRetryErr;
         }
       }
 
