@@ -211,4 +211,17 @@ describe('API integration', () => {
     assert.ok(calls[0].url.endsWith('/images/edits'));
     assert.ok(calls[1].url.endsWith('/images/generations'));
   });
+
+  it('generateImage includes showExplicitContent when enabled in settings', async () => {
+    await ctx.DB.setSetting('showExplicitContent', true);
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ data: [{ url: 'https://img.test/explicit.png' }] }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateImage('draw scene');
+    assert.equal(result, 'https://img.test/explicit.png');
+    assert.equal(requestBody.showExplicitContent, true);
+  });
 });

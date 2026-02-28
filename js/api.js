@@ -190,6 +190,7 @@ const API = (() => {
     form.append('model', modelId);
     form.append('prompt', prompt);
     form.append('size', options.size || '1024x1024');
+    if (options.showExplicitContent) form.append('showExplicitContent', 'true');
     for (let i = 0; i < compressed.length; i++) {
       form.append('image', dataUrlToBlob(compressed[i]), `reference-${i + 1}.jpg`);
     }
@@ -226,12 +227,13 @@ const API = (() => {
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
     const imageModel = await DB.getSetting('imageModel', DEFAULT_IMAGE_MODEL);
+    const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const modelId = options.model || imageModel;
 
     const hasRefImages = !!(options.imageDataUrl || options.imageDataUrls?.length > 0);
     if (hasRefImages) {
       try {
-        return await generateImageWithEdit(prompt, modelId, options);
+        return await generateImageWithEdit(prompt, modelId, { ...options, showExplicitContent });
       } catch (editErr) {
         console.warn('Image edit failed; falling back to text-to-image generation', editErr);
       }
@@ -241,6 +243,7 @@ const API = (() => {
 
     async function requestImage(model, size) {
       const body = { model, prompt, size };
+      if (showExplicitContent) body.showExplicitContent = true;
       const res = await fetch(`${BASE_URL}/images/generations`, {
         method: 'POST',
         headers: {

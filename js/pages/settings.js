@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.5.1';
+  const APP_VERSION = '1.5.2';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render
@@ -26,6 +26,7 @@ const SettingsPage = (() => {
     const maxTokens = await DB.getSetting('maxTokens', 2048);
     const enableImages = await DB.getSetting('enableImages', true);
     const useRefImages = await DB.getSetting('useRefImages', true);
+    const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
@@ -103,6 +104,14 @@ const SettingsPage = (() => {
               Use Reference Images
             </label>
             <div class="form-hint">Send character/world images as style references for consistent visuals (uses more credits)</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="set-explicitcontent" ${showExplicitContent ? 'checked' : ''} style="width:auto;">
+              Show Explicit Content
+            </label>
+            <div class="form-hint">When enabled, image requests include <code>showExplicitContent: true</code>.</div>
           </div>
 
           <div class="form-group">
@@ -542,6 +551,7 @@ const SettingsPage = (() => {
     await DB.setSetting('imageModel', document.getElementById('set-imgmodel').value);
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
+    await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
     await DB.setSetting('imageSize', document.getElementById('set-imgsize').value);
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));
