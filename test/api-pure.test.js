@@ -53,15 +53,6 @@ Your response must be a JSON object with this exact structure:`;
   return prompt;
 }
 
-function dataUrlToBlob(dataUrl) {
-  const [header, b64] = dataUrl.split(',');
-  const mime = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
-}
-
 function compareVersions(a, b) {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
@@ -131,17 +122,6 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(withAll.includes('CHARACTERS:'));
     assert.ok(withAll.includes('WORLD SETTING:'));
     assert.ok(withAll.includes('Details: Fog'));
-  });
-});
-
-describe('dataUrlToBlob', () => {
-  it('creates blobs with proper mime type', () => {
-    const png = dataUrlToBlob('data:image/png;base64,aGVsbG8=');
-    assert.equal(png.type, 'image/png');
-    const jpg = dataUrlToBlob('data:image/jpeg;base64,aGVsbG8=');
-    assert.equal(jpg.type, 'image/jpeg');
-    const fallback = dataUrlToBlob('data:;base64,aGVsbG8=');
-    assert.equal(fallback.type, 'application/octet-stream');
   });
 });
 

@@ -14,7 +14,6 @@ function loadApiContext(fetchImpl) {
     crypto: globalThis.crypto || require('node:crypto').webcrypto,
     atob: globalThis.atob,
     Blob: globalThis.Blob,
-    FormData: globalThis.FormData,
     TextDecoder: globalThis.TextDecoder,
     Image: class {
       set src(_value) {
@@ -131,7 +130,7 @@ describe('API integration', () => {
     assert.ok(fallback.length > 0);
   });
 
-  it('generateImage retries with safe size on 500 errors', async () => {
+  it('generateImage retries with safe resolution on 500 errors', async () => {
     await ctx.DB.setSetting('imageModel', 'unstable-model');
     const calls = [];
     ctx.fetch = async (_url, opts) => {
@@ -141,12 +140,13 @@ describe('API integration', () => {
       return new Response(JSON.stringify({ data: [{ url: 'https://img.test/success.png' }] }), { status: 200 });
     };
 
-    const result = await ctx.API.generateImage('draw scene', { size: '1792x1024' });
+    const result = await ctx.API.generateImage('draw scene', { resolution: '1792x1024' });
     assert.equal(result, 'https://img.test/success.png');
-    assert.deepEqual(calls.map(c => [c.model, c.size]), [
+    assert.deepEqual(calls.map(c => [c.model, c.resolution]), [
       ['unstable-model', '1792x1024'],
       ['unstable-model', '1024x1024'],
     ]);
+    assert.equal(calls[0].nImages, 1);
   });
 
   it('generateImage falls back to gpt-image-1 after repeated 500 errors', async () => {
@@ -159,21 +159,21 @@ describe('API integration', () => {
       return new Response(JSON.stringify({ data: [{ b64_json: 'abcd' }] }), { status: 200 });
     };
 
-    const result = await ctx.API.generateImage('draw scene', { size: '1792x1024' });
+    const result = await ctx.API.generateImage('draw scene', { resolution: '1792x1024' });
     assert.equal(result, 'abcd');
-    assert.deepEqual(calls.map(c => [c.model, c.size]), [
+    assert.deepEqual(calls.map(c => [c.model, c.resolution]), [
       ['unstable-model', '1792x1024'],
       ['unstable-model', '1024x1024'],
       ['gpt-image-1', '1024x1024'],
     ]);
   });
 
-  it('generateImage sends reference images to /images/edits as multipart image fields', async () => {
-    await ctx.DB.setSetting('imageModel', 'edit-model');
+  it('generateImage sends reference images as imageDataUrls in JSON body', async () => {
+    await ctx.DB.setSetting('imageModel', 'ref-model');
     const calls = [];
     ctx.fetch = async (url, opts) => {
-      calls.push({ url, opts });
-      return new Response(JSON.stringify({ data: [{ b64_json: 'edited-img' }] }), { status: 200 });
+      calls.push({ url, body: JSON.parse(opts.body), headers: opts.headers });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'ref-img' }] }), { status: 200 });
     };
 
     const result = await ctx.API.generateImage('draw scene', {
@@ -183,36 +183,18 @@ describe('API integration', () => {
       ],
     });
 
-    assert.equal(result, 'edited-img');
+    assert.equal(result, 'ref-img');
     assert.equal(calls.length, 1);
-    assert.ok(calls[0].url.endsWith('/images/edits'));
-    const body = calls[0].opts.body;
-    assert.equal(body.get('model'), 'edit-model');
-    assert.equal(body.get('prompt'), 'draw scene');
-    assert.equal(body.getAll('image').length, 2);
+    assert.ok(calls[0].url.endsWith('/images/generations'));
+    assert.equal(calls[0].body.model, 'ref-model');
+    assert.equal(calls[0].body.prompt, 'draw scene');
+    assert.equal(calls[0].body.nImages, 1);
+    assert.ok(Array.isArray(calls[0].body.imageDataUrls));
+    assert.equal(calls[0].body.imageDataUrls.length, 2);
+    assert.equal(calls[0].headers['x-api-key'], 'test-key');
   });
 
-  it('generateImage falls back to /images/generations when /images/edits fails', async () => {
-    await ctx.DB.setSetting('imageModel', 'mixed-model');
-    const calls = [];
-    ctx.fetch = async (url, opts) => {
-      calls.push({ url, opts });
-      if (url.endsWith('/images/edits')) {
-        return new Response(JSON.stringify({ error: { message: 'unsupported' } }), { status: 400 });
-      }
-      return new Response(JSON.stringify({ data: [{ url: 'https://img.test/fallback.png' }] }), { status: 200 });
-    };
-
-    const result = await ctx.API.generateImage('draw scene', {
-      imageDataUrl: 'data:image/png;base64,aGVsbG8=',
-    });
-
-    assert.equal(result, 'https://img.test/fallback.png');
-    assert.ok(calls[0].url.endsWith('/images/edits'));
-    assert.ok(calls[1].url.endsWith('/images/generations'));
-  });
-
-  it('generateImage includes showExplicitContent when enabled in settings', async () => {
+  it('generateImage includes showExplicitContent and nImages when enabled', async () => {
     await ctx.DB.setSetting('showExplicitContent', true);
     let requestBody;
     ctx.fetch = async (_url, opts) => {
@@ -223,5 +205,7 @@ describe('API integration', () => {
     const result = await ctx.API.generateImage('draw scene');
     assert.equal(result, 'https://img.test/explicit.png');
     assert.equal(requestBody.showExplicitContent, true);
+    assert.equal(requestBody.nImages, 1);
+    assert.ok(requestBody.resolution);
   });
 });

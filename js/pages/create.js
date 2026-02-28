@@ -468,8 +468,8 @@ const CreatePage = (() => {
           if (streamTitle) streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
-        const imageSize = await DB.getSetting('imageSize', '1024x1024');
-        const imageOpts = { size: imageSize };
+        const imageResolution = await DB.getSetting('imageSize', '1024x1024');
+        const imageOpts = { resolution: imageResolution };
         if (state.referenceImages.length === 1) {
           imageOpts.imageDataUrl = state.referenceImages[0];
         } else if (state.referenceImages.length > 1) {
