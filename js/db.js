@@ -114,43 +114,45 @@ const DB = (() => {
     });
   }
 
-  // Seed default presets on first run
+  // Seed default presets on first run (idempotent — stable IDs prevent duplicates)
+  // Low, stable timestamps ensure seed presets sort to the bottom of the list (below user-created presets)
+  const SEED_PRESETS = [
+    {
+      id: 'seed-preset-balanced',
+      name: 'Balanced',
+      description: 'Good for general storytelling',
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 2048,
+      systemPrompt: 'You are a creative comic book writer. Create vivid, engaging comic panels with narration and dialogue.',
+      createdAt: 1000000000000,
+    },
+    {
+      id: 'seed-preset-creative',
+      name: 'Creative',
+      description: 'Higher randomness for unique stories',
+      temperature: 1.0,
+      topP: 0.95,
+      maxTokens: 3000,
+      systemPrompt: 'You are an avant-garde comic book creator. Push boundaries with unexpected plot twists and unique artistic descriptions.',
+      createdAt: 1000000000001,
+    },
+    {
+      id: 'seed-preset-precise',
+      name: 'Precise',
+      description: 'Lower randomness for consistent output',
+      temperature: 0.3,
+      topP: 0.8,
+      maxTokens: 1500,
+      systemPrompt: 'You are a disciplined comic book writer. Create clear, well-structured panels with consistent characterization.',
+      createdAt: 1000000000002,
+    },
+  ];
+
   async function seedDefaults() {
-    const presets = await getAll(STORES.presets);
-    if (presets.length === 0) {
-      const defaults = [
-        {
-          id: uuid(),
-          name: 'Balanced',
-          description: 'Good for general storytelling',
-          temperature: 0.7,
-          topP: 0.9,
-          maxTokens: 2048,
-          systemPrompt: 'You are a creative comic book writer. Create vivid, engaging comic panels with narration and dialogue.',
-          createdAt: Date.now(),
-        },
-        {
-          id: uuid(),
-          name: 'Creative',
-          description: 'Higher randomness for unique stories',
-          temperature: 1.0,
-          topP: 0.95,
-          maxTokens: 3000,
-          systemPrompt: 'You are an avant-garde comic book creator. Push boundaries with unexpected plot twists and unique artistic descriptions.',
-          createdAt: Date.now(),
-        },
-        {
-          id: uuid(),
-          name: 'Precise',
-          description: 'Lower randomness for consistent output',
-          temperature: 0.3,
-          topP: 0.8,
-          maxTokens: 1500,
-          systemPrompt: 'You are a disciplined comic book writer. Create clear, well-structured panels with consistent characterization.',
-          createdAt: Date.now(),
-        },
-      ];
-      for (const p of defaults) await put(STORES.presets, p);
+    for (const p of SEED_PRESETS) {
+      const existing = await get(STORES.presets, p.id);
+      if (!existing) await put(STORES.presets, p);
     }
   }
 

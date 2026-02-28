@@ -9,13 +9,24 @@ const PresetsPage = (() => {
     if (param === 'new') {
       currentView = 'edit';
       editingId = null;
+    } else if (!param) {
+      // Reset to list view on normal navigation (prevents stale edit state)
+      currentView = 'list';
+      editingId = null;
     }
     if (currentView === 'edit') return renderEditor();
     return renderList();
   }
 
   async function renderList() {
-    const presets = await DB.getAll(DB.STORES.presets);
+    const allPresets = await DB.getAll(DB.STORES.presets);
+    // Deduplicate by ID (defensive guard against DB anomalies)
+    const seen = new Set();
+    const presets = allPresets.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
     presets.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     return `
@@ -204,5 +215,10 @@ const PresetsPage = (() => {
     App.refreshPage();
   }
 
-  return { render, newPreset, editPreset, backToList, savePreset, deletePreset, confirmDelete };
+  function onUnmount() {
+    currentView = 'list';
+    editingId = null;
+  }
+
+  return { render, onUnmount, newPreset, editPreset, backToList, savePreset, deletePreset, confirmDelete };
 })();

@@ -126,43 +126,6 @@ const CreatePage = (() => {
           </div>
         </div>
 
-        <!-- Advanced: Override Samplers -->
-        <div class="card">
-          <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
-            <h3 class="card-title" style="margin:0;">Advanced Controls</h3>
-          </div>
-          <div class="collapsible-body collapsed" id="advanced-controls">
-            <div class="form-group mt-sm">
-              <label class="form-label">Temperature Override: <span id="adv-temp-val">${state.overrideTemp || 'default'}</span></label>
-              <div class="range-group">
-                <span class="text-sm text-muted">0</span>
-                <input type="range" id="adv-temp" min="0" max="2" step="0.05" value="${state.overrideTemp || 0.7}" oninput="document.getElementById('adv-temp-val').textContent=this.value">
-                <span class="text-sm text-muted">2</span>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Top-P Override: <span id="adv-topp-val">${state.overrideTopP || 'default'}</span></label>
-              <div class="range-group">
-                <span class="text-sm text-muted">0</span>
-                <input type="range" id="adv-topp" min="0" max="1" step="0.05" value="${state.overrideTopP || 0.9}" oninput="document.getElementById('adv-topp-val').textContent=this.value">
-                <span class="text-sm text-muted">1</span>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Max Tokens Override: <span id="adv-tokens-val">${state.overrideTokens || 'default'}</span></label>
-              <div class="range-group">
-                <span class="text-sm text-muted">256</span>
-                <input type="range" id="adv-tokens" min="256" max="8192" step="256" value="${state.overrideTokens || 2048}" oninput="document.getElementById('adv-tokens-val').textContent=this.value">
-                <span class="text-sm text-muted">8192</span>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Custom System Prompt Override</label>
-              <textarea id="adv-system" rows="4" placeholder="Leave blank to use preset or default...">${escHtml(state.overrideSystem || '')}</textarea>
-            </div>
-          </div>
-        </div>
-
         <button class="btn btn-primary btn-block" onclick="CreatePage.startGenerating()" ${!state.genre ? 'disabled' : ''}>
           Generate First Page
         </button>
@@ -175,13 +138,13 @@ const CreatePage = (() => {
       <div class="slide-up">
         <div class="loading-overlay" id="gen-loading">
           <div class="spinner"></div>
-          <p>Generating your comic page...</p>
+          <p id="gen-status-msg">Generating your comic page...</p>
           <p class="text-sm text-muted">This may take a moment</p>
           <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
         </div>
         <div id="gen-stream" class="hidden">
           <div class="card">
-            <h3 class="card-title mb-sm">Generating...</h3>
+            <h3 class="card-title mb-sm" id="gen-stream-title">Writing story...</h3>
             <div class="streaming-text" id="stream-output"></div>
             <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
           </div>
@@ -340,16 +303,6 @@ const CreatePage = (() => {
     state.title = document.getElementById('comic-title')?.value?.trim() || 'Untitled Comic';
     state.storyPrompt = document.getElementById('story-prompt')?.value?.trim() || '';
 
-    // Gather overrides
-    const advTemp = document.getElementById('adv-temp');
-    const advTopP = document.getElementById('adv-topp');
-    const advTokens = document.getElementById('adv-tokens');
-    const advSystem = document.getElementById('adv-system');
-    state.overrideTemp = advTemp ? parseFloat(advTemp.value) : null;
-    state.overrideTopP = advTopP ? parseFloat(advTopP.value) : null;
-    state.overrideTokens = advTokens ? parseInt(advTokens.value) : null;
-    state.overrideSystem = advSystem ? advSystem.value.trim() : '';
-
     // Build context
     const characters = [];
     for (const cid of state.selectedCharacters) {
@@ -385,7 +338,7 @@ const CreatePage = (() => {
       genreName,
       characters,
       world,
-      state.overrideSystem || presetData?.systemPrompt || null
+      presetData?.systemPrompt || null
     );
 
     const userMessage = state.storyPrompt ?
@@ -417,7 +370,7 @@ const CreatePage = (() => {
     state.pages = [];
     state.step = 'generating';
     state.isGenerating = true;
-    App.refreshPage();
+    await App.refreshPage();
 
     // Generate
     await generatePage(presetData);
@@ -440,13 +393,10 @@ const CreatePage = (() => {
       trimConversationHistory();
 
       const options = {};
-      if (state.overrideTemp != null) options.temperature = state.overrideTemp;
-      if (state.overrideTopP != null) options.topP = state.overrideTopP;
-      if (state.overrideTokens != null) options.maxTokens = state.overrideTokens;
       if (presetData) {
-        if (state.overrideTemp == null) options.temperature = presetData.temperature;
-        if (state.overrideTopP == null) options.topP = presetData.topP;
-        if (state.overrideTokens == null) options.maxTokens = presetData.maxTokens;
+        options.temperature = presetData.temperature;
+        options.topP = presetData.topP;
+        options.maxTokens = presetData.maxTokens;
       }
 
       // Set up abort controller for this generation
@@ -471,12 +421,17 @@ const CreatePage = (() => {
       );
 
       // Parse the response
+      const streamTitle = document.getElementById('gen-stream-title');
+      if (streamTitle) streamTitle.textContent = 'Parsing story...';
+      const statusMsg = document.getElementById('gen-status-msg');
+      if (statusMsg) statusMsg.textContent = 'Parsing story...';
+
       const pageData = API.parseComicResponse(fullText);
       if (!pageData) {
-        App.toast('Failed to parse comic page. Please try again.', 'error');
-        state.step = 'setup';
+        App.toast('Failed to parse comic page — the AI response was not valid JSON. Please try again.', 'error');
+        state.step = state.pages.length > 0 ? 'reading' : 'setup';
         state.isGenerating = false;
-        App.refreshPage();
+        await App.refreshPage();
         return;
       }
 
@@ -486,6 +441,11 @@ const CreatePage = (() => {
       // Generate images if enabled — all panels in parallel
       const enableImages = await DB.getSetting('enableImages', true);
       if (enableImages) {
+        const panelsWithImages = pageData.panels.filter(p => p.imagePrompt).length;
+        if (panelsWithImages > 0) {
+          if (streamTitle) streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
+          if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
+        }
         const imageSize = await DB.getSetting('imageSize', '1024x1024');
         const imageOpts = { size: imageSize };
         if (state.referenceImages.length === 1) {
@@ -493,6 +453,7 @@ const CreatePage = (() => {
         } else if (state.referenceImages.length > 1) {
           imageOpts.imageDataUrls = state.referenceImages;
         }
+        let doneCount = 0;
         await Promise.all(pageData.panels.map(async (panel) => {
           if (!panel.imagePrompt) return;
           try {
@@ -523,6 +484,8 @@ const CreatePage = (() => {
             App.logError('Image generation (panel)', imgErr);
             App.toast(`Panel image failed: ${imgErr.message}`, 'error');
           }
+          doneCount++;
+          if (statusMsg) statusMsg.textContent = `Generating images (${doneCount} / ${panelsWithImages})...`;
         }));
       }
 
@@ -548,14 +511,24 @@ const CreatePage = (() => {
 
       state.step = 'reading';
       state.isGenerating = false;
-      App.refreshPage();
+      App.toast(`Page ${pageNum} ready!`, 'success');
+      await App.refreshPage();
 
     } catch (err) {
       App.logError('Comic generation', err);
-      App.toast(err.message || 'Generation failed', 'error');
-      state.step = 'reading';
+      // Roll back the last user message so retries don't compound failed attempts
+      if (state.conversationHistory.length > 0) {
+        const last = state.conversationHistory[state.conversationHistory.length - 1];
+        if (last && last.role === 'user') state.conversationHistory.pop();
+      }
+      if (err.name === 'AbortError') {
+        // Cancelled — cancelGeneration() already handled this
+        return;
+      }
+      App.toast(err.message || 'Generation failed. Please try again.', 'error');
+      state.step = state.pages.length > 0 ? 'reading' : 'setup';
       state.isGenerating = false;
-      App.refreshPage();
+      await App.refreshPage();
     }
   }
 
@@ -570,7 +543,7 @@ const CreatePage = (() => {
     state.conversationHistory.push({ role: 'user', content: userMsg });
     state.isGenerating = true;
     state.step = 'generating';
-    App.refreshPage();
+    await App.refreshPage();
 
     const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
     await generatePage(presetData);
@@ -586,7 +559,7 @@ const CreatePage = (() => {
     state.conversationHistory.push({ role: 'user', content: userMsg });
     state.isGenerating = true;
     state.step = 'generating';
-    App.refreshPage();
+    await App.refreshPage();
 
     const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
     await generatePage(presetData);
