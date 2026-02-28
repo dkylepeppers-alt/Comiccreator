@@ -9,7 +9,11 @@ const PresetsPage = (() => {
     if (param === 'new') {
       currentView = 'edit';
       editingId = null;
-    } else if (!param) {
+    } else if (param) {
+      // param is a preset ID — switch to edit mode
+      currentView = 'edit';
+      editingId = param;
+    } else {
       // Reset to list view on normal navigation (prevents stale edit state)
       currentView = 'list';
       editingId = null;
@@ -157,21 +161,15 @@ const PresetsPage = (() => {
   }
 
   function newPreset() {
-    currentView = 'edit';
-    editingId = null;
-    App.refreshPage();
+    App.navigate('presets', 'new');
   }
 
   async function editPreset(id) {
-    currentView = 'edit';
-    editingId = id;
-    App.refreshPage();
+    App.navigate('presets', id);
   }
 
   function backToList() {
-    currentView = 'list';
-    editingId = null;
-    App.refreshPage();
+    App.navigate('presets', null);
   }
 
   async function savePreset() {
