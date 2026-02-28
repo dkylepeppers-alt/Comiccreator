@@ -8,7 +8,6 @@ AI Comic Creator — a vanilla JavaScript Progressive Web App (PWA) that generat
 
 - **~4,000 lines of code** across 22 files (10 JS, 1 CSS, 1 HTML, plus config/scripts)
 - **Dependency model:** vanilla browser runtime (`js/api.js` performs runtime API calls), with npm dependencies available for Node-side tasks (including `nanogptjs` for npm-driven scripts/tests or future tooling)
-- **No CI/CD pipelines** — no `.github/workflows` and no pre-commit hooks
 - **Automated local checks exist** — npm scripts include linting/formatting and a Node test suite (`node --test`)
 - **Runtime:** Any modern browser (ES2020+). Server is any static HTTP server.
 
@@ -64,7 +63,7 @@ Use both automated npm checks and manual browser validation:
 
 ### Script Loading Order (Critical)
 
-`index.html` loads scripts via `<script>` tags in this exact order — **all are global IIFEs, not ES modules**:
+`index.html` loads scripts via `<script>` tags in this exact order — **all are global IIFEs**:
 
 1. `js/utils.js` → shared globals `escHtml()`, `timeAgo()`, `getGenreEmoji()`, `GENRES`
 2. `js/db.js` → global `DB` (IndexedDB wrapper)
@@ -147,11 +146,11 @@ js/pages/settings.js    (702 lines)  Settings — API key, model selection modal
 icons/                               icon.svg, icon-192.png, icon-512.png
 ```
 
-## Code Style Rules
+## Code Style
 
-- **Vanilla browser runtime** — no frameworks, no CDN imports, and no bundler/transpiler required for app execution
+- **Vanilla browser runtime** — the app runs directly in the browser with no build step required for execution
 - **ES2020+ syntax** — optional chaining (`?.`), nullish coalescing (`??`), `async/await`
-- **No ES modules** — all files use global IIFE pattern (`const X = (() => { ... })()`)
+- **Global IIFE pattern** — all files use `const X = (() => { ... })()` for encapsulation and script-tag compatibility
 - **HTML escaping** — always use `escHtml()` when interpolating user data into HTML strings
 - **Self-contained pages** — each `js/pages/*.js` handles its own rendering, event binding, and data operations
 - Keep the `render()` function returning an HTML template string; put post-DOM logic in `postRender()`/`onMount()`
