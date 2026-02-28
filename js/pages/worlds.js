@@ -9,6 +9,14 @@ const WorldsPage = (() => {
     if (param === 'new') {
       currentView = 'edit';
       editingId = null;
+    } else if (param) {
+      // param is a world ID — switch to edit mode
+      currentView = 'edit';
+      editingId = param;
+    } else {
+      // Reset to list view on normal navigation (prevents stale edit state)
+      currentView = 'list';
+      editingId = null;
     }
     if (currentView === 'edit') return renderEditor();
     return renderList();
@@ -117,21 +125,15 @@ const WorldsPage = (() => {
   let activeImageIdx = 0;
 
   function newWorld() {
-    currentView = 'edit';
-    editingId = null;
-    App.refreshPage();
+    App.navigate('worlds', 'new');
   }
 
   async function editWorld(id) {
-    currentView = 'edit';
-    editingId = id;
-    App.refreshPage();
+    App.navigate('worlds', id);
   }
 
   function backToList() {
-    currentView = 'list';
-    editingId = null;
-    App.refreshPage();
+    App.navigate('worlds', null);
   }
 
   function pickImage(idx) {

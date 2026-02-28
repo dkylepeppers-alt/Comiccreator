@@ -9,6 +9,14 @@ const CharactersPage = (() => {
     if (param === 'new') {
       currentView = 'edit';
       editingId = null;
+    } else if (param) {
+      // param is a character ID — switch to edit mode
+      currentView = 'edit';
+      editingId = param;
+    } else {
+      // Reset to list view on normal navigation (prevents stale edit state)
+      currentView = 'list';
+      editingId = null;
     }
     if (currentView === 'edit') return renderEditor();
     return renderList();
@@ -119,21 +127,15 @@ const CharactersPage = (() => {
   }
 
   function newCharacter() {
-    currentView = 'edit';
-    editingId = null;
-    App.refreshPage();
+    App.navigate('characters', 'new');
   }
 
   async function editCharacter(id) {
-    currentView = 'edit';
-    editingId = id;
-    App.refreshPage();
+    App.navigate('characters', id);
   }
 
   function backToList() {
-    currentView = 'list';
-    editingId = null;
-    App.refreshPage();
+    App.navigate('characters', null);
   }
 
   function pickImage() {
