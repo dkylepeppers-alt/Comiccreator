@@ -114,7 +114,7 @@ describe('API integration', () => {
     ctx.fetch = async (_url, opts) => {
       const body = JSON.parse(opts.body);
       calls.push(body);
-      if (calls.length === 1) return new Response('{}', { status: 500 });
+      if (calls.length === 1) return new Response('{"error":{"message":"Internal server error"}}', { status: 500 });
       return new Response(JSON.stringify({ data: [{ url: 'https://img.test/success.png' }] }), { status: 200 });
     };
 
@@ -132,7 +132,7 @@ describe('API integration', () => {
     ctx.fetch = async (_url, opts) => {
       const body = JSON.parse(opts.body);
       calls.push(body);
-      if (calls.length < 3) return new Response('{}', { status: 500 });
+      if (calls.length < 3) return new Response('{"error":{"message":"Internal server error"}}', { status: 500 });
       return new Response(JSON.stringify({ data: [{ b64_json: 'abcd' }] }), { status: 200 });
     };
 

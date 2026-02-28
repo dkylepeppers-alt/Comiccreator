@@ -4,6 +4,7 @@
  */
 const API = (() => {
   const BASE_URL = 'https://nano-gpt.com/api/v1';
+  const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
 
   async function getApiKey() {
     return DB.getSetting('apiKey', '');
@@ -227,7 +228,7 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+    const imageModel = await DB.getSetting('imageModel', DEFAULT_IMAGE_MODEL);
     const modelId = options.model || imageModel;
 
     // Check whether reference images can actually be used with this model
@@ -276,22 +277,22 @@ const API = (() => {
     try {
       return await requestImage(modelId, imageSize);
     } catch (err) {
-      const isServerError = err?.status === 500 || /Image API error: 500/.test(err?.message || '');
-      if (!isServerError) throw err;
+      if (err?.status !== 500) throw err;
+      let lastError = err;
 
       if (imageSize !== '1024x1024') {
         try {
           return await requestImage(modelId, '1024x1024');
         } catch (sizeRetryErr) {
-          err = sizeRetryErr;
+          lastError = sizeRetryErr;
         }
       }
 
-      if (modelId !== 'gpt-image-1') {
-        return requestImage('gpt-image-1', '1024x1024');
+      if (modelId !== DEFAULT_IMAGE_MODEL) {
+        return requestImage(DEFAULT_IMAGE_MODEL, '1024x1024');
       }
 
-      throw err;
+      throw lastError;
     }
   }
 
