@@ -217,7 +217,7 @@ Comiccreator/
     └── icon-512.png        PWA icon (large)
 ```
 
-**Zero dependencies by default.** No npm, no bundler, no framework required. Every file runs directly in the browser as vanilla HTML, CSS, and JavaScript.
+**Browser runtime remains vanilla.** The app shell still runs directly as HTML/CSS/JavaScript in the browser (`js/api.js` handles runtime API calls). `nanogptjs` is now included in `package.json` for Node-side usage (e.g., npm-driven scripts/tests or future tooling that needs the official NanoGPT JS client).
 
 ### Data Model
 

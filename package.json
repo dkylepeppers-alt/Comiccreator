@@ -15,6 +15,7 @@
   "devDependencies": {
     "eslint": "^9.0.0",
     "fake-indexeddb": "^6.2.5",
+    "nanogptjs": "^1.0.4",
     "prettier": "^3.0.0"
   }
 }

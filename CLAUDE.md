@@ -7,7 +7,7 @@ Trust these instructions. Only search the codebase if the information here is in
 AI Comic Creator — a vanilla JavaScript Progressive Web App (PWA) that generates AI-powered comic books with interactive narratives, custom characters, and world-building. Uses the NanoGPT API (OpenAI-compatible) for text and image generation.
 
 - **~4,000 lines of code** across 22 files (10 JS, 1 CSS, 1 HTML, plus config/scripts)
-- **Zero dependencies** — no npm, no package.json, no bundler, no transpiler, no frameworks
+- **Dependency model:** vanilla browser runtime (`js/api.js` performs runtime API calls), with npm dependencies available for Node-side tasks (including `nanogptjs` for npm-driven scripts/tests or future tooling)
 - **No CI/CD pipelines** — no `.github/workflows`, no pre-commit hooks, no linters configured
 - **No automated tests** — validation is manual (see Validation section below)
 - **Runtime:** Any modern browser (ES2020+). Server is any static HTTP server.
