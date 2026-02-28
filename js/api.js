@@ -174,7 +174,7 @@ const API = (() => {
 
   /**
    * Image-to-image via /images/edits with multipart/form-data.
-   * Used when the selected model reports supports_edit: true and reference images are provided.
+   * Used when reference images are provided.
    * Caps at 3 reference images; compresses each before upload.
    */
   async function generateImageWithEdit(prompt, modelId, options) {
@@ -190,8 +190,8 @@ const API = (() => {
     form.append('model', modelId);
     form.append('prompt', prompt);
     form.append('size', options.size || '1024x1024');
-    for (const dataUrl of compressed) {
-      form.append('image[]', dataUrlToBlob(dataUrl), 'reference.jpg');
+    for (let i = 0; i < compressed.length; i++) {
+      form.append('image', dataUrlToBlob(compressed[i]), `reference-${i + 1}.jpg`);
     }
 
     // Do NOT set Content-Type — the browser must set it with the multipart boundary
@@ -218,11 +218,8 @@ const API = (() => {
    * Generate image via NanoGPT image API.
    *
    * Two-call strategy:
-   *   1. If reference images are provided AND the selected model supports edits,
-   *      POST to /images/edits with multipart/form-data (true image-to-image).
-   *   2. Otherwise, POST to /images/generations with JSON (text-to-image).
-   *      Reference images are silently dropped in this branch — they are not
-   *      supported by the standard generations endpoint.
+   *   1. If reference images are provided, first try /images/edits with multipart/form-data.
+   *   2. If that fails (unsupported model/endpoint/etc.), fallback to /images/generations JSON.
    */
   async function generateImage(prompt, options = {}) {
     const apiKey = await getApiKey();
@@ -231,19 +228,13 @@ const API = (() => {
     const imageModel = await DB.getSetting('imageModel', DEFAULT_IMAGE_MODEL);
     const modelId = options.model || imageModel;
 
-    // Check whether reference images can actually be used with this model
     const hasRefImages = !!(options.imageDataUrl || options.imageDataUrls?.length > 0);
-    let supportsEdit = false;
     if (hasRefImages) {
-      const cachedModels = await DB.getSetting('cachedImageModels', null);
-      if (cachedModels) {
-        const modelObj = cachedModels.find(m => m.id === modelId);
-        supportsEdit = modelObj?.supports_edit || false;
+      try {
+        return await generateImageWithEdit(prompt, modelId, options);
+      } catch (editErr) {
+        console.warn('Image edit failed; falling back to text-to-image generation', editErr);
       }
-    }
-
-    if (hasRefImages && supportsEdit) {
-      return generateImageWithEdit(prompt, modelId, options);
     }
 
     const imageSize = options.size || '1024x1024';
