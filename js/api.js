@@ -271,7 +271,7 @@ const API = (() => {
     try {
       return await requestImage(modelId, imageSize);
     } catch (err) {
-      if (err?.status !== 500) throw err;
+      if (err?.status !== 500 && err?.status !== 400) throw err;
       let lastError = err;
 
       if (imageSize !== '1024x1024') {
