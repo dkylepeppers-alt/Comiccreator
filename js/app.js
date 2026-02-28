@@ -28,6 +28,7 @@ const App = (() => {
   async function init() {
     await DB.open();
     await DB.seedDefaults();
+    await DB.dedupePresets();
 
     // Set up navigation
     setupNavigation();
