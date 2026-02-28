@@ -8,8 +8,8 @@ AI Comic Creator — a vanilla JavaScript Progressive Web App (PWA) that generat
 
 - **~4,000 lines of code** across 22 files (10 JS, 1 CSS, 1 HTML, plus config/scripts)
 - **Dependency model:** vanilla browser runtime (`js/api.js` performs runtime API calls), with npm dependencies available for Node-side tasks (including `nanogptjs` for npm-driven scripts/tests or future tooling)
-- **No CI/CD pipelines** — no `.github/workflows`, no pre-commit hooks, no linters configured
-- **No automated tests** — validation is manual (see Validation section below)
+- **No CI/CD pipelines** — no `.github/workflows` and no pre-commit hooks
+- **Automated local checks exist** — npm scripts include linting/formatting and a Node test suite (`node --test`)
 - **Runtime:** Any modern browser (ES2020+). Server is any static HTTP server.
 
 ## Running Locally
@@ -32,9 +32,9 @@ php -S 0.0.0.0:8080       # PHP
 
 ## Validation
 
-There are no automated tests, linters, or CI checks. Always validate changes manually:
+Use both automated npm checks and manual browser validation:
 
-1. **Syntax check** — run `node --check <file.js>` on every JS file you modify. All 10 JS files currently pass.
+1. **Automated checks** — run `npm run check-syntax`, `npm test`, and `npm run lint` when relevant to your change.
 2. **Serve and load** — start the dev server, open `http://localhost:8080`, and confirm the app loads without console errors.
 3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` to match the new version (e.g. `'comic-creator-v1.4.0'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
 4. **Page navigation** — click through all 7 pages (Home, Characters, Worlds, Create, Library, Presets, Settings) to verify no render errors.
@@ -149,7 +149,7 @@ icons/                               icon.svg, icon-192.png, icon-512.png
 
 ## Code Style Rules
 
-- **Vanilla JS only** — no frameworks, no libraries, no CDN imports, no npm packages
+- **Vanilla browser runtime** — no frameworks, no CDN imports, and no bundler/transpiler required for app execution
 - **ES2020+ syntax** — optional chaining (`?.`), nullish coalescing (`??`), `async/await`
 - **No ES modules** — all files use global IIFE pattern (`const X = (() => { ... })()`)
 - **HTML escaping** — always use `escHtml()` when interpolating user data into HTML strings
