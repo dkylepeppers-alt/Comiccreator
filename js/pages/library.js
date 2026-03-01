@@ -5,6 +5,10 @@
 const LibraryPage = (() => {
   let viewingComicId = null;
 
+  // Search / filter state — persists within a session, reset on unmount
+  let _searchQuery = '';
+  let _genreFilter = '';
+
   async function render(param) {
     if (param && param.length > 10) {
       viewingComicId = param;
@@ -14,14 +18,61 @@ const LibraryPage = (() => {
     return renderList();
   }
 
+  function applyFilter(comics) {
+    const q = _searchQuery.toLowerCase().trim();
+    return comics.filter(c => {
+      const matchesSearch = !q ||
+        c.title.toLowerCase().includes(q) ||
+        (c.genreName || c.genre || '').toLowerCase().includes(q);
+      const matchesGenre = !_genreFilter || c.genre === _genreFilter;
+      return matchesSearch && matchesGenre;
+    });
+  }
+
+  function setSearch(query) {
+    _searchQuery = query;
+    App.refreshPage();
+  }
+
+  function setGenre(genre) {
+    _genreFilter = genre;
+    App.refreshPage();
+  }
+
+  function clearFilter() {
+    _searchQuery = '';
+    _genreFilter = '';
+    App.refreshPage();
+  }
+
   async function renderList() {
     const comics = await DB.getAll(DB.STORES.comics);
     comics.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+
+    const filtered = applyFilter(comics);
+    // Collect genres that exist in the collection for the filter dropdown
+    const usedGenreIds = [...new Set(comics.map(c => c.genre).filter(Boolean))];
+    const usedGenres = GENRES.filter(g => usedGenreIds.includes(g.id));
 
     return `
       <div class="slide-up">
         <h2 class="section-title">My Comics</h2>
         <p class="section-subtitle">Your comic book collection</p>
+
+        ${comics.length > 1 ? `
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <input type="search" placeholder="Search..." value="${escHtml(_searchQuery)}"
+              oninput="LibraryPage.setSearch(this.value)"
+              style="flex:1;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;">
+            ${usedGenres.length > 1 ? `
+              <select onchange="LibraryPage.setGenre(this.value)"
+                style="padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;">
+                <option value="" ${!_genreFilter ? 'selected' : ''}>All Genres</option>
+                ${usedGenres.map(g => `<option value="${g.id}" ${_genreFilter === g.id ? 'selected' : ''}>${escHtml(g.name)}</option>`).join('')}
+              </select>
+            ` : ''}
+          </div>
+        ` : ''}
 
         ${comics.length === 0 ? `
           <div class="empty-state">
@@ -29,7 +80,12 @@ const LibraryPage = (() => {
             <div class="empty-state-text">No comics yet. Create your first one!</div>
             <button class="btn btn-primary" onclick="App.navigate('create')">Create Comic</button>
           </div>
-        ` : comics.map(c => `
+        ` : filtered.length === 0 ? `
+          <div class="empty-state">
+            <div class="empty-state-text">No comics match your search.</div>
+            <button class="btn btn-secondary btn-sm" onclick="LibraryPage.clearFilter()">Clear Filter</button>
+          </div>
+        ` : filtered.map(c => `
           <div class="list-item" onclick="App.navigate('library', '${c.id}')">
             <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
             <div class="list-item-info">
@@ -98,7 +154,7 @@ const LibraryPage = (() => {
 
     return pageData.panels.map((panel, i) => `
       <div class="comic-panel">
-        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy">` :
+        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;">` :
           panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:150px;display:flex;align-items:center;justify-content:center;"><p class="text-sm" style="color:#9898cc;font-style:italic;text-align:center;">${escHtml(panel.imagePrompt).slice(0, 200)}</p></div>` :
           ''}
         ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
@@ -110,6 +166,33 @@ const LibraryPage = (() => {
         `).join('')}
       </div>
     `).join('');
+  }
+
+  /**
+   * Open a panel image full-size in the modal lightbox.
+   * src is set via DOM after the modal renders to safely handle data URLs.
+   */
+  function zoomImage(src) {
+    App.showModal(`
+      <div style="text-align:center;padding:8px;">
+        <img id="zoom-img" style="max-width:100%;max-height:75vh;border-radius:8px;display:block;margin:0 auto 12px;">
+        <button class="btn btn-secondary" onclick="App.hideModal()">Close</button>
+      </div>
+    `);
+    const imgEl = document.getElementById('zoom-img');
+    if (imgEl) imgEl.src = src;
+  }
+
+  /** Bind zoom click handlers after the comic reader HTML is in the DOM. */
+  function onMount() {
+    document.querySelectorAll('.zoomable-panel').forEach(img => {
+      img.addEventListener('click', function () { zoomImage(this.src); });
+    });
+  }
+
+  function onUnmount() {
+    _searchQuery = '';
+    _genreFilter = '';
   }
 
   function backToList() {
@@ -401,5 +484,9 @@ const LibraryPage = (() => {
     }, 'image/png');
   }
 
-  return { render, backToList, deleteComic, confirmDelete, exportPDF, downloadPageImage };
+  return {
+    render, onMount, onUnmount, backToList,
+    deleteComic, confirmDelete, exportPDF, downloadPageImage,
+    zoomImage, setSearch, setGenre, clearFilter,
+  };
 })();

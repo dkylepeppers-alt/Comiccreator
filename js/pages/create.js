@@ -13,6 +13,7 @@ const CreatePage = (() => {
     title: '',
     storyPrompt: '',
     pages: [],
+    pageIds: [],    // DB ids parallel to pages[], used for re-roll / undo
     conversationHistory: [],
     referenceImages: [],
     characters: [],
@@ -157,12 +158,17 @@ const CreatePage = (() => {
   function renderReading() {
     const pages = state.pages;
     const currentPage = pages[pages.length - 1];
+    const canUndo = pages.length > 1;
 
     return `
       <div class="slide-up">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
           <h2 class="section-title" style="margin:0;">${escHtml(state.title || 'Untitled Comic')}</h2>
-          <span class="text-sm text-muted">Page ${pages.length}</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span class="text-sm text-muted">Page ${pages.length}</span>
+            <button class="btn btn-sm btn-secondary" onclick="CreatePage.rerollPage()" ${state.isGenerating ? 'disabled' : ''} title="Regenerate this page with different content">&#x1F3B2; Re-roll</button>
+            ${canUndo ? `<button class="btn btn-sm btn-secondary" onclick="CreatePage.undoChoice()" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}
+          </div>
         </div>
 
         <!-- Render current page panels -->
@@ -223,7 +229,7 @@ const CreatePage = (() => {
 
     return page.panels.map((panel, i) => `
       <div class="comic-panel">
-        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy">` :
+        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;" onclick="CreatePage.zoomPanel(${i})">` :
           panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:180px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted text-center" style="font-style:italic;">${escHtml(panel.imagePrompt).slice(0, 150)}...</p></div>` :
           ''}
         ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
@@ -251,6 +257,7 @@ const CreatePage = (() => {
     state.selectedWorld = comic.worldId || null;
     state.selectedPreset = comic.presetId || null;
     state.pages = pages.map(p => p.data);
+    state.pageIds = pages.map(p => p.id);   // restore ids for re-roll/undo
     state.conversationHistory = comic.conversationHistory || [];
     state.step = 'reading';
     state.isGenerating = false;
@@ -537,16 +544,18 @@ const CreatePage = (() => {
         }));
       }
 
-      // Save page
+      // Save page — generate id first so we can track it for re-roll/undo
       state.pages.push(pageData);
       const pageNum = state.pages.length;
+      const pageId = DB.uuid();
       await DB.put(DB.STORES.pages, {
-        id: DB.uuid(),
+        id: pageId,
         comicId: state.comicId,
         pageNum,
         data: pageData,
         createdAt: Date.now(),
       });
+      state.pageIds.push(pageId);
 
       // Update comic
       const comic = await DB.get(DB.STORES.comics, state.comicId);
@@ -640,6 +649,91 @@ const CreatePage = (() => {
     App.refreshPage();
   }
 
+  /**
+   * Regenerate the current page with different content.
+   * Pops the last assistant message so the AI produces a fresh response.
+   */
+  async function rerollPage() {
+    if (state.isGenerating || state.pages.length === 0) return;
+
+    // Remove last assistant turn from history so the AI tries again
+    const lastMsg = state.conversationHistory[state.conversationHistory.length - 1];
+    if (lastMsg?.role === 'assistant') state.conversationHistory.pop();
+
+    // Delete the saved page from DB
+    const lastPageId = state.pageIds.pop();
+    if (lastPageId) await DB.del(DB.STORES.pages, lastPageId);
+    state.pages.pop();
+
+    // Update the comic record
+    const comic = await DB.get(DB.STORES.comics, state.comicId);
+    if (comic) {
+      comic.pageCount = state.pages.length;
+      comic.conversationHistory = state.conversationHistory;
+      comic.updatedAt = Date.now();
+      await DB.put(DB.STORES.comics, comic);
+    }
+
+    state.isGenerating = true;
+    state.step = 'generating';
+    await App.refreshPage();
+
+    const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
+    await generatePage(presetData);
+  }
+
+  /**
+   * Undo the last narrative choice, returning to the previous page's choice set.
+   * Removes both the assistant response AND the preceding user-choice message.
+   */
+  async function undoChoice() {
+    if (state.isGenerating || state.pages.length <= 1) return;
+
+    // Pop assistant response then user choice (two messages)
+    const assistantMsg = state.conversationHistory[state.conversationHistory.length - 1];
+    if (assistantMsg?.role === 'assistant') state.conversationHistory.pop();
+    const userMsg = state.conversationHistory[state.conversationHistory.length - 1];
+    if (userMsg?.role === 'user') state.conversationHistory.pop();
+
+    // Delete the last page from DB
+    const lastPageId = state.pageIds.pop();
+    if (lastPageId) await DB.del(DB.STORES.pages, lastPageId);
+    state.pages.pop();
+
+    // Update the comic record
+    const comic = await DB.get(DB.STORES.comics, state.comicId);
+    if (comic) {
+      comic.pageCount = state.pages.length;
+      comic.conversationHistory = state.conversationHistory;
+      comic.updatedAt = Date.now();
+      await DB.put(DB.STORES.comics, comic);
+    }
+
+    App.toast('Went back to previous choice', 'info');
+    state.step = 'reading';
+    await App.refreshPage();
+  }
+
+  /**
+   * Open a full-size panel image in a modal lightbox.
+   * Uses the panel index to look up from the current page in state (avoids
+   * embedding data URLs in onclick attributes).
+   */
+  function zoomPanel(panelIndex) {
+    const currentPage = state.pages[state.pages.length - 1];
+    const panel = currentPage?.panels?.[panelIndex];
+    if (!panel?.imageUrl) return;
+    App.showModal(`
+      <div style="text-align:center;padding:8px;">
+        <img id="zoom-img" style="max-width:100%;max-height:75vh;border-radius:8px;display:block;margin:0 auto 12px;">
+        <button class="btn btn-secondary" onclick="App.hideModal()">Close</button>
+      </div>
+    `);
+    // Set src via DOM after modal is rendered to safely handle data URLs
+    const imgEl = document.getElementById('zoom-img');
+    if (imgEl) imgEl.src = panel.imageUrl;
+  }
+
   function resetState() {
     state = {
       step: 'setup',
@@ -652,6 +746,7 @@ const CreatePage = (() => {
       title: '',
       storyPrompt: '',
       pages: [],
+      pageIds: [],
       conversationHistory: [],
       referenceImages: [],
       characters: [],
@@ -672,6 +767,7 @@ const CreatePage = (() => {
 
   return {
     render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset,
-    toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration, resetState,
+    toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration,
+    rerollPage, undoChoice, zoomPanel, resetState,
   };
 })();
