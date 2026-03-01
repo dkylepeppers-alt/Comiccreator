@@ -142,11 +142,11 @@ describe('API integration', () => {
 
     const result = await ctx.API.generateImage('draw scene', { resolution: '1792x1024' });
     assert.equal(result, 'https://img.test/success.png');
-    assert.deepEqual(calls.map(c => [c.model, c.resolution]), [
+    assert.deepEqual(calls.map(c => [c.model, c.size]), [
       ['unstable-model', '1792x1024'],
       ['unstable-model', '1024x1024'],
     ]);
-    assert.equal(calls[0].nImages, 1);
+    assert.equal(calls[0].n, 1);
   });
 
   it('generateImage falls back to gpt-image-1 after repeated 500 errors', async () => {
@@ -161,7 +161,7 @@ describe('API integration', () => {
 
     const result = await ctx.API.generateImage('draw scene', { resolution: '1792x1024' });
     assert.equal(result, 'abcd');
-    assert.deepEqual(calls.map(c => [c.model, c.resolution]), [
+    assert.deepEqual(calls.map(c => [c.model, c.size]), [
       ['unstable-model', '1792x1024'],
       ['unstable-model', '1024x1024'],
       ['gpt-image-1', '1024x1024'],
@@ -188,13 +188,13 @@ describe('API integration', () => {
     assert.ok(calls[0].url.endsWith('/images/generations'));
     assert.equal(calls[0].body.model, 'ref-model');
     assert.equal(calls[0].body.prompt, 'draw scene');
-    assert.equal(calls[0].body.nImages, 1);
+    assert.equal(calls[0].body.n, 1);
     assert.ok(Array.isArray(calls[0].body.imageDataUrls));
     assert.equal(calls[0].body.imageDataUrls.length, 2);
-    assert.equal(calls[0].headers['x-api-key'], 'test-key');
+    assert.equal(calls[0].headers['Authorization'], 'Bearer test-key');
   });
 
-  it('generateImage includes showExplicitContent and nImages when enabled', async () => {
+  it('generateImage includes showExplicitContent and n when enabled', async () => {
     await ctx.DB.setSetting('showExplicitContent', true);
     let requestBody;
     ctx.fetch = async (_url, opts) => {
@@ -205,7 +205,7 @@ describe('API integration', () => {
     const result = await ctx.API.generateImage('draw scene');
     assert.equal(result, 'https://img.test/explicit.png');
     assert.equal(requestBody.showExplicitContent, true);
-    assert.equal(requestBody.nImages, 1);
-    assert.ok(requestBody.resolution);
+    assert.equal(requestBody.n, 1);
+    assert.ok(requestBody.size);
   });
 });
