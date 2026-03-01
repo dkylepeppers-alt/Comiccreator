@@ -187,7 +187,7 @@ const API = (() => {
     const imageResolution = options.resolution || '1024x1024';
 
     async function requestImage(model, resolution) {
-      const body = { model, prompt, resolution, nImages: 1 };
+      const body = { model, prompt, size: resolution, n: 1 };
       if (showExplicitContent) body.showExplicitContent = true;
       if (compressedRefs && compressedRefs.length > 0) {
         body.imageDataUrls = compressedRefs;
@@ -197,7 +197,7 @@ const API = (() => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
       });
