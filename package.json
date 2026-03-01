@@ -4,7 +4,7 @@
   "private": true,
   "description": "AI Comic Creator - A vanilla JS PWA for generating AI-powered comic books",
   "scripts": {
-    "prepare": "scripts/install-hooks.sh",
+    "prepare": "bash scripts/install-hooks.sh",
     "lint": "eslint js/",
     "lint:fix": "eslint js/ --fix",
     "format": "prettier --write 'js/**/*.js' 'css/**/*.css'",
@@ -12,9 +12,9 @@
     "test": "node --test test/*.test.js",
     "check-syntax": "for f in js/*.js js/pages/*.js; do node --check \"$f\" || exit 1; done",
     "serve": "python3 -m http.server 8080",
-    "version:patch": "scripts/bump-version.sh patch",
-    "version:minor": "scripts/bump-version.sh minor",
-    "version:major": "scripts/bump-version.sh major"
+    "version:patch": "bash scripts/bump-version.sh patch",
+    "version:minor": "bash scripts/bump-version.sh minor",
+    "version:major": "bash scripts/bump-version.sh major"
   },
   "devDependencies": {
     "eslint": "^9.0.0",

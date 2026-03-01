@@ -5,13 +5,17 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOOKS_DIR="$REPO_ROOT/.git/hooks"
 SCRIPTS_DIR="$REPO_ROOT/scripts"
 
-if [ ! -d "$REPO_ROOT/.git" ]; then
-  echo "No .git directory found — skipping hook installation."
+# Ensure we're inside a git repository (handles worktrees and submodules)
+if ! git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "No git repository found at $REPO_ROOT — skipping hook installation."
   exit 0
 fi
+
+# Resolve the hooks directory via git to support worktrees/submodules
+HOOKS_DIR="$(git -C "$REPO_ROOT" rev-parse --git-path hooks 2>/dev/null || echo "$REPO_ROOT/.git/hooks")"
+mkdir -p "$HOOKS_DIR"
 
 install_hook() {
   local name="$1"

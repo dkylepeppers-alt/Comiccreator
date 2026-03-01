@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-commit — Validate version consistency across all 4 version files.
+# pre-commit — Validate version consistency across all version files.
 # Install via: scripts/install-hooks.sh (or symlink manually to .git/hooks/pre-commit)
 
 set -euo pipefail
@@ -10,12 +10,46 @@ VERSION_JSON="$REPO_ROOT/version.json"
 SW_JS="$REPO_ROOT/sw.js"
 SETTINGS_JS="$REPO_ROOT/js/pages/settings.js"
 PACKAGE_JSON="$REPO_ROOT/package.json"
+INDEX_HTML="$REPO_ROOT/index.html"
 
-# ---------- Extract versions ----------
-VER_JSON="$(grep '"version"' "$VERSION_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-VER_SW="$(grep "const CACHE_NAME" "$SW_JS" | sed "s/.*comic-creator-v\([^']*\)'.*/\1/")"
-VER_SETTINGS="$(grep "const APP_VERSION" "$SETTINGS_JS" | sed "s/.*APP_VERSION = '\([^']*\)'.*/\1/")"
-VER_PKG="$(grep '"version"' "$PACKAGE_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+# ---------- Verify files exist ----------
+for f in "$VERSION_JSON" "$SW_JS" "$SETTINGS_JS" "$PACKAGE_JSON" "$INDEX_HTML"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: expected file not found: $f" >&2
+    exit 1
+  fi
+done
+
+# ---------- Extract versions (non-fatal; validate after) ----------
+VER_JSON="$(grep '"version"' "$VERSION_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
+if [ -z "${VER_JSON:-}" ]; then
+  echo 'ERROR: Could not extract version from version.json (missing "version" field?)' >&2
+  exit 1
+fi
+
+VER_SW="$(grep "const CACHE_NAME" "$SW_JS" | sed "s/.*comic-creator-v\([^']*\)'.*/\1/" || true)"
+if [ -z "${VER_SW:-}" ]; then
+  echo "ERROR: Could not extract CACHE_NAME version from $SW_JS" >&2
+  exit 1
+fi
+
+VER_SETTINGS="$(grep "const APP_VERSION" "$SETTINGS_JS" | sed "s/.*APP_VERSION = '\([^']*\)'.*/\1/" || true)"
+if [ -z "${VER_SETTINGS:-}" ]; then
+  echo "ERROR: Could not extract APP_VERSION from $SETTINGS_JS" >&2
+  exit 1
+fi
+
+VER_PKG="$(grep '"version"' "$PACKAGE_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
+if [ -z "${VER_PKG:-}" ]; then
+  echo 'ERROR: Could not extract version from package.json (missing "version" field?)' >&2
+  exit 1
+fi
+
+VER_INDEX="$(grep -o 'v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* \&middot; PWA' "$INDEX_HTML" | sed 's/^v\([^ ]*\) .*/\1/' || true)"
+if [ -z "${VER_INDEX:-}" ]; then
+  echo "ERROR: Could not extract version from index.html footer" >&2
+  exit 1
+fi
 
 # ---------- Check consistency ----------
 ALL_MATCH=true
@@ -36,6 +70,7 @@ echo "  ✓ version.json: $VER_JSON"
 check "sw.js (CACHE_NAME)" "$VER_SW"
 check "js/pages/settings.js (APP_VERSION)" "$VER_SETTINGS"
 check "package.json" "$VER_PKG"
+check "index.html (footer)" "$VER_INDEX"
 
 if [ "$ALL_MATCH" = false ]; then
   echo ""

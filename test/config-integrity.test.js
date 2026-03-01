@@ -37,4 +37,10 @@ describe('configuration integrity', () => {
     assert.ok(sw.includes(`const CACHE_NAME = 'comic-creator-v${version}'`));
     assert.ok(index.includes(`v${version} &middot; PWA`));
   });
+
+  it('package.json version matches version.json', () => {
+    const version = JSON.parse(read('version.json')).version;
+    const pkg = JSON.parse(read('package.json'));
+    assert.equal(pkg.version, version, `package.json version "${pkg.version}" must match version.json "${version}"`);
+  });
 });

@@ -24,11 +24,22 @@ VERSION_JSON="$REPO_ROOT/version.json"
 SW_JS="$REPO_ROOT/sw.js"
 SETTINGS_JS="$REPO_ROOT/js/pages/settings.js"
 PACKAGE_JSON="$REPO_ROOT/package.json"
+INDEX_HTML="$REPO_ROOT/index.html"
 
 # ---------- Read current version ----------
-CURRENT="$(grep '"version"' "$VERSION_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+if [ ! -f "$VERSION_JSON" ]; then
+  echo "Error: version.json not found at $VERSION_JSON" >&2
+  exit 1
+fi
+
+CURRENT="$(grep '"version"' "$VERSION_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
 if [ -z "$CURRENT" ]; then
-  echo "Error: could not read current version from version.json" >&2
+  echo "Error: could not read current version from version.json (missing \"version\" field)" >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "$CURRENT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "Error: version.json contains an invalid version \"$CURRENT\" (expected MAJOR.MINOR.PATCH)" >&2
   exit 1
 fi
 
@@ -84,12 +95,17 @@ echo "  Updated: js/pages/settings.js"
 sed_i "s/\"version\":[[:space:]]*\"[^\"]*\"/\"version\": \"$NEW\"/" "$PACKAGE_JSON"
 echo "  Updated: package.json"
 
+# ---------- Update index.html footer ----------
+sed_i "s/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* \&middot; PWA/v$NEW \&middot; PWA/" "$INDEX_HTML"
+echo "  Updated: index.html"
+
 # ---------- Stage the changed files ----------
 git -C "$REPO_ROOT" add \
   "$VERSION_JSON" \
   "$SW_JS" \
   "$SETTINGS_JS" \
-  "$PACKAGE_JSON"
+  "$PACKAGE_JSON" \
+  "$INDEX_HTML"
 
 echo ""
 echo "Done. Version bumped to $NEW (updated: $TODAY)"
