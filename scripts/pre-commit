@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# pre-commit — Validate version consistency across all 4 version files.
+# Install via: scripts/install-hooks.sh (or symlink manually to .git/hooks/pre-commit)
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+VERSION_JSON="$REPO_ROOT/version.json"
+SW_JS="$REPO_ROOT/sw.js"
+SETTINGS_JS="$REPO_ROOT/js/pages/settings.js"
+PACKAGE_JSON="$REPO_ROOT/package.json"
+
+# ---------- Extract versions ----------
+VER_JSON="$(grep '"version"' "$VERSION_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+VER_SW="$(grep "const CACHE_NAME" "$SW_JS" | sed "s/.*comic-creator-v\([^']*\)'.*/\1/")"
+VER_SETTINGS="$(grep "const APP_VERSION" "$SETTINGS_JS" | sed "s/.*APP_VERSION = '\([^']*\)'.*/\1/")"
+VER_PKG="$(grep '"version"' "$PACKAGE_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+
+# ---------- Check consistency ----------
+ALL_MATCH=true
+
+check() {
+  local label="$1"
+  local ver="$2"
+  if [ "$ver" != "$VER_JSON" ]; then
+    echo "  ✗ $label: $ver  (expected $VER_JSON)"
+    ALL_MATCH=false
+  else
+    echo "  ✓ $label: $ver"
+  fi
+}
+
+echo "Version consistency check:"
+echo "  ✓ version.json: $VER_JSON"
+check "sw.js (CACHE_NAME)" "$VER_SW"
+check "js/pages/settings.js (APP_VERSION)" "$VER_SETTINGS"
+check "package.json" "$VER_PKG"
+
+if [ "$ALL_MATCH" = false ]; then
+  echo ""
+  echo "ERROR: Version mismatch detected. Run one of the following to fix:"
+  echo "  ./scripts/bump-version.sh patch"
+  echo "  ./scripts/bump-version.sh minor"
+  echo "  ./scripts/bump-version.sh major"
+  echo "  ./scripts/bump-version.sh <version>   # e.g. ./scripts/bump-version.sh $VER_JSON"
+  exit 1
+fi
+
+exit 0
