@@ -377,6 +377,19 @@ Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` lets `update.
 
 ---
 
+### Suggested Automation Upgrades
+
+Current automation already includes `npm run check-syntax`, `npm test`, and the GitHub Actions `Tests` workflow on push/PR.
+
+Recommended next steps:
+
+1. Add a second CI workflow for `npm run lint` after browser-global ESLint config issues are resolved.
+2. Add Playwright E2E smoke tests for critical flows (Settings save, Create flow, Library open/export path) and run them on pull requests.
+3. Enable Dependabot for npm/GitHub Actions updates and add a scheduled `npm audit --production` security workflow.
+4. Add a release workflow (`workflow_dispatch`) that validates checks, bumps version files, and creates a tagged GitHub release.
+
+---
+
 ## License
 
 MIT
