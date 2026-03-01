@@ -8,6 +8,10 @@ const { indexedDB } = require('fake-indexeddb');
 globalThis.indexedDB = indexedDB;
 globalThis.crypto = globalThis.crypto || require('node:crypto').webcrypto;
 
+// Load utils.js first so dedupeByNameLatest is available as a global when db.js runs
+const utilsCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'utils.js'), 'utf8');
+vm.runInThisContext(utilsCode, { filename: 'utils.js' });
+
 const dbCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'db.js'), 'utf8');
 vm.runInThisContext(`${dbCode}\n;globalThis.__TEST_DB__ = DB;`, { filename: 'db.js' });
 const DB = globalThis.__TEST_DB__;

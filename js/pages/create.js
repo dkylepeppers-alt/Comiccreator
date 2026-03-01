@@ -166,7 +166,7 @@ const CreatePage = (() => {
 
         <!-- Render current page panels -->
         <div class="comic-page${currentPage?.panels?.length >= 3 ? ' layout-grid' : ''}" id="comic-display">
-          ${currentPage ? renderComicPage(currentPage) : '<p class="text-muted text-center">No content yet</p>'}
+          ${currentPage ? renderComicPanels(currentPage) : '<p class="text-muted text-center">No content yet</p>'}
         </div>
 
         <!-- Choices -->
@@ -215,25 +215,6 @@ const CreatePage = (() => {
         ` : ''}
       </div>
     `;
-  }
-
-  function renderComicPage(page) {
-    if (!page || !page.panels) return '<p class="text-muted">Empty page</p>';
-
-    return page.panels.map((panel, i) => `
-      <div class="comic-panel">
-        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy">` :
-          panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:180px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted text-center" style="font-style:italic;">${escHtml(panel.imagePrompt).slice(0, 150)}...</p></div>` :
-          ''}
-        ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
-        ${(panel.dialogue || []).map(d => `
-          <div class="comic-dialogue">
-            <div class="speaker-name">${escHtml(d.speaker)}</div>
-            <div>${escHtml(d.text)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `).join('');
   }
 
   async function renderResume(comicId) {
@@ -561,14 +542,7 @@ const CreatePage = (() => {
 
     const choice = currentPage.choices[idx];
     const userMsg = `The reader chose: "${choice.text}". Continue the story based on this choice. Generate the next comic page.`;
-
-    state.conversationHistory.push({ role: 'user', content: userMsg });
-    state.isGenerating = true;
-    state.step = 'generating';
-    await App.refreshPage();
-
-    const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
-    await generatePage(presetData);
+    await _startNextPage(userMsg);
   }
 
   async function continueStory() {
@@ -577,7 +551,10 @@ const CreatePage = (() => {
     const userMsg = customDir ?
       `Continue the story with this direction: ${customDir}. Generate the next comic page.` :
       'Continue the story naturally. Generate the next comic page.';
+    await _startNextPage(userMsg);
+  }
 
+  async function _startNextPage(userMsg) {
     state.conversationHistory.push({ role: 'user', content: userMsg });
     state.isGenerating = true;
     state.step = 'generating';

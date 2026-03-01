@@ -39,6 +39,25 @@
     return g ? g.emoji : '&#128214;';
   }
 
+  // Render comic panel HTML from a page data object (shared by CreatePage and LibraryPage)
+  function renderComicPanels(pageData) {
+    if (!pageData || !pageData.panels) return '<p class="text-muted">Empty page</p>';
+    return pageData.panels.map((panel, i) => `
+      <div class="comic-panel">
+        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy">` :
+          panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:150px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted" style="font-style:italic;text-align:center;">${escHtml(panel.imagePrompt).slice(0, 200)}</p></div>` :
+          ''}
+        ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
+        ${(panel.dialogue || []).map(d => `
+          <div class="comic-dialogue">
+            <div class="speaker-name">${escHtml(d.speaker)}</div>
+            <div>${escHtml(d.text)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+  }
+
   // Deduplicate items by name (case-insensitive), keeping the most recently updated/created entry
   function dedupeByNameLatest(list) {
     if (!Array.isArray(list)) return [];
@@ -58,5 +77,6 @@
   exports.escHtml = escHtml;
   exports.timeAgo = timeAgo;
   exports.getGenreEmoji = getGenreEmoji;
+  exports.renderComicPanels = renderComicPanels;
   exports.dedupeByNameLatest = dedupeByNameLatest;
 })(typeof module !== 'undefined' ? module.exports : this);

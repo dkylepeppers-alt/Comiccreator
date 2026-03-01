@@ -82,7 +82,7 @@ const LibraryPage = (() => {
                 <button class="btn btn-sm btn-secondary" onclick="LibraryPage.downloadPageImage(${i})">&#128247; Save Image</button>
               </div>
               <div class="comic-page${p.data?.panels?.length >= 3 ? ' layout-grid' : ''}">
-                ${renderPanels(p.data)}
+                ${renderComicPanels(p.data)}
               </div>
             </div>
           `).join('')}
@@ -91,25 +91,6 @@ const LibraryPage = (() => {
         ${pages.length === 0 ? '<p class="text-muted text-center">No pages generated yet.</p>' : ''}
       </div>
     `;
-  }
-
-  function renderPanels(pageData) {
-    if (!pageData || !pageData.panels) return '<p class="text-muted">Empty page</p>';
-
-    return pageData.panels.map((panel, i) => `
-      <div class="comic-panel">
-        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy">` :
-          panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:150px;display:flex;align-items:center;justify-content:center;"><p class="text-sm" style="color:#9898cc;font-style:italic;text-align:center;">${escHtml(panel.imagePrompt).slice(0, 200)}</p></div>` :
-          ''}
-        ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
-        ${(panel.dialogue || []).map(d => `
-          <div class="comic-dialogue">
-            <div class="speaker-name">${escHtml(d.speaker)}</div>
-            <div>${escHtml(d.text)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `).join('');
   }
 
   function backToList() {

@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest } = require('../js/utils');
+const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, renderComicPanels } = require('../js/utils');
 
 describe('utils escHtml', () => {
   it('handles nullish and empty', () => {
@@ -78,5 +78,54 @@ describe('utils dedupeByNameLatest', () => {
     assert.equal(result.length, 2);
     assert.equal(result[0].id, 'y');
     assert.equal(result[1].id, 'x');
+  });
+});
+
+describe('utils renderComicPanels', () => {
+  it('returns empty-page message for missing or empty panels', () => {
+    assert.ok(renderComicPanels(null).includes('Empty page'));
+    assert.ok(renderComicPanels({}).includes('Empty page'));
+    assert.ok(renderComicPanels({ panels: null }).includes('Empty page'));
+  });
+
+  it('renders an image tag when imageUrl is present', () => {
+    const pageData = { panels: [{ imageUrl: 'http://example.com/img.png', narration: '', dialogue: [] }] };
+    const html = renderComicPanels(pageData);
+    assert.ok(html.includes('<img'));
+    assert.ok(html.includes('http://example.com/img.png'));
+  });
+
+  it('renders a placeholder div when only imagePrompt is present', () => {
+    const pageData = { panels: [{ imagePrompt: 'A dark city', narration: '', dialogue: [] }] };
+    const html = renderComicPanels(pageData);
+    assert.ok(!html.includes('<img'));
+    assert.ok(html.includes('A dark city'));
+  });
+
+  it('renders narration and dialogue', () => {
+    const pageData = {
+      panels: [{
+        imageUrl: null,
+        narration: 'The night falls.',
+        dialogue: [{ speaker: 'Hero', text: 'I must act.' }],
+      }],
+    };
+    const html = renderComicPanels(pageData);
+    assert.ok(html.includes('The night falls.'));
+    assert.ok(html.includes('Hero'));
+    assert.ok(html.includes('I must act.'));
+  });
+
+  it('escapes HTML in user content', () => {
+    const pageData = {
+      panels: [{
+        narration: '<script>bad</script>',
+        dialogue: [{ speaker: '<b>Villain</b>', text: '"Evil"' }],
+      }],
+    };
+    const html = renderComicPanels(pageData);
+    assert.ok(!html.includes('<script>'));
+    assert.ok(html.includes('&lt;script&gt;'));
+    assert.ok(!html.includes('<b>'));
   });
 });
