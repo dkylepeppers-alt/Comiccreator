@@ -2,7 +2,12 @@
 
 ## Current State
 
-The codebase has **zero test files, zero test infrastructure, and zero automated tests** across ~2,915 lines of JavaScript in 10 modules. All quality assurance is manual.
+The codebase now has automated checks and tests:
+- `npm run check-syntax`
+- `npm test` (`node --test test/*.test.js`)
+- GitHub Actions workflow: `.github/workflows/tests.yml` (push + pull_request)
+
+Remaining quality gaps are primarily browser-level integration, end-to-end user flows, and richer CI coverage (lint/security/dependency automation).
 
 ---
 

@@ -4,7 +4,7 @@
 
 AI Comic Creator is a **vanilla JavaScript Progressive Web App (PWA)** that generates AI-powered comic books with interactive narratives, custom characters, and world-building. It uses the NanoGPT API (OpenAI-compatible endpoint at `https://nano-gpt.com/api/v1`) for both text (streaming SSE) and image generation.
 
-**Current version:** 1.2.0
+**Current version:** 1.4.0
 
 ---
 
@@ -12,7 +12,7 @@ AI Comic Creator is a **vanilla JavaScript Progressive Web App (PWA)** that gene
 
 - **ES2020+ syntax** is fine (optional chaining `?.`, nullish coalescing `??`, `async/await`, `crypto.randomUUID`).
 - **Module pattern:** All JS files use the IIFE module pattern (`const FooModule = (() => { ... return { ... }; })()`). Do **not** convert to ES module `import`/`export` syntax.
-- No automated tests exist yet. See "Testing" below for manual QA steps.
+- Automated checks exist via npm scripts (`check-syntax`, `test`, `lint`) and a GitHub Actions workflow (`.github/workflows/tests.yml`).
 
 ---
 
@@ -193,7 +193,12 @@ Settings keys used: `apiKey`, `model`, `imageModel`, `temperature`, `topP`, `max
 
 ## Testing
 
-There is **no test infrastructure** and no automated tests. The `TEST_COVERAGE_ANALYSIS.md` file documents what should be tested in the future.
+Automated test infrastructure exists:
+- `npm run check-syntax`
+- `npm test` (`node --test test/*.test.js`)
+- GitHub Actions `Tests` workflow (`.github/workflows/tests.yml`) on push/PR
+
+The `TEST_COVERAGE_ANALYSIS.md` file now focuses on remaining coverage gaps and next-priority test areas.
 
 **Manual QA steps:**
 1. Start the server: `python3 -m http.server 8080`
@@ -203,6 +208,11 @@ There is **no test infrastructure** and no automated tests. The `TEST_COVERAGE_A
 5. Generate a full comic end-to-end (at least 2 pages)
 6. Test PDF export from the Library page
 7. Verify offline mode: disconnect network, reload, confirm app loads from cache
+
+**Suggested next automation improvements (optional):**
+1. Add a dedicated lint workflow job once the current browser-global ESLint config issues are resolved.
+2. Add an end-to-end browser smoke test workflow (Playwright) for setup → create → library navigation.
+3. Enable Dependabot and a weekly `npm audit` workflow for dependency hygiene.
 
 ---
 
