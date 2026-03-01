@@ -15,6 +15,7 @@ const CreatePage = (() => {
     pages: [],
     conversationHistory: [],
     referenceImages: [],
+    characters: [],
     isGenerating: false,
   };
 
@@ -254,13 +255,18 @@ const CreatePage = (() => {
     state.step = 'reading';
     state.isGenerating = false;
 
-    // Restore reference images so continued generation maintains visual consistency
+    // Restore character data and reference images for continued generation
+    state.characters = [];
+    for (const cid of state.selectedCharacters) {
+      const c = await DB.get(DB.STORES.characters, cid);
+      if (c) state.characters.push(c);
+    }
+
     const useRefImages = await DB.getSetting('useRefImages', true);
     const refImages = [];
     if (useRefImages) {
-      for (const cid of state.selectedCharacters) {
-        const c = await DB.get(DB.STORES.characters, cid);
-        if (c?.imageData) refImages.push(c.imageData);
+      for (const c of state.characters) {
+        if (c.imageData) refImages.push(c.imageData);
       }
       if (state.selectedWorld) {
         const world = await DB.get(DB.STORES.worlds, state.selectedWorld);
@@ -331,6 +337,7 @@ const CreatePage = (() => {
       const c = await DB.get(DB.STORES.characters, cid);
       if (c) characters.push(c);
     }
+    state.characters = characters;
     const world = state.selectedWorld ? await DB.get(DB.STORES.worlds, state.selectedWorld) : null;
 
     // Collect reference images for image-to-image generation
@@ -469,17 +476,36 @@ const CreatePage = (() => {
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
         const imageResolution = await DB.getSetting('imageSize', '1024x1024');
+        const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
         const imageOpts = { resolution: imageResolution };
         if (state.referenceImages.length === 1) {
           imageOpts.imageDataUrl = state.referenceImages[0];
         } else if (state.referenceImages.length > 1) {
           imageOpts.imageDataUrls = state.referenceImages;
         }
+
+        // Build character appearance suffix for consistent visuals
+        const characterAppearances = state.characters
+          .filter(c => c.appearance && c.appearance.trim())
+          .map(c => `${c.name}: ${c.appearance.trim()}`)
+          .join('; ');
+        const appearanceSuffix = characterAppearances
+          ? `Characters in scene: ${characterAppearances}`
+          : '';
+
+        function buildEnhancedImagePrompt(basePrompt) {
+          let prompt = basePrompt;
+          if (imagePromptPrefix) prompt = `${imagePromptPrefix}, ${prompt}`;
+          if (appearanceSuffix) prompt = `${prompt}. ${appearanceSuffix}`;
+          return prompt;
+        }
+
         let doneCount = 0;
         await Promise.all(pageData.panels.map(async (panel) => {
           if (!panel.imagePrompt) return;
           try {
-            const imageData = await API.generateImage(panel.imagePrompt, imageOpts);
+            const enhancedPrompt = buildEnhancedImagePrompt(panel.imagePrompt);
+            const imageData = await API.generateImage(enhancedPrompt, imageOpts);
             if (imageData) {
               if (imageData.startsWith('http')) {
                 // URL response — try to fetch for offline storage
@@ -628,6 +654,7 @@ const CreatePage = (() => {
       pages: [],
       conversationHistory: [],
       referenceImages: [],
+      characters: [],
       isGenerating: false,
     };
   }
