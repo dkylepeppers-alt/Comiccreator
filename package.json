@@ -1,6 +1,6 @@
 {
   "name": "comic-creator",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "private": true,
   "description": "AI Comic Creator - A vanilla JS PWA for generating AI-powered comic books",
   "scripts": {
