@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.5.7';
+  const APP_VERSION = '1.6.0';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render
@@ -118,10 +118,11 @@ const SettingsPage = (() => {
           <div class="form-group">
             <label class="form-label">Image Size</label>
             <select id="set-imgsize">
-              ${['1024x1024', '1024x1792', '1792x1024', '512x512'].map(s =>
+              ${['256x256', '512x512', '1024x1024', '1024x1792', '1792x1024', '2048x2048'].map(s =>
                 `<option value="${s}" ${imageSize === s ? 'selected' : ''}>${s}</option>`
               ).join('')}
             </select>
+            <div class="form-hint" id="imgsize-hint">Options update automatically for the selected model</div>
           </div>
 
           <div class="form-group">
@@ -215,6 +216,9 @@ const SettingsPage = (() => {
       loadModels('text'),
       loadModels('image'),
     ]);
+    // After image models are loaded, rebuild the size dropdown for the current model
+    const currentImageModel = document.getElementById('set-imgmodel')?.value;
+    if (currentImageModel) await updateImageSizeOptions(currentImageModel);
     // Close dropdowns when clicking outside
     document.addEventListener('click', handleOutsideClick);
   }
@@ -362,6 +366,28 @@ const SettingsPage = (() => {
     return parts.length > 0 ? parts.join(' &middot; ') : '';
   }
 
+  /**
+   * Rebuild the image size <select> to show only the sizes supported by modelId.
+   * Called when the image model changes or on page mount after models are loaded.
+   */
+  async function updateImageSizeOptions(modelId) {
+    const sizeEl = document.getElementById('set-imgsize');
+    if (!sizeEl || !modelId) return;
+
+    const currentSize = sizeEl.value;
+    const sizes = await API.getModelSizes(modelId);
+
+    sizeEl.innerHTML = sizes
+      .map(s => `<option value="${escHtml(s)}" ${s === currentSize ? 'selected' : ''}>${escHtml(s)}</option>`)
+      .join('');
+
+    // If the saved size isn't valid for this model, auto-select the first supported
+    if (!sizes.includes(currentSize) && sizes.length > 0) {
+      sizeEl.value = sizes[0];
+      App.toast(`Image size auto-set to ${sizes[0]} for this model`, 'info');
+    }
+  }
+
   function togglePicker(type) {
     const dropdown = document.getElementById(`${type}-model-dropdown`);
     const isOpen = !dropdown.classList.contains('hidden');
@@ -413,6 +439,8 @@ const SettingsPage = (() => {
     } else {
       document.getElementById('set-imgmodel').value = modelId;
       document.getElementById('image-model-display').textContent = modelId;
+      // Dynamically update allowed sizes for the newly selected image model
+      updateImageSizeOptions(modelId);
     }
     closePicker(type);
 
@@ -647,6 +675,6 @@ const SettingsPage = (() => {
     render, postRender, onMount, onUnmount,
     testConnection, save, exportData, importData, clearData, confirmClear,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
-    checkForUpdate,
+    updateImageSizeOptions, checkForUpdate,
   };
 })();

@@ -6,6 +6,77 @@ const API = (() => {
   const BASE_URL = 'https://nano-gpt.com/api/v1';
   const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
 
+  // Static fallback resolution map — used only when the API model record
+  // doesn't include a `sizes` field. Keys support prefix matching so that
+  // versioned model IDs (e.g. "flux-pro-v1.1") still resolve correctly.
+  const IMAGE_MODEL_SIZES = {
+    'gpt-image-1':           ['1024x1024', '1024x1792', '1792x1024'],
+    'dall-e-3':              ['1024x1024', '1024x1792', '1792x1024'],
+    'dall-e-2':              ['256x256', '512x512', '1024x1024'],
+    'gpt-4o-image':          ['1024x1024', '1024x1792', '1792x1024'],
+    'flux-pro':              ['1024x1024'],
+    'flux-kontext':          ['1024x1024'],
+    'flux-schnell':          ['1024x1024'],
+    'flux-dev':              ['1024x1024'],
+    'stable-diffusion-3':    ['512x512', '1024x1024'],
+    'stable-diffusion-xl':   ['512x512', '1024x1024'],
+    'sdxl':                  ['512x512', '1024x1024'],
+    'hidream':               ['1024x1024'],
+    'seedream':              ['2048x2048'],
+    'wanx':                  ['1024x1024'],
+    'midjourney':            ['1024x1024'],
+    'recraft':               ['1024x1024'],
+    'ideogram':              ['1024x1024'],
+    'playground':            ['1024x1024'],
+  };
+  const DEFAULT_IMAGE_SIZES = ['1024x1024'];
+
+  // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
+  let _modelSizesCache = null;
+
+  /**
+   * Returns true when we have reliable size information for a model —
+   * either from the live API cache or the static prefix-match table.
+   * Used by generateImage() to decide whether to enforce resolution validation.
+   */
+  function hasKnownSizes(modelId) {
+    if (!modelId) return false;
+    // Check live in-memory cache (populated by getModelSizes / fetchImageModels)
+    if (Array.isArray(_modelSizesCache)) {
+      const m = _modelSizesCache.find(x => x.id === modelId);
+      if (m?.sizes?.length) return true;
+    }
+    // Check static prefix table
+    const id = modelId.toLowerCase();
+    return Object.keys(IMAGE_MODEL_SIZES).some(k => id === k || id.startsWith(k));
+  }
+
+  /**
+   * Return the list of sizes supported by a given image model.
+   * Priority: (1) live API cache, (2) static prefix-match table, (3) default.
+   */
+  async function getModelSizes(modelId) {
+    if (!modelId) return DEFAULT_IMAGE_SIZES;
+
+    // Check live model cache stored in IndexedDB (memoized in memory for the session)
+    try {
+      if (_modelSizesCache === null) {
+        _modelSizesCache = await DB.getSetting('cachedImageModels', null);
+      }
+      if (Array.isArray(_modelSizesCache)) {
+        const m = _modelSizesCache.find(x => x.id === modelId);
+        if (m?.sizes?.length) return m.sizes;
+      }
+    } catch (_) { /* ignore cache errors */ }
+
+    // Prefix-match against static table
+    const id = modelId.toLowerCase();
+    for (const key of Object.keys(IMAGE_MODEL_SIZES)) {
+      if (id === key || id.startsWith(key)) return IMAGE_MODEL_SIZES[key];
+    }
+    return DEFAULT_IMAGE_SIZES;
+  }
+
   async function getApiKey() {
     return DB.getSetting('apiKey', '');
   }
@@ -184,7 +255,18 @@ const API = (() => {
       compressedRefs = await Promise.all(rawRefs.map(u => compressDataUrl(u)));
     }
 
-    const imageResolution = options.resolution || '1024x1024';
+    // Validate requested resolution against what this model actually supports —
+    // but only when we have known sizes (from API cache or static map). If sizes
+    // are unknown for the model, pass through the requested resolution and rely
+    // on the existing retry/fallback logic instead.
+    const requestedResolution = options.resolution || '1024x1024';
+    const supportedSizes = await getModelSizes(modelId);
+    let imageResolution = requestedResolution;
+    if (hasKnownSizes(modelId)) {
+      imageResolution = supportedSizes.includes(requestedResolution)
+        ? requestedResolution
+        : supportedSizes[0];
+    }
 
     async function requestImage(model, resolution) {
       const body = { model, prompt, size: resolution, n: 1 };
@@ -400,10 +482,13 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         owned_by: m.owned_by || m.provider || '',
         pricing: m.pricing || null,
         supports_edit: m.supports_edit || false,
+        // Capture supported sizes if the API provides them
+        sizes: m.sizes || m.supported_sizes || m.image_sizes || null,
       })).sort((a, b) => a.id.localeCompare(b.id));
 
       await DB.setSetting(CACHE_KEY, models);
       await DB.setSetting(CACHE_TS_KEY, Date.now());
+      _modelSizesCache = models; // Update in-memory cache immediately
       return models;
     } catch (err) {
       if (typeof App !== 'undefined') App.logError('fetchImageModels', err);
@@ -448,6 +533,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     getModelParams,
     fetchTextModels,
     fetchImageModels,
+    getModelSizes,
     FALLBACK_TEXT_MODELS,
     FALLBACK_IMAGE_MODELS,
     BASE_URL,
