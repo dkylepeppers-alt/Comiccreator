@@ -78,6 +78,15 @@ git clone "$REPO_URL" "$INSTALL_DIR" || { echo -e "${RED}[!] Failed to clone rep
 chmod +x "$INSTALL_DIR/server.sh"
 chmod +x "$INSTALL_DIR/update.sh"
 chmod +x "$INSTALL_DIR/install.sh"
+chmod +x "$INSTALL_DIR/scripts/bump-version.sh"
+chmod +x "$INSTALL_DIR/scripts/install-hooks.sh"
+chmod +x "$INSTALL_DIR/scripts/pre-commit"
+
+# ---------- Install git hooks ----------
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo -e "${CYAN}[*] Installing git hooks...${NC}"
+  "$INSTALL_DIR/scripts/install-hooks.sh" || true
+fi
 
 # ---------- Done ----------
 echo ""
