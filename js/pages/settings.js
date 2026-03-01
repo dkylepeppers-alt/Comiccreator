@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.5.6';
+  const APP_VERSION = '1.5.7';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render
@@ -28,6 +28,7 @@ const SettingsPage = (() => {
     const useRefImages = await DB.getSetting('useRefImages', true);
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
+    const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
     return `
@@ -121,6 +122,12 @@ const SettingsPage = (() => {
                 `<option value="${s}" ${imageSize === s ? 'selected' : ''}>${s}</option>`
               ).join('')}
             </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Image Prompt Prefix</label>
+            <input type="text" id="set-imgprefix" value="${escHtml(imagePromptPrefix)}" placeholder="e.g. detailed 2d illustration, ultra detailed Pixar style">
+            <div class="form-hint">Text prepended to every image prompt for consistent art style</div>
           </div>
         </div>
 
@@ -553,6 +560,7 @@ const SettingsPage = (() => {
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
     await DB.setSetting('imageSize', document.getElementById('set-imgsize').value);
+    await DB.setSetting('imagePromptPrefix', document.getElementById('set-imgprefix').value.trim());
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));
     await DB.setSetting('maxTokens', parseInt(document.getElementById('set-tokens').value));
