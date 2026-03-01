@@ -656,7 +656,10 @@ const CreatePage = (() => {
   async function rerollPage() {
     if (state.isGenerating || state.pages.length === 0) return;
 
-    // Remove last assistant turn from history so the AI tries again
+    // Remove last assistant turn from history so the AI tries again.
+    // A failed parse attempt may have left a trailing user message — strip it first.
+    const trailingMsg = state.conversationHistory[state.conversationHistory.length - 1];
+    if (trailingMsg?.role === 'user') state.conversationHistory.pop();
     const lastMsg = state.conversationHistory[state.conversationHistory.length - 1];
     if (lastMsg?.role === 'assistant') state.conversationHistory.pop();
 
@@ -689,11 +692,20 @@ const CreatePage = (() => {
   async function undoChoice() {
     if (state.isGenerating || state.pages.length <= 1) return;
 
-    // Pop assistant response then user choice (two messages)
+    // Pop assistant response then user choice (two messages) for the page being undone.
+    // A failed next-page generation may have left a trailing user message — strip it first.
+    const trailingMsg = state.conversationHistory[state.conversationHistory.length - 1];
+    if (trailingMsg?.role === 'user') {
+      state.conversationHistory.pop();
+    }
     const assistantMsg = state.conversationHistory[state.conversationHistory.length - 1];
-    if (assistantMsg?.role === 'assistant') state.conversationHistory.pop();
+    if (assistantMsg?.role === 'assistant') {
+      state.conversationHistory.pop();
+    }
     const userMsg = state.conversationHistory[state.conversationHistory.length - 1];
-    if (userMsg?.role === 'user') state.conversationHistory.pop();
+    if (userMsg?.role === 'user') {
+      state.conversationHistory.pop();
+    }
 
     // Delete the last page from DB
     const lastPageId = state.pageIds.pop();

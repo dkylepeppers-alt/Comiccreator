@@ -8,6 +8,8 @@ const LibraryPage = (() => {
   // Search / filter state — persists within a session, reset on unmount
   let _searchQuery = '';
   let _genreFilter = '';
+  // Cached comics array — populated by renderList() for in-place search filtering
+  let _allComics = [];
 
   async function render(param) {
     if (param && param.length > 10) {
@@ -22,16 +24,53 @@ const LibraryPage = (() => {
     const q = _searchQuery.toLowerCase().trim();
     return comics.filter(c => {
       const matchesSearch = !q ||
-        c.title.toLowerCase().includes(q) ||
+        (c.title || '').toLowerCase().includes(q) ||
         (c.genreName || c.genre || '').toLowerCase().includes(q);
       const matchesGenre = !_genreFilter || c.genre === _genreFilter;
       return matchesSearch && matchesGenre;
     });
   }
 
+  /** Renders the filterable comic list items (or a "no results" state). */
+  function renderComicItems(filtered) {
+    if (filtered.length === 0) {
+      return `
+        <div class="empty-state">
+          <div class="empty-state-text">No comics match your search.</div>
+          <button class="btn btn-secondary btn-sm" onclick="LibraryPage.clearFilter()">Clear Filter</button>
+        </div>
+      `;
+    }
+    return filtered.map(c => `
+      <div class="list-item" onclick="App.navigate('library', '${c.id}')">
+        <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
+        <div class="list-item-info">
+          <div class="list-item-title">${escHtml(c.title || '')}</div>
+          <div class="list-item-desc">
+            ${escHtml(c.genreName || c.genre)} &middot; ${c.pageCount || 0} pages
+            ${c.finished ? ' &middot; Complete' : ' &middot; In Progress'}
+            &middot; ${timeAgo(c.updatedAt || c.createdAt)}
+          </div>
+        </div>
+        <div class="list-item-actions">
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();LibraryPage.deleteComic('${c.id}','${escHtml(c.title || '')}')">&#128465;</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  /**
+   * Update the search query and re-render only the list container in-place,
+   * preserving input focus and caret position.
+   */
   function setSearch(query) {
     _searchQuery = query;
-    App.refreshPage();
+    const container = document.getElementById('library-comics-list');
+    if (container) {
+      container.innerHTML = renderComicItems(applyFilter(_allComics));
+    } else {
+      App.refreshPage();
+    }
   }
 
   function setGenre(genre) {
@@ -46,12 +85,12 @@ const LibraryPage = (() => {
   }
 
   async function renderList() {
-    const comics = await DB.getAll(DB.STORES.comics);
-    comics.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+    _allComics = await DB.getAll(DB.STORES.comics);
+    _allComics.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
 
-    const filtered = applyFilter(comics);
+    const filtered = applyFilter(_allComics);
     // Collect genres that exist in the collection for the filter dropdown
-    const usedGenreIds = [...new Set(comics.map(c => c.genre).filter(Boolean))];
+    const usedGenreIds = [...new Set(_allComics.map(c => c.genre).filter(Boolean))];
     const usedGenres = GENRES.filter(g => usedGenreIds.includes(g.id));
 
     return `
@@ -59,7 +98,7 @@ const LibraryPage = (() => {
         <h2 class="section-title">My Comics</h2>
         <p class="section-subtitle">Your comic book collection</p>
 
-        ${comics.length > 1 ? `
+        ${_allComics.length > 1 ? `
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <input type="search" placeholder="Search..." value="${escHtml(_searchQuery)}"
               oninput="LibraryPage.setSearch(this.value)"
@@ -74,33 +113,13 @@ const LibraryPage = (() => {
           </div>
         ` : ''}
 
-        ${comics.length === 0 ? `
+        ${_allComics.length === 0 ? `
           <div class="empty-state">
             <div class="empty-state-icon">&#128214;</div>
             <div class="empty-state-text">No comics yet. Create your first one!</div>
             <button class="btn btn-primary" onclick="App.navigate('create')">Create Comic</button>
           </div>
-        ` : filtered.length === 0 ? `
-          <div class="empty-state">
-            <div class="empty-state-text">No comics match your search.</div>
-            <button class="btn btn-secondary btn-sm" onclick="LibraryPage.clearFilter()">Clear Filter</button>
-          </div>
-        ` : filtered.map(c => `
-          <div class="list-item" onclick="App.navigate('library', '${c.id}')">
-            <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
-            <div class="list-item-info">
-              <div class="list-item-title">${escHtml(c.title)}</div>
-              <div class="list-item-desc">
-                ${escHtml(c.genreName || c.genre)} &middot; ${c.pageCount || 0} pages
-                ${c.finished ? ' &middot; Complete' : ' &middot; In Progress'}
-                &middot; ${timeAgo(c.updatedAt || c.createdAt)}
-              </div>
-            </div>
-            <div class="list-item-actions">
-              <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();LibraryPage.deleteComic('${c.id}','${escHtml(c.title)}')">&#128465;</button>
-            </div>
-          </div>
-        `).join('')}
+        ` : `<div id="library-comics-list">${renderComicItems(filtered)}</div>`}
       </div>
     `;
   }
@@ -193,6 +212,7 @@ const LibraryPage = (() => {
   function onUnmount() {
     _searchQuery = '';
     _genreFilter = '';
+    _allComics = [];
   }
 
   function backToList() {

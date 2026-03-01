@@ -31,6 +31,26 @@ const API = (() => {
   };
   const DEFAULT_IMAGE_SIZES = ['1024x1024'];
 
+  // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
+  let _modelSizesCache = null;
+
+  /**
+   * Returns true when we have reliable size information for a model —
+   * either from the live API cache or the static prefix-match table.
+   * Used by generateImage() to decide whether to enforce resolution validation.
+   */
+  function hasKnownSizes(modelId) {
+    if (!modelId) return false;
+    // Check live in-memory cache (populated by getModelSizes / fetchImageModels)
+    if (Array.isArray(_modelSizesCache)) {
+      const m = _modelSizesCache.find(x => x.id === modelId);
+      if (m?.sizes?.length) return true;
+    }
+    // Check static prefix table
+    const id = modelId.toLowerCase();
+    return Object.keys(IMAGE_MODEL_SIZES).some(k => id === k || id.startsWith(k));
+  }
+
   /**
    * Return the list of sizes supported by a given image model.
    * Priority: (1) live API cache, (2) static prefix-match table, (3) default.
@@ -38,11 +58,13 @@ const API = (() => {
   async function getModelSizes(modelId) {
     if (!modelId) return DEFAULT_IMAGE_SIZES;
 
-    // Check live model cache stored in IndexedDB
+    // Check live model cache stored in IndexedDB (memoized in memory for the session)
     try {
-      const cached = await DB.getSetting('cachedImageModels', null);
-      if (Array.isArray(cached)) {
-        const m = cached.find(x => x.id === modelId);
+      if (_modelSizesCache === null) {
+        _modelSizesCache = await DB.getSetting('cachedImageModels', null);
+      }
+      if (Array.isArray(_modelSizesCache)) {
+        const m = _modelSizesCache.find(x => x.id === modelId);
         if (m?.sizes?.length) return m.sizes;
       }
     } catch (_) { /* ignore cache errors */ }
@@ -233,13 +255,18 @@ const API = (() => {
       compressedRefs = await Promise.all(rawRefs.map(u => compressDataUrl(u)));
     }
 
-    // Validate requested resolution against what this model actually supports.
-    // Fall back to the model's first supported size to prevent API errors.
+    // Validate requested resolution against what this model actually supports —
+    // but only when we have known sizes (from API cache or static map). If sizes
+    // are unknown for the model, pass through the requested resolution and rely
+    // on the existing retry/fallback logic instead.
     const requestedResolution = options.resolution || '1024x1024';
     const supportedSizes = await getModelSizes(modelId);
-    const imageResolution = supportedSizes.includes(requestedResolution)
-      ? requestedResolution
-      : supportedSizes[0];
+    let imageResolution = requestedResolution;
+    if (hasKnownSizes(modelId)) {
+      imageResolution = supportedSizes.includes(requestedResolution)
+        ? requestedResolution
+        : supportedSizes[0];
+    }
 
     async function requestImage(model, resolution) {
       const body = { model, prompt, size: resolution, n: 1 };
@@ -461,6 +488,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
       await DB.setSetting(CACHE_KEY, models);
       await DB.setSetting(CACHE_TS_KEY, Date.now());
+      _modelSizesCache = models; // Update in-memory cache immediately
       return models;
     } catch (err) {
       if (typeof App !== 'undefined') App.logError('fetchImageModels', err);
