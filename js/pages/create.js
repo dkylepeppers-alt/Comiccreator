@@ -315,10 +315,20 @@ const CreatePage = (() => {
 
   function setTitle(value) {
     state.title = value;
+    scheduleDraftSave();
   }
 
   function setStoryPrompt(value) {
     state.storyPrompt = value;
+    scheduleDraftSave();
+  }
+
+  // Debounce timer for draft saves triggered by text input
+  let draftSaveTimer = null;
+  function scheduleDraftSave() {
+    if (state.step !== 'setup') return;
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => saveDraft().catch(() => {}), 400);
   }
 
   async function saveDraft() {
@@ -378,6 +388,7 @@ const CreatePage = (() => {
     document.querySelectorAll('.genre-card').forEach(el => {
       el.classList.toggle('active', el.dataset.genre === id);
     });
+    scheduleDraftSave();
     // Show/hide custom input
     if (id === 'custom') {
       App.refreshPage();
@@ -386,22 +397,26 @@ const CreatePage = (() => {
 
   function setCustomGenre(value) {
     state.customGenre = value;
+    scheduleDraftSave();
   }
 
   function toggleCharacter(id) {
     const idx = state.selectedCharacters.indexOf(id);
     if (idx >= 0) state.selectedCharacters.splice(idx, 1);
     else state.selectedCharacters.push(id);
+    scheduleDraftSave();
     App.refreshPage();
   }
 
   function selectWorld(id) {
     state.selectedWorld = id;
+    scheduleDraftSave();
     App.refreshPage();
   }
 
   function selectPreset(id) {
     state.selectedPreset = id;
+    scheduleDraftSave();
     App.refreshPage();
   }
 
@@ -419,9 +434,6 @@ const CreatePage = (() => {
 
     state.title = document.getElementById('comic-title')?.value?.trim() || 'Untitled Comic';
     state.storyPrompt = document.getElementById('story-prompt')?.value?.trim() || '';
-
-    // Clear setup draft — comic is now being created
-    DB.setSetting('createSetupDraft', null).catch(() => {});
 
     // Build context
     const characters = [];
@@ -652,8 +664,10 @@ const CreatePage = (() => {
         await DB.put(DB.STORES.comics, comic);
       }
 
-      // Autosave: track this comic as the active in-progress session
+      // Autosave: track this comic as the active in-progress session.
+      // Only on first page: clear setup draft now that the comic is saved.
       DB.setSetting('createActiveComicId', state.comicId).catch(() => {});
+      if (pageNum === 1) DB.setSetting('createSetupDraft', null).catch(() => {});
 
       state.step = 'reading';
       state.isGenerating = false;
@@ -863,8 +877,11 @@ const CreatePage = (() => {
   }
 
   function onUnmount() {
-    // Persist setup draft to DB for cross-reload recovery (fire-and-forget)
+    // Flush any pending debounced draft save when navigating away via SPA router.
+    // (does not run on full page reload/close; reload-safe persistence is handled
+    // by the debounced saveDraft() calls in every setup setter)
     if (state.step === 'setup') {
+      clearTimeout(draftSaveTimer);
       saveDraft().catch(() => {});
     }
     if (streamTimeout) {
