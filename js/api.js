@@ -4,61 +4,19 @@
  */
 const API = (() => {
   const BASE_URL = 'https://nano-gpt.com/api/v1';
-  const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
-
-  // Static fallback resolution map — used only when the API model record
-  // doesn't include a `sizes` field. Keys support prefix matching so that
-  // versioned model IDs (e.g. "flux-pro-v1.1") still resolve correctly.
-  const IMAGE_MODEL_SIZES = {
-    'gpt-image-1':           ['1024x1024', '1024x1792', '1792x1024'],
-    'dall-e-3':              ['1024x1024', '1024x1792', '1792x1024'],
-    'dall-e-2':              ['256x256', '512x512', '1024x1024'],
-    'gpt-4o-image':          ['1024x1024', '1024x1792', '1792x1024'],
-    'flux-pro':              ['1024x1024'],
-    'flux-kontext':          ['1024x1024'],
-    'flux-schnell':          ['1024x1024'],
-    'flux-dev':              ['1024x1024'],
-    'stable-diffusion-3':    ['512x512', '1024x1024'],
-    'stable-diffusion-xl':   ['512x512', '1024x1024'],
-    'sdxl':                  ['512x512', '1024x1024'],
-    'hidream':               ['1024x1024'],
-    'seedream':              ['2048x2048'],
-    'wanx':                  ['1024x1024'],
-    'midjourney':            ['1024x1024'],
-    'recraft':               ['1024x1024'],
-    'ideogram':              ['1024x1024'],
-    'playground':            ['1024x1024'],
-  };
   const DEFAULT_IMAGE_SIZES = ['1024x1024'];
 
   // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
   let _modelSizesCache = null;
 
   /**
-   * Returns true when we have reliable size information for a model —
-   * either from the live API cache or the static prefix-match table.
-   * Used by generateImage() to decide whether to enforce resolution validation.
-   */
-  function hasKnownSizes(modelId) {
-    if (!modelId) return false;
-    // Check live in-memory cache (populated by getModelSizes / fetchImageModels)
-    if (Array.isArray(_modelSizesCache)) {
-      const m = _modelSizesCache.find(x => x.id === modelId);
-      if (m?.sizes?.length) return true;
-    }
-    // Check static prefix table
-    const id = modelId.toLowerCase();
-    return Object.keys(IMAGE_MODEL_SIZES).some(k => id === k || id.startsWith(k));
-  }
-
-  /**
    * Return the list of sizes supported by a given image model.
-   * Priority: (1) live API cache, (2) static prefix-match table, (3) default.
+   * Source: live API cache populated by fetchImageModels(). Falls back to
+   * ['1024x1024'] when the model is absent from the cache.
    */
   async function getModelSizes(modelId) {
     if (!modelId) return DEFAULT_IMAGE_SIZES;
 
-    // Check live model cache stored in IndexedDB (memoized in memory for the session)
     try {
       if (_modelSizesCache === null) {
         _modelSizesCache = await DB.getSetting('cachedImageModels', null);
@@ -69,11 +27,6 @@ const API = (() => {
       }
     } catch (_) { /* ignore cache errors */ }
 
-    // Prefix-match against static table
-    const id = modelId.toLowerCase();
-    for (const key of Object.keys(IMAGE_MODEL_SIZES)) {
-      if (id === key || id.startsWith(key)) return IMAGE_MODEL_SIZES[key];
-    }
     return DEFAULT_IMAGE_SIZES;
   }
 
@@ -234,91 +187,62 @@ const API = (() => {
   /**
    * Generate image via NanoGPT image API.
    *
-   * Sends a JSON POST to /images/generations with optional imageDataUrls
-   * for reference-image-guided generation. Compresses reference images to
-   * keep payloads manageable (capped at 3).
+   * Sends a JSON POST to /images/generations. On failure, throws with the
+   * exact model, size, and prompt that were used so the caller can diagnose
+   * the problem without guessing.
    */
   async function generateImage(prompt, options = {}) {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const imageModel = await DB.getSetting('imageModel', DEFAULT_IMAGE_MODEL);
+    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const modelId = options.model || imageModel;
+    const resolution = options.resolution || '1024x1024';
 
     // Collect and compress reference images (cap at 3)
     const rawRefs = options.imageDataUrls?.length > 0
       ? options.imageDataUrls.slice(0, 3)
       : options.imageDataUrl ? [options.imageDataUrl] : [];
-    let compressedRefs = null;
-    if (rawRefs.length > 0) {
-      compressedRefs = await Promise.all(rawRefs.map(u => compressDataUrl(u)));
+    const compressedRefs = rawRefs.length > 0
+      ? await Promise.all(rawRefs.map(u => compressDataUrl(u)))
+      : null;
+
+    const body = { model: modelId, prompt, size: resolution, n: 1 };
+    if (showExplicitContent) body.showExplicitContent = true;
+    if (compressedRefs?.length > 0) body.imageDataUrls = compressedRefs;
+
+    const res = await fetch(`${BASE_URL}/images/generations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const apiMsg = errData.error?.message || errData.message
+        || `HTTP ${res.status} ${res.statusText}`;
+      const error = new Error(
+        `Image generation failed [HTTP ${res.status}]\n` +
+        `Model: ${modelId}  Size: ${resolution}\n` +
+        `API: ${apiMsg}\n` +
+        `Prompt: ${prompt}`
+      );
+      error.status = res.status;
+      error.model = modelId;
+      error.resolution = resolution;
+      error.prompt = prompt;
+      console.error('Image generation failed:', { status: res.status, model: modelId, resolution, apiMsg, prompt });
+      throw error;
     }
 
-    // Validate requested resolution against what this model actually supports —
-    // but only when we have known sizes (from API cache or static map). If sizes
-    // are unknown for the model, pass through the requested resolution and rely
-    // on the existing retry/fallback logic instead.
-    const requestedResolution = options.resolution || '1024x1024';
-    const supportedSizes = await getModelSizes(modelId);
-    let imageResolution = requestedResolution;
-    if (hasKnownSizes(modelId)) {
-      imageResolution = supportedSizes.includes(requestedResolution)
-        ? requestedResolution
-        : supportedSizes[0];
-    }
-
-    async function requestImage(model, resolution) {
-      const body = { model, prompt, size: resolution, n: 1 };
-      if (showExplicitContent) body.showExplicitContent = true;
-      if (compressedRefs && compressedRefs.length > 0) {
-        body.imageDataUrls = compressedRefs;
-      }
-
-      const res = await fetch(`${BASE_URL}/images/generations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        const msg = err.error?.message || err.message || `Image API error: ${res.status} ${res.statusText}`;
-        console.error('Image generation error:', res.status, err);
-        const error = new Error(msg);
-        error.status = res.status;
-        throw error;
-      }
-
-      const data = await res.json();
-      const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
-      if (!result) throw new Error('No image data in API response');
-      return result;
-    }
-
-    try {
-      return await requestImage(modelId, imageResolution);
-    } catch (err) {
-      if (err?.status !== 500) throw err;
-      let lastError = err;
-
-      if (imageResolution !== '1024x1024') {
-        try {
-          return await requestImage(modelId, '1024x1024');
-        } catch (resRetryErr) {
-          lastError = resRetryErr;
-        }
-      }
-
-      if (modelId !== DEFAULT_IMAGE_MODEL) {
-        return requestImage(DEFAULT_IMAGE_MODEL, '1024x1024');
-      }
-
-      throw lastError;
-    }
+    const data = await res.json();
+    const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+    if (!result) throw new Error('No image data in API response');
+    return result;
   }
 
   /**
