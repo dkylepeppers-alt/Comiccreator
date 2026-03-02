@@ -18,6 +18,8 @@ const CreatePage = (() => {
     referenceImages: [],
     characters: [],
     isGenerating: false,
+    generatingContext: 'initial', // 'initial', 'reroll', 'continue'
+    draftLoaded: false,
   };
 
   // Track timeouts and abort controllers for cleanup
@@ -25,6 +27,14 @@ const CreatePage = (() => {
   let abortController = null;
 
   async function render(param) {
+    // Always honour active state — must come BEFORE param checks so that
+    // App.refreshPage() during re-roll/generation of a resumed comic does not
+    // re-invoke renderResume() and reset isGenerating / step.
+    if (state.step === 'generating') return renderGenerating();
+    if (state.step === 'reading' && (!param || param.length <= 10 || param === state.comicId)) {
+      return renderReading();
+    }
+
     // If param is a genre id, pre-select it
     if (param && GENRES.find(g => g.id === param)) {
       state.genre = param;
@@ -34,7 +44,10 @@ const CreatePage = (() => {
       return await renderResume(param);
     }
 
-    if (state.step === 'generating') return renderGenerating();
+    // Fresh setup path: restore draft / active comic from DB if not yet loaded
+    if (!state.draftLoaded) {
+      await restoreDraftOrActive();
+    }
     if (state.step === 'reading') return renderReading();
     return renderSetup();
   }
@@ -43,10 +56,15 @@ const CreatePage = (() => {
     const characters = await DB.getAll(DB.STORES.characters);
     const worlds = await DB.getAll(DB.STORES.worlds);
     const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
+    const hasDraft = state.genre || state.title || state.storyPrompt ||
+      (state.selectedCharacters?.length > 0) || state.selectedWorld || state.selectedPreset;
 
     return `
       <div class="slide-up">
-        <h2 class="section-title">Create New Comic</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h2 class="section-title" style="margin:0;">Create New Comic</h2>
+          ${hasDraft ? `<button class="btn btn-sm btn-secondary" onclick="CreatePage.resetSetup()" title="Clear all setup and start fresh">&#x1F5D1; New Comic</button>` : ''}
+        </div>
 
         <!-- Step 1: Genre -->
         <div class="card">
@@ -119,11 +137,11 @@ const CreatePage = (() => {
           <h3 class="card-title mb-sm">5. Story Setup</h3>
           <div class="form-group">
             <label class="form-label">Comic Title</label>
-            <input type="text" id="comic-title" value="${escHtml(state.title)}" placeholder="e.g. The Last Guardian">
+            <input type="text" id="comic-title" value="${escHtml(state.title)}" placeholder="e.g. The Last Guardian" oninput="CreatePage.setTitle(this.value)">
           </div>
           <div class="form-group">
             <label class="form-label">Opening Prompt</label>
-            <textarea id="story-prompt" rows="4" placeholder="Describe how you want the story to begin... (Leave blank for AI to decide)">${escHtml(state.storyPrompt)}</textarea>
+            <textarea id="story-prompt" rows="4" placeholder="Describe how you want the story to begin... (Leave blank for AI to decide)" oninput="CreatePage.setStoryPrompt(this.value)">${escHtml(state.storyPrompt)}</textarea>
             <div class="form-hint">Be specific or leave blank for a surprise</div>
           </div>
         </div>
@@ -136,11 +154,15 @@ const CreatePage = (() => {
   }
 
   function renderGenerating() {
+    const contextMsg =
+      state.generatingContext === 'reroll'   ? 'Re-rolling page...' :
+      state.generatingContext === 'continue' ? 'Continuing story...' :
+      'Generating your comic page...';
     return `
       <div class="slide-up">
         <div class="loading-overlay" id="gen-loading">
           <div class="spinner"></div>
-          <p id="gen-status-msg">Generating your comic page...</p>
+          <p id="gen-status-msg">${contextMsg}</p>
           <p class="text-sm text-muted">This may take a moment</p>
           <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
         </div>
@@ -291,11 +313,82 @@ const CreatePage = (() => {
 
   // --- User Actions ---
 
+  function setTitle(value) {
+    state.title = value;
+    scheduleDraftSave();
+  }
+
+  function setStoryPrompt(value) {
+    state.storyPrompt = value;
+    scheduleDraftSave();
+  }
+
+  // Debounce timer for draft saves triggered by text input
+  let draftSaveTimer = null;
+  function scheduleDraftSave() {
+    if (state.step !== 'setup') return;
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => saveDraft().catch(() => {}), 400);
+  }
+
+  async function saveDraft() {
+    await DB.setSetting('createSetupDraft', {
+      genre: state.genre,
+      customGenre: state.customGenre,
+      selectedCharacters: state.selectedCharacters,
+      selectedWorld: state.selectedWorld,
+      selectedPreset: state.selectedPreset,
+      title: state.title,
+      storyPrompt: state.storyPrompt,
+    });
+  }
+
+  async function restoreDraftOrActive() {
+    state.draftLoaded = true;
+    // Try to resume an in-progress (unfinished) comic first
+    const activeId = await DB.getSetting('createActiveComicId', null);
+    if (activeId) {
+      const comic = await DB.get(DB.STORES.comics, activeId);
+      if (comic && !comic.finished) {
+        // renderResume sets state.step = 'reading'; render() checks this after we return
+        await renderResume(activeId);
+        return;
+      }
+      // Comic no longer valid — clear the stored id
+      await DB.setSetting('createActiveComicId', null);
+    }
+    // Otherwise restore setup draft
+    const draft = await DB.getSetting('createSetupDraft', null);
+    if (draft) {
+      state.genre = draft.genre || '';
+      state.customGenre = draft.customGenre || '';
+      state.selectedCharacters = Array.isArray(draft.selectedCharacters) ? draft.selectedCharacters : [];
+      state.selectedWorld = draft.selectedWorld || null;
+      state.selectedPreset = draft.selectedPreset || null;
+      state.title = draft.title || '';
+      state.storyPrompt = draft.storyPrompt || '';
+    }
+  }
+
+  async function resetSetup() {
+    state.genre = '';
+    state.customGenre = '';
+    state.selectedCharacters = [];
+    state.selectedWorld = null;
+    state.selectedPreset = null;
+    state.title = '';
+    state.storyPrompt = '';
+    state.draftLoaded = true; // mark as loaded so we don't re-load old draft
+    await DB.setSetting('createSetupDraft', null);
+    App.refreshPage();
+  }
+
   function selectGenre(id) {
     state.genre = id;
     document.querySelectorAll('.genre-card').forEach(el => {
       el.classList.toggle('active', el.dataset.genre === id);
     });
+    scheduleDraftSave();
     // Show/hide custom input
     if (id === 'custom') {
       App.refreshPage();
@@ -304,22 +397,26 @@ const CreatePage = (() => {
 
   function setCustomGenre(value) {
     state.customGenre = value;
+    scheduleDraftSave();
   }
 
   function toggleCharacter(id) {
     const idx = state.selectedCharacters.indexOf(id);
     if (idx >= 0) state.selectedCharacters.splice(idx, 1);
     else state.selectedCharacters.push(id);
+    scheduleDraftSave();
     App.refreshPage();
   }
 
   function selectWorld(id) {
     state.selectedWorld = id;
+    scheduleDraftSave();
     App.refreshPage();
   }
 
   function selectPreset(id) {
     state.selectedPreset = id;
+    scheduleDraftSave();
     App.refreshPage();
   }
 
@@ -406,6 +503,7 @@ const CreatePage = (() => {
     state.pages = [];
     state.step = 'generating';
     state.isGenerating = true;
+    state.generatingContext = 'initial';
     await App.refreshPage();
 
     // Generate
@@ -566,6 +664,11 @@ const CreatePage = (() => {
         await DB.put(DB.STORES.comics, comic);
       }
 
+      // Autosave: track this comic as the active in-progress session.
+      // Only on first page: clear setup draft now that the comic is saved.
+      DB.setSetting('createActiveComicId', state.comicId).catch(() => {});
+      if (pageNum === 1) DB.setSetting('createSetupDraft', null).catch(() => {});
+
       state.step = 'reading';
       state.isGenerating = false;
       App.toast(`Page ${pageNum} ready!`, 'success');
@@ -600,6 +703,7 @@ const CreatePage = (() => {
     state.conversationHistory.push({ role: 'user', content: userMsg });
     state.isGenerating = true;
     state.step = 'generating';
+    state.generatingContext = 'continue';
     await App.refreshPage();
 
     const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
@@ -616,6 +720,7 @@ const CreatePage = (() => {
     state.conversationHistory.push({ role: 'user', content: userMsg });
     state.isGenerating = true;
     state.step = 'generating';
+    state.generatingContext = 'continue';
     await App.refreshPage();
 
     const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
@@ -629,6 +734,7 @@ const CreatePage = (() => {
       comic.updatedAt = Date.now();
       await DB.put(DB.STORES.comics, comic);
     }
+    DB.setSetting('createActiveComicId', null).catch(() => {});
     App.toast('Comic saved!', 'success');
     resetState();
     App.navigate('library');
@@ -679,6 +785,7 @@ const CreatePage = (() => {
 
     state.isGenerating = true;
     state.step = 'generating';
+    state.generatingContext = 'reroll';
     await App.refreshPage();
 
     const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
@@ -747,6 +854,7 @@ const CreatePage = (() => {
   }
 
   function resetState() {
+    DB.setSetting('createActiveComicId', null).catch(() => {});
     state = {
       step: 'setup',
       genre: '',
@@ -763,10 +871,19 @@ const CreatePage = (() => {
       referenceImages: [],
       characters: [],
       isGenerating: false,
+      generatingContext: 'initial',
+      draftLoaded: false,
     };
   }
 
   function onUnmount() {
+    // Flush any pending debounced draft save when navigating away via SPA router.
+    // (does not run on full page reload/close; reload-safe persistence is handled
+    // by the debounced saveDraft() calls in every setup setter)
+    if (state.step === 'setup') {
+      clearTimeout(draftSaveTimer);
+      saveDraft().catch(() => {});
+    }
     if (streamTimeout) {
       clearTimeout(streamTimeout);
       streamTimeout = null;
@@ -781,5 +898,6 @@ const CreatePage = (() => {
     render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset,
     toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration,
     rerollPage, undoChoice, zoomPanel, resetState,
+    setTitle, setStoryPrompt, resetSetup,
   };
 })();
