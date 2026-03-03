@@ -12,6 +12,7 @@ AI Comic Creator is a **vanilla JavaScript Progressive Web App (PWA)** that gene
 
 - **ES2020+ syntax** is fine (optional chaining `?.`, nullish coalescing `??`, `async/await`, `crypto.randomUUID`).
 - **Module pattern:** All JS files use the IIFE module pattern (`const FooModule = (() => { ... return { ... }; })()`). Do **not** convert to ES module `import`/`export` syntax.
+- **No build step** — the app runs directly in the browser from static files. This is a deliberate constraint: the primary deployment environment is Termux on Android, where a build pipeline would require significant phone CPU/RAM and would break the `git pull` → serve update workflow. Do not introduce bundlers, transpilers, or compile steps. See `CLAUDE.md` ("Why No Build Step?") for the full rationale.
 - Automated checks exist via npm scripts (`check-syntax`, `test`, `lint`) and a GitHub Actions workflow (`.github/workflows/tests.yml`).
 
 ---

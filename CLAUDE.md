@@ -165,6 +165,24 @@ icons/                               icon.svg, icon-192.png, icon-512.png
 
 ---
 
+## Why No Build Step?
+
+The "no build step" constraint is a deliberate, load-bearing architectural decision — not an oversight or laziness. Here is why it exists and why it should be preserved:
+
+1. **Primary environment is Termux on Android.** The app is explicitly designed to run on resource-constrained Android phones using Termux. Running a full build pipeline (webpack, Vite, Parcel, etc.) requires significant CPU, memory, and disk I/O that a phone may struggle with. The install and update workflow (`install.sh`, `update.sh`) only requires `git` and a basic HTTP server — both trivially available in Termux via `pkg install git python`.
+
+2. **`git pull` → serve is the entire update workflow.** `update.sh` performs `git pull`, bumps the service worker cache name, and restarts the server. Inserting a build step here means mobile users must also wait for `npm install && npm run build` on a phone CPU — a frustrating experience that breaks the self-update model.
+
+3. **Any static HTTP server is sufficient.** `python3 -m http.server 8080`, `npx serve`, `php -S`, and `busybox httpd` can all serve this app identically. This maximises portability across environments (Termux, GitHub Pages, any CDN, any home server) without needing a Node.js toolchain present at the serving host.
+
+4. **Immediate edit-refresh cycle.** Contributors can change any `.js` or `.css` file and see the result with a single browser refresh — no re-bundling, no source map confusion, no stale cache from a build artifact. This is especially valuable when working on a phone.
+
+5. **ES2020+ is broadly supported.** Modern browsers support optional chaining, nullish coalescing, `async/await`, `crypto.randomUUID`, and ES modules natively. There is no transpilation required for the target runtime (Chrome/Brave on Android, released 2020+), so a bundler adds friction without adding capability.
+
+**When would a build step be justified?** If the codebase grows to a size where HTTP/2 multiplexing no longer compensates for script count, or if TypeScript type safety becomes necessary for reliability, a build step could be introduced. That decision should be explicit and deliberate — not a side-effect of adopting a library that happens to require one.
+
+---
+
 ## Code Style
 
 - **Vanilla browser runtime** — the app runs directly in the browser with no build step
