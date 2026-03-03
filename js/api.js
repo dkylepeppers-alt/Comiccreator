@@ -159,7 +159,7 @@ const API = (() => {
    * Compress a base64 data URL to a smaller JPEG to avoid 413 payloads.
    * Resizes so neither dimension exceeds maxDim, re-encodes as JPEG at given quality.
    */
-  function compressDataUrl(dataUrl, maxDim = 768, quality = 0.75) {
+  function compressDataUrl(dataUrl, maxDim = 1024, quality = 0.85) {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -200,15 +200,30 @@ const API = (() => {
     const modelId = options.model || imageModel;
     const resolution = options.resolution || '1024x1024';
 
-    // Collect and compress reference images (cap at 3)
+    // Collect and compress reference images (configurable cap)
+    const maxRefImages = await DB.getSetting('maxRefImages', 4);
     const rawRefs = options.imageDataUrls?.length > 0
-      ? options.imageDataUrls.slice(0, 3)
+      ? options.imageDataUrls.slice(0, maxRefImages)
       : options.imageDataUrl ? [options.imageDataUrl] : [];
+    if (options.imageDataUrls?.length > maxRefImages) {
+      console.warn(`[generateImage] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`);
+    }
     const compressedRefs = rawRefs.length > 0
       ? await Promise.all(rawRefs.map(u => compressDataUrl(u)))
       : null;
 
-    const body = { model: modelId, prompt, size: resolution, n: 1 };
+    // Prepend reference legend when labeled refs are provided
+    const labeledRefs = options.labeledRefs;
+    let finalPrompt = prompt;
+    if (labeledRefs?.length > 0) {
+      const legend = labeledRefs
+        .slice(0, maxRefImages)
+        .map((ref, i) => `Reference image ${i + 1}: ${ref.label} (${ref.type}).`)
+        .join(' ');
+      finalPrompt = `${legend} ${prompt}`;
+    }
+
+    const body = { model: modelId, prompt: finalPrompt, size: resolution, n: 1 };
     if (showExplicitContent) body.showExplicitContent = true;
     if (compressedRefs?.length > 0) body.imageDataUrls = compressedRefs;
 
@@ -276,6 +291,12 @@ Generate 3-4 panels per page. Each panel needs:
 - A vivid imagePrompt describing the visual scene in detail (for AI art generation). Include each character's physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.
 - Optional narration for scene-setting
 - Character dialogue that advances the story
+
+CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
+who appears in that panel and include their full physical appearance description
+inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
+black armor, glowing blue eyes)". This is essential for visual consistency.
+If a panel has NO characters (e.g., establishing shot), say "No characters present."
 
 Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
