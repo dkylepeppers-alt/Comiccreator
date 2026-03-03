@@ -122,7 +122,7 @@ const SettingsPage = (() => {
                 <option value="${escHtml(imageSize)}">${escHtml(imageSize)}</option>
               </select>
             </div>
-            <div class="form-hint" id="imgsize-hint">Options update automatically for the selected model</div>
+            <div class="form-hint" id="imgsize-hint">Image size for generated images. If options are available, they update automatically for the selected model.</div>
           </div>
 
           <div class="form-group">
@@ -601,7 +601,11 @@ const SettingsPage = (() => {
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
-    await DB.setSetting('imageSize', document.getElementById('set-imgsize').value);
+    const imageSizeVal = document.getElementById('set-imgsize').value.trim();
+    if (!imageSizeVal || !/^\d+x\d+$/.test(imageSizeVal)) {
+      return App.toast('Image size must be in WIDTHxHEIGHT format (e.g. 1024x1024)', 'error');
+    }
+    await DB.setSetting('imageSize', imageSizeVal);
     await DB.setSetting('imagePromptPrefix', document.getElementById('set-imgprefix').value.trim());
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));

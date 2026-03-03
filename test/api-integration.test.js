@@ -130,6 +130,35 @@ describe('API integration', () => {
     assert.ok(fallback.length > 0);
   });
 
+  it('getModelSizes returns cached sizes when present, null when missing or no sizes', async () => {
+    // Seed the IndexedDB cache with one model that has sizes and one without
+    await ctx.DB.setSetting('cachedImageModels', [
+      { id: 'model-with-sizes', sizes: ['512x512', '1024x1024'] },
+      { id: 'model-no-sizes', sizes: null },
+      { id: 'model-empty-sizes', sizes: [] },
+    ]);
+
+    // Model with sizes should return those sizes
+    const withSizes = await ctx.API.getModelSizes('model-with-sizes');
+    assert.deepEqual(withSizes, ['512x512', '1024x1024']);
+
+    // Model with null sizes should return null
+    const noSizes = await ctx.API.getModelSizes('model-no-sizes');
+    assert.equal(noSizes, null);
+
+    // Model with empty sizes array should return null
+    const emptySizes = await ctx.API.getModelSizes('model-empty-sizes');
+    assert.equal(emptySizes, null);
+
+    // Unknown model (not in cache) should return null
+    const unknown = await ctx.API.getModelSizes('unknown-model');
+    assert.equal(unknown, null);
+
+    // Null/undefined modelId should return null
+    assert.equal(await ctx.API.getModelSizes(null), null);
+    assert.equal(await ctx.API.getModelSizes(''), null);
+  });
+
   it('generateImage throws with diagnostic properties and makes exactly one request on 500 error', async () => {
     await ctx.DB.setSetting('imageModel', 'unstable-model');
     const calls = [];
