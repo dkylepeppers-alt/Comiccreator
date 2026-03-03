@@ -117,11 +117,11 @@ const SettingsPage = (() => {
 
           <div class="form-group">
             <label class="form-label">Image Size</label>
-            <select id="set-imgsize">
-              ${['256x256', '512x512', '1024x1024', '1024x1792', '1792x1024', '2048x2048'].map(s =>
-                `<option value="${s}" ${imageSize === s ? 'selected' : ''}>${s}</option>`
-              ).join('')}
-            </select>
+            <div id="imgsize-wrap">
+              <select id="set-imgsize">
+                <option value="${escHtml(imageSize)}">${escHtml(imageSize)}</option>
+              </select>
+            </div>
             <div class="form-hint" id="imgsize-hint">Options update automatically for the selected model</div>
           </div>
 
@@ -367,22 +367,32 @@ const SettingsPage = (() => {
   }
 
   /**
-   * Rebuild the image size <select> to show only the sizes supported by modelId.
+   * Rebuild the image size control to show only the sizes supported by modelId.
+   * Renders a <select> when API-provided sizes are available, or falls back to a
+   * free-form <input type="text"> when the model has no known size restrictions.
    * Called when the image model changes or on page mount after models are loaded.
    */
   async function updateImageSizeOptions(modelId) {
-    const sizeEl = document.getElementById('set-imgsize');
-    if (!sizeEl || !modelId) return;
+    const wrap = document.getElementById('imgsize-wrap');
+    if (!wrap || !modelId) return;
 
-    const currentSize = sizeEl.value;
+    const currentEl = document.getElementById('set-imgsize');
+    const currentSize = currentEl?.value || await DB.getSetting('imageSize', '1024x1024');
     const sizes = await API.getModelSizes(modelId);
 
-    sizeEl.innerHTML = sizes
+    if (!sizes || sizes.length === 0) {
+      // Sizes unknown for this model – let the user enter any value freely
+      wrap.innerHTML = `<input type="text" id="set-imgsize" value="${escHtml(currentSize)}" placeholder="e.g. 1024x1024" pattern="\\d+x\\d+">`;
+      return;
+    }
+
+    wrap.innerHTML = `<select id="set-imgsize">${sizes
       .map(s => `<option value="${escHtml(s)}" ${s === currentSize ? 'selected' : ''}>${escHtml(s)}</option>`)
-      .join('');
+      .join('')}</select>`;
 
     // If the saved size isn't valid for this model, auto-select the first supported
-    if (!sizes.includes(currentSize) && sizes.length > 0) {
+    const sizeEl = document.getElementById('set-imgsize');
+    if (!sizes.includes(currentSize)) {
       sizeEl.value = sizes[0];
       App.toast(`Image size auto-set to ${sizes[0]} for this model`, 'info');
     }
@@ -457,6 +467,10 @@ const SettingsPage = (() => {
     App.toast(`Refreshing ${type} model list...`, 'info');
     await loadModels(type, true);
     App.toast(`${type === 'text' ? 'Text' : 'Image'} models refreshed!`, 'success');
+    if (type === 'image') {
+      const currentImageModel = document.getElementById('set-imgmodel')?.value;
+      if (currentImageModel) await updateImageSizeOptions(currentImageModel);
+    }
   }
 
   // --- API Connection Test ---
