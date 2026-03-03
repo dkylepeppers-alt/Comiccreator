@@ -198,6 +198,7 @@ Comiccreator/
 │   └── app.css             Complete UI (dark theme, responsive, mobile-first)
 │
 ├── js/
+│   ├── utils.js            Shared helpers: escHtml, timeAgo, getGenreEmoji, GENRES
 │   ├── db.js               IndexedDB storage layer (6 object stores)
 │   ├── api.js              NanoGPT API client (streaming SSE, image gen)
 │   ├── app.js              SPA router, navigation, modals, toasts
@@ -211,13 +212,26 @@ Comiccreator/
 │       ├── presets.js      Prompt preset editor with sampler controls
 │       └── settings.js     API config, model params, data management
 │
+├── scripts/
+│   ├── bump-version.sh     Atomically bumps version in all 5 version files
+│   ├── install-hooks.sh    Installs git pre-commit hook
+│   └── pre-commit          Pre-commit hook (version consistency check)
+│
+├── test/
+│   ├── config-integrity.test.js   Version sync and sw.js asset checks
+│   ├── db.test.js                 IndexedDB layer tests
+│   ├── api-integration.test.js    API module integration tests
+│   ├── api-pure.test.js           Pure API function tests
+│   ├── pure-functions.test.js     Utility function tests
+│   └── utils.test.js              escHtml / utils tests
+│
 └── icons/
     ├── icon.svg            Vector logo
     ├── icon-192.png        PWA icon (small)
     └── icon-512.png        PWA icon (large)
 ```
 
-**Browser runtime remains vanilla.** The app shell still runs directly as HTML/CSS/JavaScript in the browser (`js/api.js` handles runtime API calls). `nanogptjs` is now included in `package.json` for Node-side usage (e.g., npm-driven scripts/tests or future tooling that needs the official NanoGPT JS client).
+The app is pure vanilla HTML/CSS/JavaScript with no frontend build step.
 
 ### Data Model
 
@@ -350,43 +364,28 @@ Requires a browser with support for:
 
 **Every merge to `master` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
 
-For each merge, update **all three** of these files:
+The easiest way is to use the bump script, which updates all 5 version locations atomically:
 
-1. **`version.json`** — increment the version number and update the date:
-   ```json
-   {
-     "version": "1.4.0",
-     "updated": "2026-03-01"
-   }
-   ```
+```bash
+bash scripts/bump-version.sh patch   # 1.6.2 → 1.6.3
+bash scripts/bump-version.sh minor   # 1.6.2 → 1.7.0
+bash scripts/bump-version.sh major   # 1.6.2 → 2.0.0
+```
 
-2. **`sw.js`** — set `CACHE_NAME` to match the new version:
-   ```js
-   const CACHE_NAME = 'comic-creator-v1.4.0';
-   ```
+If you need to update manually, you must keep **all five** of these in sync:
 
-3. **`js/pages/settings.js`** — set `APP_VERSION` to match the new version:
-   ```js
-   const APP_VERSION = '1.4.0';
-   ```
+| File | Location |
+|------|----------|
+| `version.json` | `"version": "..."` |
+| `sw.js` | `const CACHE_NAME = 'comic-creator-v...'` |
+| `js/pages/settings.js` | `const APP_VERSION = '...'` |
+| `index.html` | sidebar footer: `v... &middot; PWA` |
+| `package.json` | `"version": "..."` |
 
 > **Versioning convention:** Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 > Increment `PATCH` for bug fixes, `MINOR` for new features, `MAJOR` for breaking changes.
 
-Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` lets `update.sh` set the correct cache name after `git pull`, which forces browsers to load the updated app shell, and ensures the Settings page displays the correct version number.
-
----
-
-### Suggested Automation Upgrades
-
-Current automation already includes `npm run check-syntax`, `npm test`, and the GitHub Actions `Tests` workflow on push/PR.
-
-Recommended next steps:
-
-1. Add a second CI workflow for `npm run lint` after browser-global ESLint config issues are resolved.
-2. Add Playwright E2E smoke tests for critical flows (Settings save, Create flow, Library open/export path) and run them on pull requests.
-3. Enable Dependabot for npm/GitHub Actions updates and add a scheduled `npm audit --production` security workflow.
-4. Add a release workflow (`workflow_dispatch`) that validates checks, bumps version files, and creates a tagged GitHub release.
+CI tests enforce that all five values match. A mismatch will cause the `Tests` workflow to fail.
 
 ---
 
