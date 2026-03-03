@@ -268,13 +268,38 @@ const App = (() => {
   });
 
   // Service Worker
+  let _swVisibilityListenerAdded = false;
   function registerSW() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
         console.log('SW registered:', reg.scope);
+
+        // Detect when a new service worker is installed and waiting to activate
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // A new version has been cached and is ready — prompt the user
+              toast('App update ready! Reload the page to apply it.', 'info');
+            }
+          });
+        });
       }).catch(err => {
         logError('SW registration', err);
       });
+
+      // Re-check for SW updates whenever the user returns to the tab (register once)
+      if (!_swVisibilityListenerAdded) {
+        _swVisibilityListenerAdded = true;
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            navigator.serviceWorker.getRegistration().then(reg => {
+              if (reg) reg.update().catch(() => {});
+            }).catch(() => {});
+          }
+        });
+      }
     }
   }
 
