@@ -173,13 +173,50 @@ The "no build step" constraint is a deliberate, load-bearing architectural decis
 
 2. **`git pull` → serve is the entire update workflow.** `update.sh` performs `git pull`, bumps the service worker cache name, and restarts the server. Inserting a build step here means mobile users must also wait for `npm install && npm run build` on a phone CPU — a frustrating experience that breaks the self-update model.
 
-3. **Any static HTTP server is sufficient.** `python3 -m http.server 8080`, `npx serve`, `php -S`, and `busybox httpd` can all serve this app identically. This maximises portability across environments (Termux, GitHub Pages, any CDN, any home server) without needing a Node.js toolchain present at the serving host.
+3. **Any static HTTP server is sufficient.** `python3 -m http.server 8080`, `npx serve`, `php -S`, and `busybox httpd` can all serve this app identically. This maximizes portability across environments (Termux, GitHub Pages, any CDN, any home server) without needing a Node.js toolchain present at the serving host.
 
 4. **Immediate edit-refresh cycle.** Contributors can change any `.js` or `.css` file and see the result with a single browser refresh — no re-bundling, no source map confusion, no stale cache from a build artifact. This is especially valuable when working on a phone.
 
 5. **ES2020+ is broadly supported.** Modern browsers support optional chaining, nullish coalescing, `async/await`, `crypto.randomUUID`, and ES modules natively. There is no transpilation required for the target runtime (Chrome/Brave on Android, released 2020+), so a bundler adds friction without adding capability.
 
 **When would a build step be justified?** If the codebase grows to a size where HTTP/2 multiplexing no longer compensates for script count, or if TypeScript type safety becomes necessary for reliability, a build step could be introduced. That decision should be explicit and deliberate — not a side-effect of adopting a library that happens to require one.
+
+---
+
+## Why Vanilla JavaScript?
+
+The "no framework" constraint is a deliberate choice with real benefits, and also real tradeoffs. Here is an honest account of both, and where the line sits.
+
+### Why it's the right call for this project
+
+1. **Zero runtime dependency surface.** There is no React, Vue, or Angular to version-bump, patch for security advisories, or break on a major release. The app's only external runtime dependency is the browser itself — which is already present on every target device.
+
+2. **Instant load, no framework bootstrap cost.** Frameworks carry initialization overhead (virtual DOM setup, reactivity system wiring, hydration, etc.). On a mid-range Android phone — the primary target device — eliminating that overhead produces a measurably faster first-meaningful-paint.
+
+3. **Total transparency.** Every line of code that runs in the browser is code a contributor wrote. There is no intermediate layer to reason through when debugging. When something breaks in `create.js`, the stack trace points to `create.js` — not to a framework internal.
+
+4. **Trivial offline caching.** The service worker caches a fixed list of known static files. With a framework, bundled filenames are often content-hashed (e.g., `main.a1b2c3.js`), which complicates the cache manifest. Vanilla JS files have stable, human-readable names that the service worker list in `sw.js` can reference directly.
+
+5. **Aligned with the no-build-step constraint.** Virtually every popular JavaScript framework assumes a build pipeline. Adopting one would immediately pull in bundler requirements, defeating the Termux-friendly update workflow described in "Why No Build Step?" above.
+
+### Honest tradeoffs
+
+Vanilla JS genuinely does make some things harder as the codebase grows:
+
+- **State management** — Without a reactive system, keeping the UI in sync with app state requires careful manual DOM updates. The current `CreatePage` state machine in `js/pages/create.js` already shows the strain of managing complex state by hand. If the page count or branching logic grows significantly, a lightweight reactive approach (even a hand-rolled one) will become necessary.
+- **Component reuse** — The current HTML-string templating pattern (`render()` returning a string) makes it awkward to share UI fragments across pages without copy-pasting. Adding a small shared-template helper to `js/utils.js` is the appropriate response — not adopting a framework.
+- **Type safety** — No TypeScript means type errors surface at runtime rather than at edit time. JSDoc annotations can provide editor intelligence without a build step and are worth adding to public module APIs.
+
+### Will it hold the project back?
+
+Not at the current scale (~5,000 lines, 11 JS modules, one app). The IIFE module pattern, strict use of `escHtml()`, and the `render()` / `postRender()` / `onMount()` lifecycle convention give the codebase the structure of a framework without the dependency weight.
+
+The point where vanilla JS becomes a genuine ceiling is if the project needs to:
+- Support **concurrent/parallel rendering** (multiple independent comic panels rendering simultaneously)
+- Introduce **real-time collaboration** (shared state across users)
+- Scale to **dozens of page modules** where tracking load order in `index.html` by hand becomes error-prone
+
+None of those apply today. When one does, the migration path is **native ES modules** (supported in every target browser, no bundler required) rather than a framework — this preserves the no-build-step constraint while unlocking proper dependency graphs and tree-shaking.
 
 ---
 
