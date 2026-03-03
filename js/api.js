@@ -4,18 +4,17 @@
  */
 const API = (() => {
   const BASE_URL = 'https://nano-gpt.com/api/v1';
-  const DEFAULT_IMAGE_SIZES = ['1024x1024'];
-
   // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
   let _modelSizesCache = null;
 
   /**
    * Return the list of sizes supported by a given image model.
-   * Source: live API cache populated by fetchImageModels(). Falls back to
-   * ['1024x1024'] when the model is absent from the cache.
+   * Source: live API cache populated by fetchImageModels().
+   * Returns null when no size information is available for the model,
+   * indicating the caller should allow free-form size entry.
    */
   async function getModelSizes(modelId) {
-    if (!modelId) return DEFAULT_IMAGE_SIZES;
+    if (!modelId) return null;
 
     try {
       if (_modelSizesCache === null) {
@@ -27,7 +26,7 @@ const API = (() => {
       }
     } catch (_) { /* ignore cache errors */ }
 
-    return DEFAULT_IMAGE_SIZES;
+    return null;
   }
 
   async function getApiKey() {
