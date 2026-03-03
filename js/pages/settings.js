@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.6.3';
+  const APP_VERSION = '1.6.4';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render
@@ -368,8 +368,8 @@ const SettingsPage = (() => {
 
   /**
    * Rebuild the image size control to show only the sizes supported by modelId.
-   * Renders a <select> when API-provided sizes are available, or falls back to a
-   * free-form <input type="text"> when the model has no known size restrictions.
+   * Renders a <select> when API-provided sizes are available, or a free-form
+   * <input type="text"> when the model has no known size restrictions.
    * Called when the image model changes or on page mount after models are loaded.
    */
   async function updateImageSizeOptions(modelId) {
@@ -601,8 +601,13 @@ const SettingsPage = (() => {
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
-    const imageSizeVal = document.getElementById('set-imgsize').value.trim();
-    if (!imageSizeVal || !/^\d+x\d+$/.test(imageSizeVal)) {
+    const sizeEl = document.getElementById('set-imgsize');
+    const imageSizeVal = sizeEl.value.trim();
+    if (!imageSizeVal) {
+      return App.toast('Image size is required', 'error');
+    }
+    // Only enforce WxH format for the free-text input; trust API-provided select values
+    if (sizeEl.tagName === 'INPUT' && !/^\d+x\d+$/.test(imageSizeVal)) {
       return App.toast('Image size must be in WIDTHxHEIGHT format (e.g. 1024x1024)', 'error');
     }
     await DB.setSetting('imageSize', imageSizeVal);
