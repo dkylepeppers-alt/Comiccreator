@@ -4,12 +4,15 @@ Trust these instructions. Only search the codebase if the information here is in
 
 ## Project Summary
 
-AI Comic Creator — a vanilla JavaScript Progressive Web App (PWA) that generates AI-powered comic books with interactive narratives, custom characters, and world-building. Uses the NanoGPT API (OpenAI-compatible) for text and image generation.
+AI Comic Creator — a vanilla JavaScript Progressive Web App (PWA) that generates AI-powered comic books with interactive narratives, custom characters, and world-building. Uses the NanoGPT API (OpenAI-compatible) for text generation and image generation.
 
-- **~4,000 lines of code** across 22 files (10 JS, 1 CSS, 1 HTML, plus config/scripts)
-- **Dependency model:** vanilla browser runtime (`js/api.js` performs runtime API calls), with npm dependencies available for Node-side tasks (including `nanogptjs` for npm-driven scripts/tests or future tooling)
-- **Automated local checks exist** — npm scripts include linting/formatting and a Node test suite (`node --test`)
-- **Runtime:** Any modern browser (ES2020+). Server is any static HTTP server.
+- **~5,000 lines of code** across 22+ files (11 JS, 1 CSS, 1 HTML, plus config/scripts)
+- **Current version:** `1.6.2`
+- **Dependency model:** vanilla browser runtime (`js/api.js` performs runtime API calls); npm dependencies available for Node-side tasks (including `nanogptjs` for tests/tooling)
+- **Automated local checks:** npm scripts `check-syntax`, `test`, `lint` and a GitHub Actions workflow (`.github/workflows/tests.yml`)
+- **Runtime:** Any modern browser (ES2020+). Server is any static HTTP server — no build step.
+
+---
 
 ## Running Locally
 
@@ -19,7 +22,7 @@ Always start the dev server from the repo root:
 python3 -m http.server 8080
 ```
 
-Then open `http://localhost:8080`. Verified working with Python 3.11. No install or build step is required.
+Then open `http://localhost:8080`. Verified working with Python 3.11.
 
 Alternative servers (all verified working):
 ```bash
@@ -27,7 +30,9 @@ npx serve -s -l 8080      # Node.js
 php -S 0.0.0.0:8080       # PHP
 ```
 
-`server.sh` is a Termux-specific launcher script (shebang: `/data/data/com.termux/files/usr/bin/bash`). It auto-detects available HTTP servers and generates placeholder PNG icons if missing. Use `PORT=3000 ./server.sh` for a custom port.
+`server.sh` is a Termux-specific launcher (shebang: `/data/data/com.termux/files/usr/bin/bash`). It auto-detects available HTTP servers and generates placeholder PNG icons if missing. Use `PORT=3000 ./server.sh` for a custom port.
+
+---
 
 ## Validation
 
@@ -35,29 +40,39 @@ Use both automated npm checks and manual browser validation:
 
 1. **Automated checks** — run `npm run check-syntax`, `npm test`, and `npm run lint` when relevant to your change.
 2. **Serve and load** — start the dev server, open `http://localhost:8080`, and confirm the app loads without console errors.
-3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` to match the new version (e.g. `'comic-creator-v1.4.0'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
+3. **Service worker** — if you modify any cached file, bump `CACHE_NAME` in `sw.js` to match the new version (e.g. `'comic-creator-v1.6.2'`). Hard-refresh (`Ctrl+Shift+R`) to bypass cache during development.
 4. **Page navigation** — click through all 7 pages (Home, Characters, Worlds, Create, Library, Presets, Settings) to verify no render errors.
+
+---
 
 ## Version Management
 
-**Every merge to `master` must bump ALL THREE of these files — no exceptions:**
+**Every merge to `master` must bump ALL FIVE of these locations — no exceptions.** CI tests enforce this.
 
-1. **`version.json`** — increment the version (semver `MAJOR.MINOR.PATCH`) and update `updated`:
+1. **`version.json`** — increment semver and update `updated`:
    ```json
-   { "version": "1.4.0", "updated": "2026-03-01" }
+   { "version": "1.6.2", "updated": "2026-03-02" }
    ```
-2. **`sw.js`** — set `CACHE_NAME` to `'comic-creator-v{new version}'`:
+2. **`sw.js`** — set `CACHE_NAME`:
    ```js
-   const CACHE_NAME = 'comic-creator-v1.4.0';
+   const CACHE_NAME = 'comic-creator-v1.6.2';
    ```
-3. **`js/pages/settings.js`** — set `APP_VERSION` to the new version:
+3. **`js/pages/settings.js`** — set `APP_VERSION`:
    ```js
-   const APP_VERSION = '1.4.0';
+   const APP_VERSION = '1.6.2';
+   ```
+4. **`package.json`** — set `"version"`:
+   ```json
+   { "version": "1.6.2" }
+   ```
+5. **`index.html`** footer text:
+   ```html
+   <small>v1.6.2 &middot; PWA</small>
    ```
 
-`CACHE_NAME` must always equal `'comic-creator-v' + version.json.version`. This allows `update.sh` to correctly write the matching cache name after `git pull`, forcing users' browsers to load the updated app shell.
+`CACHE_NAME` must always equal `'comic-creator-v' + version.json.version`. `APP_VERSION` must always equal `version.json.version`. A mismatch will cause test failures and wrong UI version display.
 
-`APP_VERSION` must always equal `version.json.version`. A mismatch causes the Settings page to display the wrong version number and the update checker to produce false "Update available" results.
+---
 
 ## Architecture
 
@@ -66,7 +81,7 @@ Use both automated npm checks and manual browser validation:
 `index.html` loads scripts via `<script>` tags in this exact order — **all are global IIFEs**:
 
 1. `js/utils.js` → shared globals `escHtml()`, `timeAgo()`, `getGenreEmoji()`, `GENRES`
-2. `js/db.js` → global `DB` (IndexedDB wrapper)
+2. `js/db.js` → global `DB` (IndexedDB wrapper) — depends on `js/utils.js`
 3. `js/api.js` → global `API` (NanoGPT client) — depends on `DB`
 4. `js/pages/home.js` → global `HomePage`
 5. `js/pages/characters.js` → global `CharactersPage`
@@ -77,7 +92,7 @@ Use both automated npm checks and manual browser validation:
 10. `js/pages/settings.js` → global `SettingsPage`
 11. `js/app.js` → global `App` (SPA router) — depends on all above
 
-**If you add a new script, it must be added as a `<script>` tag in `index.html` AND to the `STATIC_ASSETS` array in `sw.js`.** If load order matters (e.g., new shared utils), place it before the modules that use it.
+**If you add a new script, it must be added as a `<script>` tag in `index.html` AND to the `STATIC_ASSETS` array in `sw.js`.** CI tests enforce this. If load order matters (e.g., new shared utils), place it before the modules that use it.
 
 ### Page Module Pattern
 
@@ -85,10 +100,10 @@ Every page module in `js/pages/` is a global IIFE that returns an object. Requir
 
 - `render(param)` — **required** — returns HTML string. Called by `App.navigate()`.
 - `postRender(param)` — optional — runs after innerHTML is set (for async init like model fetching).
-- `onMount(param)` — optional — runs after postRender (for event binding).
+- `onMount(param)` — optional — runs after `postRender` completes (always called if present, independent of postRender).
 - `onUnmount()` — optional — cleanup when navigating away.
 
-The router in `js/app.js` references page modules by name in its `pages` map (line 8). If adding a new page, register it there and in the navigation HTML in `index.html`.
+The router in `js/app.js` registers all page modules in its `pages` map. Add new pages there and in the navigation HTML in `index.html`.
 
 ### Key Globals and Shared Functions
 
@@ -97,13 +112,13 @@ The router in `js/app.js` references page modules by name in its `pages` map (li
 | `DB` | `js/db.js` | IndexedDB CRUD: `getAll`, `get`, `put`, `del`, `getByIndex`, `uuid`, `getSetting`, `setSetting`, `fileToDataURL`, `seedDefaults` |
 | `API` | `js/api.js` | `chatCompletion`, `chatCompletionStream`, `generateImage`, `buildSystemPrompt`, `parseComicResponse`, `fetchTextModels`, `fetchImageModels`, `BASE_URL` |
 | `App` | `js/app.js` | `navigate(page, param)`, `refreshPage()`, `showModal(html)`, `hideModal()`, `toast(msg, type)` |
-| `escHtml(str)` | `js/utils.js` | HTML-escapes a string. Used throughout all page modules. |
+| `escHtml(str)` | `js/utils.js` | HTML-escapes a string. **Always use before inserting user data into HTML.** |
 | `timeAgo(ts)` | `js/utils.js` | Formats a timestamp as relative time. |
-| `GENRES` | `js/utils.js` | Array of 9 genre objects (`{id, name, emoji}`). |
+| `GENRES` | `js/utils.js` | Array of genre objects (`{id, name, emoji}`). |
 
 ### Data Model
 
-IndexedDB database: `ComicCreatorDB`, version `1`. Six object stores:
+IndexedDB database: `ComicCreatorDB`. Six object stores:
 
 | Store | keyPath | Indexes | Description |
 |-------|---------|---------|-------------|
@@ -117,40 +132,104 @@ IndexedDB database: `ComicCreatorDB`, version `1`. Six object stores:
 ### API Integration
 
 - Base URL: `https://nano-gpt.com/api/v1`
-- Endpoints: `/chat/completions` (text, streaming via SSE), `/images/generations` (images), `/models?detailed=true` (model list, no auth), `/image-models?detailed=true`
+- Endpoints: `/chat/completions` (text, streaming SSE), `/images/generations` (images), `/models?detailed=true` (text model list), `/image-models?detailed=true`
 - Auth: Bearer token from `settings.apiKey`
-- Model responses are cached in IndexedDB for 6 hours
+- Model lists are cached in IndexedDB for 6 hours
+
+---
 
 ## File Reference
 
 ```
-index.html              (97 lines)   App shell — topbar, sidebar nav, bottom nav, modal, toast container, script tags
+index.html              (114 lines)  App shell — topbar, sidebar nav, bottom nav, modal, toast container, script tags
 manifest.json           (32 lines)   PWA manifest — standalone, portrait, dark theme (#0a0a1a)
-sw.js                   (79 lines)   Service worker — CACHE_NAME='comic-creator-v1.4.0', caches STATIC_ASSETS, cache-first for app shell, network-only for nano-gpt.com
-version.json            (4 lines)    {"version":"1.4.0","updated":"2026-02-27"}
+sw.js                   (82 lines)   Service worker — CACHE_NAME='comic-creator-v1.6.2', cache-first for app shell, network-only for nano-gpt.com
+version.json            (4 lines)    {"version":"1.6.2","updated":"2026-03-02"}
 server.sh               (111 lines)  Termux dev server launcher (auto-detects python3/npx/php/busybox)
 update.sh               (172 lines)  Termux update script (git pull + sw cache bust)
 generate-icons.html                  Browser utility to generate PWA PNG icons from the SVG
-css/app.css             (811 lines)  All styles — dark theme, mobile-first responsive, component styles
-js/db.js                (171 lines)  IndexedDB wrapper — open, CRUD, uuid, settings helpers, seed defaults
-js/api.js               (376 lines)  NanoGPT client — streaming SSE, image gen, system prompt builder, JSON parser, model fetching with fallback lists
-js/app.js               (197 lines)  SPA router — hash-based navigation, sidebar/bottomnav, modal, toast, SW registration
-js/utils.js             (new)         Shared pure helpers — escHtml, timeAgo, getGenreEmoji, GENRES
-js/pages/home.js        (current)     Dashboard — stats, recent comics, genre grid
-js/pages/characters.js  (196 lines)  Character CRUD — list, create/edit form, image upload, delete
-js/pages/worlds.js      (213 lines)  World CRUD — list, create/edit form, multi-image upload, delete
-js/pages/create.js      (576 lines)  Comic generation engine — setup wizard, SSE streaming, panel rendering, branching choices
-js/pages/library.js     (239 lines)  Comic viewer — list, page reader, PDF export (opens print dialog with styled HTML)
-js/pages/presets.js     (208 lines)  Preset editor — list, create/edit form, sampler parameter sliders
-js/pages/settings.js    (702 lines)  Settings — API key, model selection modal, image config, sampler defaults, data export/import/clear, update checker
+css/app.css             (944 lines)  All styles — dark theme, mobile-first responsive, component styles
+js/utils.js             (62 lines)   Shared pure helpers — escHtml, timeAgo, getGenreEmoji, GENRES
+js/db.js                (194 lines)  IndexedDB wrapper — open, CRUD, uuid, settings helpers, seed defaults
+js/api.js               (465 lines)  NanoGPT client — streaming SSE, image gen, system prompt builder, JSON parser, model fetching with fallback lists
+js/app.js               (294 lines)  SPA router — hash-based navigation, sidebar/bottomnav, modal, toast, SW registration
+js/pages/home.js        (93 lines)   Dashboard — stats, recent comics, genre grid
+js/pages/characters.js  (198 lines)  Character CRUD — list, create/edit form, image upload, delete
+js/pages/worlds.js      (215 lines)  World CRUD — list, create/edit form, multi-image upload, delete
+js/pages/create.js      (903 lines)  Comic generation engine — setup wizard, SSE streaming, panel rendering, branching choices
+js/pages/library.js     (512 lines)  Comic viewer — list, page reader, PDF export (opens print dialog with styled HTML)
+js/pages/presets.js     (214 lines)  Preset editor — list, create/edit form, sampler parameter sliders
+js/pages/settings.js    (680 lines)  Settings — API key, model selection modal, image config, sampler defaults, data export/import/clear, update checker
 icons/                               icon.svg, icon-192.png, icon-512.png
 ```
 
+---
+
 ## Code Style
 
-- **Vanilla browser runtime** — the app runs directly in the browser with no build step required for execution
+- **Vanilla browser runtime** — the app runs directly in the browser with no build step
 - **ES2020+ syntax** — optional chaining (`?.`), nullish coalescing (`??`), `async/await`
-- **Global IIFE pattern** — all files use `const X = (() => { ... })()` for encapsulation and script-tag compatibility
-- **HTML escaping** — always use `escHtml()` when interpolating user data into HTML strings
+- **Global IIFE pattern** — all files use `const X = (() => { ... })()` for encapsulation and script-tag compatibility. Do **not** use ES module `import`/`export`.
+- **HTML escaping** — always use `escHtml()` (defined in `js/utils.js`) when interpolating user data into HTML strings
+- **Inline event handlers** — `onclick="ModuleName.method()"` in template literals is standard. Do not switch to `addEventListener` unless the existing code already uses it in that context.
+- **`async/await`** throughout — no `.then()` chains unless existing code uses them
+- **No `var`** — use `const` / `let`
 - **Self-contained pages** — each `js/pages/*.js` handles its own rendering, event binding, and data operations
 - Keep the `render()` function returning an HTML template string; put post-DOM logic in `postRender()`/`onMount()`
+- **Dark theme CSS** — all styles live in `css/app.css`. Use existing CSS custom properties (`--bg`, `--surface`, `--border`, `--text`, `--text-muted`, `--accent`, `--accent-hover`, etc.). Do not add inline `style` attributes for colors.
+
+---
+
+## Testing
+
+Automated test infrastructure:
+- `npm run check-syntax` — JS syntax check across all source files
+- `npm test` — `node --test test/*.test.js` — unit and integrity tests
+- `npm run lint` — ESLint
+- GitHub Actions `Tests` workflow (`.github/workflows/tests.yml`) on every push/PR
+
+Test files in `test/`: `api-integration.test.js`, `api-pure.test.js`, `config-integrity.test.js`, `db.test.js`, `pure-functions.test.js`, `utils.test.js`.
+
+**Manual QA steps:**
+1. Start the server: `python3 -m http.server 8080`
+2. Open `http://localhost:8080` in Chrome/Brave
+3. Set your NanoGPT API key in Settings
+4. Exercise all pages: Characters, Worlds, Presets, Create, Library
+5. Generate a full comic end-to-end (at least 2 pages)
+6. Test PDF export from the Library page
+7. Verify offline mode: disconnect network, reload, confirm app loads from cache
+
+---
+
+## Common Patterns
+
+### Adding a new page
+
+1. Create `js/pages/newpage.js` with the IIFE pattern exporting at minimum `render(param)`.
+2. Add a `<script src="js/pages/newpage.js"></script>` tag in `index.html` (before `js/app.js`).
+3. Register in `app.js`: add to the `pages` object and `pageTitles` object.
+4. Add navigation links in `index.html` (sidebar `<li>` and/or bottom nav `<button>`).
+5. Add the new JS file to `STATIC_ASSETS` in `sw.js` and bump the version across all five locations.
+
+### Adding a new IndexedDB store
+
+1. Increment `DB_VERSION` in `js/db.js`.
+2. Add the store name to the `STORES` constant.
+3. Add `d.createObjectStore(...)` in the `onupgradeneeded` handler.
+
+### Modifying the system prompt
+
+Edit `API.buildSystemPrompt()` in `js/api.js`. The function is pure and has no side effects.
+
+### Adding a new setting
+
+Use `DB.setSetting('myKey', value)` to write and `DB.getSetting('myKey', defaultValue)` to read. No schema change needed — the settings store uses a flexible key-value design.
+
+---
+
+## Environment & Deployment
+
+- Designed for **Termux on Android** as primary environment, but works in any modern browser.
+- No environment variables, no secrets in source. API key is entered by the user at runtime and stored in IndexedDB.
+- Static files only — deploy to any HTTP server, CDN, or GitHub Pages.
+- To update: `./update.sh` (bumps the service worker cache name automatically after `git pull`).
