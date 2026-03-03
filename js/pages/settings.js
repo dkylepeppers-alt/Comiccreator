@@ -173,6 +173,7 @@ const SettingsPage = (() => {
             <button class="btn btn-secondary btn-block" onclick="SettingsPage.exportData()">Export All Data (JSON)</button>
             <button class="btn btn-secondary btn-block" onclick="document.getElementById('import-input').click()">Import Data (JSON)</button>
             <input type="file" id="import-input" accept=".json" class="hidden" onchange="SettingsPage.importData(event)">
+            <button class="btn btn-secondary btn-block" onclick="SettingsPage.clearAppCache()">Clear App Cache</button>
             <button class="btn btn-danger btn-block" onclick="SettingsPage.clearData()">Clear All Data</button>
           </div>
         </div>
@@ -181,7 +182,7 @@ const SettingsPage = (() => {
         <div class="card mt-md">
           <h3 class="card-title mb-sm">App Updates</h3>
           <p class="text-sm text-muted mb-sm">Current version: <strong>v${APP_VERSION}</strong></p>
-          <button class="btn btn-secondary btn-block" onclick="SettingsPage.checkForUpdate()">Check for Updates</button>
+          <button class="btn btn-secondary btn-block" id="check-update-btn" onclick="SettingsPage.checkForUpdate()">Check for Updates</button>
           <div id="update-status" style="margin-top:10px;"></div>
           <div class="form-group" style="margin-top:12px;">
             <label class="form-label">Update Repository</label>
@@ -532,6 +533,9 @@ const SettingsPage = (() => {
     const statusEl = document.getElementById('update-status');
     if (!statusEl) return;
 
+    const btn = document.getElementById('check-update-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+
     statusEl.innerHTML = '<p class="text-sm text-muted">Checking for updates...</p>';
 
     // Save repo setting if changed (validate format to prevent URL injection)
@@ -539,6 +543,7 @@ const SettingsPage = (() => {
     const repo = (repoInput?.value || '').trim() || DEFAULT_UPDATE_REPO;
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
       statusEl.innerHTML = '<p class="text-sm" style="color:var(--danger);">Invalid repository format. Use owner/repo (e.g. user/project).</p>';
+      if (btn) { btn.disabled = false; btn.textContent = 'Check for Updates'; }
       return;
     }
     await DB.setSetting('updateRepo', repo);
@@ -568,7 +573,8 @@ const SettingsPage = (() => {
         statusEl.innerHTML = `
           <div style="padding:10px;border-radius:8px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);">
             <p class="text-sm" style="color:#ffc107;margin:0 0 4px 0;"><strong>Update available: v${escHtml(remote.version)}</strong></p>
-            <p class="text-sm text-muted" style="margin:0;">You have v${escHtml(localVersion)}. Run <code>./update.sh</code> in Termux to update.</p>
+            <p class="text-sm text-muted" style="margin:0 0 8px 0;">You have v${escHtml(localVersion)}. Run <code>./update.sh</code> in Termux, then reload.</p>
+            <button class="btn btn-primary btn-sm" onclick="SettingsPage.reloadForUpdate()">Reload &amp; Apply Update</button>
           </div>`;
         App.toast(`Update available: v${remote.version}`, 'info');
       } else {
@@ -586,6 +592,32 @@ const SettingsPage = (() => {
           <p class="text-sm text-muted" style="margin:0;">Are you online? (${escHtml(e.message)})</p>
         </div>`;
       App.toast('Update check failed', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Check for Updates'; }
+    }
+  }
+
+  async function reloadForUpdate() {
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key)));
+      }
+    } catch (_) { /* proceed to reload even if cache clear fails */ }
+    window.location.reload();
+  }
+
+  async function clearAppCache() {
+    if (!('caches' in window)) {
+      return App.toast('Cache API not available in this browser', 'error');
+    }
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+      App.toast('App cache cleared! Reload the page to fetch fresh assets.', 'success');
+    } catch (e) {
+      logError('clearAppCache()', e);
+      App.toast(`Failed to clear cache: ${e.message}`, 'error');
     }
   }
 
@@ -693,6 +725,6 @@ const SettingsPage = (() => {
     render, postRender, onMount, onUnmount,
     testConnection, save, exportData, importData, clearData, confirmClear,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
-    updateImageSizeOptions, checkForUpdate,
+    updateImageSizeOptions, checkForUpdate, reloadForUpdate, clearAppCache,
   };
 })();
