@@ -295,13 +295,13 @@ const CreatePage = (() => {
     const refImages = [];
     if (useRefImages) {
       for (const c of state.characters) {
-        if (c.imageData) refImages.push(c.imageData);
+        if (c.imageData) refImages.push({ dataUrl: c.imageData, label: c.name, type: 'character' });
       }
       if (state.selectedWorld) {
         const world = await DB.get(DB.STORES.worlds, state.selectedWorld);
         if (world?.images) {
           for (const img of world.images) {
-            if (img) refImages.push(img);
+            if (img) refImages.push({ dataUrl: img, label: world.name, type: 'world' });
           }
         }
       }
@@ -449,11 +449,11 @@ const CreatePage = (() => {
     const refImages = [];
     if (useRefImages) {
       for (const c of characters) {
-        if (c.imageData) refImages.push(c.imageData);
+        if (c.imageData) refImages.push({ dataUrl: c.imageData, label: c.name, type: 'character' });
       }
       if (world?.images) {
         for (const img of world.images) {
-          if (img) refImages.push(img);
+          if (img) refImages.push({ dataUrl: img, label: world.name, type: 'world' });
         }
       }
     }
@@ -582,26 +582,44 @@ const CreatePage = (() => {
         }
         const imageResolution = await DB.getSetting('imageSize', '1024x1024');
         const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
-        const imageOpts = { resolution: imageResolution };
-        if (state.referenceImages.length === 1) {
-          imageOpts.imageDataUrl = state.referenceImages[0];
-        } else if (state.referenceImages.length > 1) {
-          imageOpts.imageDataUrls = state.referenceImages;
+
+        // Normalize refs once — supports legacy plain strings and new labeled objects
+        const normalizedRefs = state.referenceImages.map(item =>
+          typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item
+        );
+        const worldRefs = normalizedRefs.filter(r => r.type === 'world');
+        const characterRefsByName = normalizedRefs.filter(r => r.type === 'character' && r.label);
+
+        // Check if a character name appears in a panel prompt using word-boundary matching
+        function nameInPrompt(name, panelLower) {
+          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`(?<![a-zA-Z0-9])${escaped}(?![a-zA-Z0-9])`, 'i').test(panelLower);
         }
 
-        // Build character appearance suffix for consistent visuals
-        const characterAppearances = state.characters
-          .filter(c => c.appearance && c.appearance.trim())
-          .map(c => `${c.name}: ${c.appearance.trim()}`)
-          .join('; ');
-        const appearanceSuffix = characterAppearances
-          ? `Characters in scene: ${characterAppearances}`
-          : '';
+        // Build per-panel image options, selecting only relevant reference images
+        function buildPanelImageOpts(panel) {
+          const characterRefs = characterRefsByName.filter(r => nameInPrompt(r.label, panel.imagePrompt));
+          const panelRefs = [...characterRefs, ...worldRefs];
+          const opts = { resolution: imageResolution };
+          if (panelRefs.length === 1) {
+            opts.imageDataUrl = panelRefs[0].dataUrl;
+            opts.labeledRefs = panelRefs;
+          } else if (panelRefs.length > 1) {
+            opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
+            opts.labeledRefs = panelRefs;
+          }
+          return opts;
+        }
 
-        function buildEnhancedImagePrompt(basePrompt) {
-          let prompt = basePrompt;
+        // Build enhanced image prompt, including appearance only for characters in this panel
+        function buildEnhancedImagePrompt(panel) {
+          let prompt = panel.imagePrompt;
           if (imagePromptPrefix) prompt = `${imagePromptPrefix}, ${prompt}`;
-          if (appearanceSuffix) prompt = `${prompt}. ${appearanceSuffix}`;
+          const panelAppearances = state.characters
+            .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
+            .map(c => `${c.name}: ${c.appearance.trim()}`)
+            .join('; ');
+          if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
           return prompt;
         }
 
@@ -609,8 +627,9 @@ const CreatePage = (() => {
         await Promise.all(pageData.panels.map(async (panel) => {
           if (!panel.imagePrompt) return;
           try {
-            const enhancedPrompt = buildEnhancedImagePrompt(panel.imagePrompt);
-            const imageData = await API.generateImage(enhancedPrompt, imageOpts);
+            const panelOpts = buildPanelImageOpts(panel);
+            const enhancedPrompt = buildEnhancedImagePrompt(panel);
+            const imageData = await API.generateImage(enhancedPrompt, panelOpts);
             if (imageData) {
               if (imageData.startsWith('http')) {
                 // URL response — try to fetch for offline storage
