@@ -673,10 +673,20 @@ const SettingsPage = (() => {
       characters: await DB.getAll(DB.STORES.characters),
       worlds: await DB.getAll(DB.STORES.worlds),
       comics: await DB.getAll(DB.STORES.comics),
-      // Strip imageUrl from pages — AI-generated images are large and can be regenerated
+      // Strip imageUrl from panels — AI-generated images are large and can be regenerated
       pages: rawPages.map(p => {
         const copy = Object.assign({}, p);
-        delete copy.imageUrl;
+        if (copy.data && Array.isArray(copy.data.panels)) {
+          copy.data = Object.assign({}, copy.data, {
+            panels: copy.data.panels.map(panel => {
+              const panelCopy = Object.assign({}, panel);
+              if ('imageUrl' in panelCopy) {
+                delete panelCopy.imageUrl;
+              }
+              return panelCopy;
+            }),
+          });
+        }
         return copy;
       }),
       presets: await DB.getAll(DB.STORES.presets),
