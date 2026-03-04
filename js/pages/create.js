@@ -311,7 +311,7 @@ const CreatePage = (() => {
         const migrated = DB.migrateCharacter(c);
         const images = migrated.images || [];
         if (images.length > 0) {
-          charImagesByName[c.name] = images;
+          charImagesByName[c.name] = { images, primaryImageIndex: migrated.primaryImageIndex ?? 0 };
           // Also add primary image to legacy refImages for backward compat
           const primary = images[migrated.primaryImageIndex ?? 0] || images[0];
           if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
@@ -474,7 +474,7 @@ const CreatePage = (() => {
         const migrated = DB.migrateCharacter(c);
         const images = migrated.images || [];
         if (images.length > 0) {
-          charImagesByName[c.name] = images;
+          charImagesByName[c.name] = { images, primaryImageIndex: migrated.primaryImageIndex ?? 0 };
           const primary = images[migrated.primaryImageIndex ?? 0] || images[0];
           if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
         }
@@ -637,7 +637,7 @@ const CreatePage = (() => {
         }
 
         // Select the best image from a character's images[] using hybrid cascading strategy
-        async function selectBestImage(charImages, panelPromptText, charName) {
+        async function selectBestImage(charImages, panelPromptText, charName, primaryImageIndex) {
           const valid = (charImages || []).filter(img => img && img.dataUrl);
           if (!valid.length) return null;
           if (valid.length === 1) return valid[0];
@@ -680,8 +680,10 @@ const CreatePage = (() => {
             App.logError('selectBestImage', new Error('Keyword fallback'), `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`);
           }
 
-          // 3. Fall back to primary image (first valid)
-          return valid[0];
+          // 3. Fall back to primary image using configured primaryImageIndex
+          const primaryIdx = typeof primaryImageIndex === 'number' ? primaryImageIndex : 0;
+          const primary = charImages[primaryIdx];
+          return (primary && primary.dataUrl) ? primary : valid[0];
         }
 
         // Build a composite character sheet canvas when multiple chars share budget
@@ -741,7 +743,8 @@ const CreatePage = (() => {
           // Select best image per character in this panel
           const charMatches = [];
           for (const name of charNamesInPanel) {
-            const img = await selectBestImage(state.characterImagesByName[name], panel.imagePrompt, name);
+            const charData = state.characterImagesByName[name] || {};
+            const img = await selectBestImage(charData.images, panel.imagePrompt, name, charData.primaryImageIndex);
             if (img) charMatches.push({ name, img });
           }
 
@@ -752,7 +755,7 @@ const CreatePage = (() => {
             const sheet = await buildCompositeSheet(charMatches);
             if (sheet) {
               const panelRefs = [
-                { dataUrl: sheet.dataUrl, label: sheet.legend, tag: '', description: sheet.legend, type: 'character' },
+                { dataUrl: sheet.dataUrl, label: 'Composite character sheet', tag: '', description: sheet.legend, type: 'character' },
                 ...worldRefs,
               ];
               opts.imageDataUrls = panelRefs.map(r => r.dataUrl);

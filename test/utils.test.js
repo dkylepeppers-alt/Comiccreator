@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest } = require('../js/utils');
+const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt } = require('../js/utils');
 
 describe('utils escHtml', () => {
   it('handles nullish and empty', () => {
@@ -78,5 +78,75 @@ describe('utils dedupeByNameLatest', () => {
     assert.equal(result.length, 2);
     assert.equal(result[0].id, 'y');
     assert.equal(result[1].id, 'x');
+  });
+});
+
+describe('utils cosineSimilarity', () => {
+  it('returns 0 for null, empty, or mismatched inputs', () => {
+    assert.equal(cosineSimilarity(null, [1, 2]), 0);
+    assert.equal(cosineSimilarity([1, 2], null), 0);
+    assert.equal(cosineSimilarity([], [1]), 0);
+    assert.equal(cosineSimilarity([1], []), 0);
+    assert.equal(cosineSimilarity([1, 2], [1, 2, 3]), 0);
+  });
+
+  it('returns 1 for identical vectors', () => {
+    const v = [1, 2, 3];
+    assert.ok(Math.abs(cosineSimilarity(v, v) - 1) < 1e-9);
+  });
+
+  it('returns -1 for opposite vectors', () => {
+    assert.ok(Math.abs(cosineSimilarity([1, 0], [-1, 0]) - (-1)) < 1e-9);
+  });
+
+  it('returns 0 for orthogonal vectors', () => {
+    assert.ok(Math.abs(cosineSimilarity([1, 0], [0, 1])) < 1e-9);
+  });
+
+  it('returns 0 for zero-magnitude vectors', () => {
+    assert.equal(cosineSimilarity([0, 0], [1, 2]), 0);
+    assert.equal(cosineSimilarity([1, 2], [0, 0]), 0);
+  });
+});
+
+describe('utils sanitizeImagePrompt', () => {
+  it('returns falsy input as-is', () => {
+    assert.equal(sanitizeImagePrompt(null), null);
+    assert.equal(sanitizeImagePrompt(''), '');
+    assert.equal(sanitizeImagePrompt(undefined), undefined);
+  });
+
+  it('strips quoted dialogue', () => {
+    const result = sanitizeImagePrompt('A hero says "I will save you!" in a dark alley.');
+    assert.ok(!result.includes('"I will save you!"'));
+    assert.ok(result.includes('dark alley'));
+  });
+
+  it('strips narrative lead-ins', () => {
+    const result = sanitizeImagePrompt('Meanwhile the city crumbles. A hero stands tall.');
+    assert.ok(!result.toLowerCase().includes('meanwhile'));
+    assert.ok(result.includes('A hero stands tall'));
+  });
+
+  it('strips internal states', () => {
+    const result = sanitizeImagePrompt('Feeling conflicted about his past. He clenches his fist.');
+    assert.ok(!result.toLowerCase().includes('feeling conflicted'));
+    assert.ok(result.includes('He clenches his fist'));
+  });
+
+  it('strips meta-references', () => {
+    const result = sanitizeImagePrompt('The reader sees a vast landscape with mountains.');
+    assert.ok(!result.toLowerCase().includes('the reader sees'));
+  });
+
+  it('preserves visual descriptors', () => {
+    const input = 'A tall warrior in blue armor standing under dramatic lighting.';
+    assert.equal(sanitizeImagePrompt(input), input);
+  });
+
+  it('falls back to original when sanitization removes everything', () => {
+    const input = '"Hello there" "How are you?"';
+    const result = sanitizeImagePrompt(input);
+    assert.equal(result, input);
   });
 });

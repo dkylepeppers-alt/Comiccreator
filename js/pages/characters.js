@@ -164,8 +164,11 @@ const CharactersPage = (() => {
     if (!gallery) return;
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
     // Update "Add Image" button visibility
-    const addBtn = gallery.nextElementSibling;
-    if (addBtn && addBtn.tagName === 'BUTTON') {
+    let addBtn = gallery.nextElementSibling;
+    while (addBtn && addBtn.tagName !== 'BUTTON') {
+      addBtn = addBtn.nextElementSibling;
+    }
+    if (addBtn) {
       addBtn.style.display = editorImages.length < MAX_IMAGES ? '' : 'none';
     }
   }

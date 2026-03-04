@@ -219,7 +219,19 @@ const API = (() => {
         .slice(0, maxRefImages)
         .map((ref, i) => {
           const details = ref.description ? ` — ${ref.description}` : (ref.tag && ref.tag !== 'default' ? ` (${ref.tag})` : '');
-          return `Reference image ${i + 1}: ${ref.label}${details} (${ref.type} reference). Replicate this character's exact appearance.`;
+          let instruction;
+          switch (ref.type) {
+            case 'character':
+              instruction = "Replicate this character's exact appearance.";
+              break;
+            case 'world':
+              instruction = 'Use this as an environment and style reference for the setting.';
+              break;
+            default:
+              instruction = 'Use this as a visual reference.';
+              break;
+          }
+          return `Reference image ${i + 1}: ${ref.label}${details} (${ref.type} reference). ${instruction}`;
         })
         .join(' ');
       finalPrompt = `${legend} ${prompt}`;
