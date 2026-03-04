@@ -15,14 +15,18 @@ sw.js                   Service worker (offline cache-first for shell, network-o
 version.json            Single source of truth for app version
 css/app.css             All styles (dark theme, mobile-first, no preprocessor)
 js/
-  utils.js              Shared helpers: escHtml, timeAgo, getGenreEmoji, dedupeByNameLatest, GENRES
-  db.js                 IndexedDB layer (DB singleton – open, get, put, del, getAll, getByIndex, uuid, settings helpers)
-  api.js                NanoGPT API client (chat streaming, image gen, model fetching, prompt building)
+  utils.js              Shared helpers: escHtml, timeAgo, getGenreEmoji, dedupeByNameLatest,
+                        cosineSimilarity, sanitizeImagePrompt, GENRES
+  db.js                 IndexedDB layer (DB singleton – open, get, put, del, getAll, getByIndex,
+                        uuid, settings helpers, fileToDataURL, migrateCharacter, migrateWorld,
+                        seedDefaults, dedupePresets)
+  api.js                NanoGPT API client (chat streaming, image gen, embeddings, model fetching,
+                        image compression, prompt building)
   app.js                SPA router (App.navigate, modal, toast, error log)
   pages/
     home.js             Dashboard
-    characters.js       Character CRUD + image upload
-    worlds.js           World CRUD + multi-image upload
+    characters.js       Character CRUD + multi-image upload (up to 6 images per character)
+    worlds.js           World CRUD + multi-image upload (up to 6 images per world)
     create.js           Comic generation engine
     library.js          Comic viewer + PDF export
     presets.js          Prompt preset editor
@@ -37,7 +41,7 @@ test/
 scripts/
   bump-version.sh        Atomically bumps version in all 5 places (see Versioning below)
   install-hooks.sh       Installs git pre-commit hook
-  pre-commit             Pre-commit hook (syntax check + test)
+  pre-commit             Pre-commit hook (version consistency check only — does NOT run syntax checks or tests)
 ```
 
 ---
@@ -70,18 +74,18 @@ The app version appears in **five places** and CI tests enforce that all five ma
 
 | File | Location |
 |------|----------|
-| `version.json` | `"version": "1.6.2"` |
-| `sw.js` | `const CACHE_NAME = 'comic-creator-v1.6.2';` |
-| `js/pages/settings.js` | `const APP_VERSION = '1.6.2';` |
-| `index.html` | sidebar footer: `v1.6.2 &middot; PWA` |
-| `package.json` | `"version": "1.6.2"` |
+| `version.json` | `"version": "1.6.5"` |
+| `sw.js` | `const CACHE_NAME = 'comic-creator-v1.6.5';` |
+| `js/pages/settings.js` | `const APP_VERSION = '1.6.5';` |
+| `index.html` | sidebar footer: `v1.6.5 &middot; PWA` |
+| `package.json` | `"version": "1.6.5"` |
 
 **Use the bump script** to update all five atomically:
 
 ```bash
-bash scripts/bump-version.sh patch   # 1.6.2 → 1.6.3
-bash scripts/bump-version.sh minor   # 1.6.2 → 1.7.0
-bash scripts/bump-version.sh major   # 1.6.2 → 2.0.0
+bash scripts/bump-version.sh patch   # 1.6.5 → 1.6.6
+bash scripts/bump-version.sh minor   # 1.6.5 → 1.7.0
+bash scripts/bump-version.sh major   # 1.6.5 → 2.0.0
 ```
 
 If you manually edit the version, update all five files. Failing to do so will break CI.
@@ -146,6 +150,16 @@ Each page module exposes: `render(param)` (required), optionally `postRender(par
 
 **Always use `escHtml(str)`** (from `js/utils.js`) when inserting user-controlled or API-returned data into HTML strings. Never use `.innerHTML = userInput` directly. The function escapes `&`, `<`, `>`, `"`, and `'`.
 
+### Utility Helpers (`js/utils.js`)
+
+- `escHtml(str)` — HTML-escapes a string (see HTML Safety above)
+- `timeAgo(ts)` — formats a timestamp as a human-readable relative string (e.g., "3h ago")
+- `getGenreEmoji(genre)` — returns the emoji for a genre ID
+- `dedupeByNameLatest(list)` — deduplicates an array of objects by name (case-insensitive), keeping the most recently updated/created entry
+- `cosineSimilarity(a, b)` — computes cosine similarity between two numeric arrays; returns 0 for null/empty/mismatched inputs
+- `sanitizeImagePrompt(rawPrompt)` — strips narrative noise (dialogue, story text, internal states) from an image prompt so only visual descriptors remain
+- `GENRES` — array of `{ id, name, emoji }` genre objects
+
 ### IndexedDB (`js/db.js`)
 
 Six object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `settings`.
@@ -155,17 +169,25 @@ Six object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `settin
 - `DB.getSetting(key, default)` / `DB.setSetting(key, value)` — key/value config store
 - `DB.uuid()` — generates a UUID
 - `DB.open()` is called automatically before every operation; calling it manually is safe (idempotent)
+- `DB.fileToDataURL(file)` — converts a `File` object to a base64 data URL (Promise)
+- `DB.migrateCharacter(char)` — upgrades a legacy single-`imageData` character to the `images[]` format in-memory (does NOT persist; call `DB.put()` to save)
+- `DB.migrateWorld(world)` — upgrades a legacy `images: string[]` world to the `images: [{dataUrl, tag, description}]` format in-memory (does NOT persist)
+- `DB.seedDefaults()` — inserts the three built-in prompt presets on first run (idempotent)
+- `DB.dedupePresets()` — removes duplicate presets by name, keeping the most recently updated one
 
 ### API Client (`js/api.js`)
 
 All methods are async and read the API key and model settings from IndexedDB automatically.
 
-- `API.chatCompletionStream(messages, onChunk, options)` — streaming SSE; `onChunk(delta, fullText)` is called for each token
+- `API.chatCompletionStream(messages, onChunk, options)` — streaming SSE; `onChunk(delta, fullText)` is called for each token; pass `options.signal` (AbortSignal) to support cancellation
 - `API.chatCompletion(messages, options)` — non-streaming
-- `API.generateImage(prompt, options)` — image generation
+- `API.generateImage(prompt, options)` — image generation; supports `options.imageDataUrls` (array of reference image data URLs), `options.labeledRefs` (typed references with label/description/type), and `options.resolution`
+- `API.generateEmbedding(text, options)` — generates a text embedding via NanoGPT embeddings API; reads `embeddingModel` from settings (default: `text-embedding-3-small`); returns a number array or `null` on failure
 - `API.buildSystemPrompt(genre, characters, world, customSystemPrompt)` — assembles the system prompt
 - `API.parseComicResponse(text)` — extracts JSON from the LLM response (strips markdown fences, finds `{…}`)
 - `API.fetchTextModels()` / `API.fetchImageModels()` — fetched from NanoGPT with 6-hour cache in IndexedDB
+- `API.getModelSizes(modelId)` — returns supported image sizes for a model from live cache or `KNOWN_IMAGE_SIZES` static fallback; returns `null` if unknown (caller should allow free-form entry)
+- `API.compressDataUrl(dataUrl, maxDim, quality)` — resizes and re-encodes an image data URL as JPEG to reduce payload size (browser-only, uses Canvas)
 
 ### Error Handling
 
