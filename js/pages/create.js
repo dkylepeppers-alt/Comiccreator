@@ -27,6 +27,17 @@ const CreatePage = (() => {
   let streamTimeout = null;
   let abortController = null;
 
+  // Keyword-to-tag affinity map used for fallback ref image selection when embeddings are unavailable
+  const TAG_KEYWORDS = {
+    'front-view':       ['front', 'facing', 'standing', 'full body', 'looking at'],
+    'side-view':        ['profile', 'side view', 'side-on', 'looking away'],
+    'back-view':        ['behind', 'back view', 'from behind', 'walking away', 'rear'],
+    'close-up':         ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
+    'action-pose':      ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
+    'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
+    'expression':       ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
+  };
+
   async function render(param) {
     // Always honour active state — must come BEFORE param checks so that
     // App.refreshPage() during re-roll/generation of a resumed comic does not
@@ -607,17 +618,6 @@ const CreatePage = (() => {
         const worldRefs = state.referenceImages
           .map(item => typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item)
           .filter(r => r.type === 'world');
-
-        // Keyword-to-tag affinity map for fallback when embeddings are unavailable
-        const TAG_KEYWORDS = {
-          'front-view':       ['front', 'facing', 'standing', 'full body', 'looking at'],
-          'side-view':        ['profile', 'side view', 'side-on', 'looking away'],
-          'back-view':        ['behind', 'back view', 'from behind', 'walking away', 'rear'],
-          'close-up':         ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
-          'action-pose':      ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
-          'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
-          'expression':       ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
-        };
 
         // Cache panel prompt embeddings within this page generation
         const promptEmbeddingCache = new Map();

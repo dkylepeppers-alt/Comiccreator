@@ -77,7 +77,7 @@
     if (!rawPrompt) return rawPrompt;
     let cleaned = rawPrompt;
 
-    // Remove quoted dialogue that leaked in
+    // Remove quoted dialogue that leaked in (200 char limit targets dialogue, not visual descriptions)
     cleaned = cleaned.replace(/"[^"]{0,200}"/g, '');
     cleaned = cleaned.replace(/'[^']{0,200}'/g, '');
 
