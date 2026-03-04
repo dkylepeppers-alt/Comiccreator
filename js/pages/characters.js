@@ -62,6 +62,7 @@ const CharactersPage = (() => {
               <div class="list-item-desc">${escHtml(c.role || 'No role')} &middot; ${escHtml(c.description || '').slice(0, 60)}</div>
             </div>
             <div class="list-item-actions">
+              <button class="btn btn-sm btn-secondary" title="Export" onclick="event.stopPropagation();CharactersPage.exportCharacter('${c.id}')">&#128229;</button>
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();CharactersPage.deleteCharacter('${c.id}','${escHtml(c.name)}')">&#128465;</button>
             </div>
           </div>
@@ -84,6 +85,7 @@ const CharactersPage = (() => {
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
           <button class="btn btn-sm btn-secondary" onclick="CharactersPage.backToList()">&#8592; Back</button>
           <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} Character</h2>
+          ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" onclick="CharactersPage.exportCharacter('${editingId}')">&#128229; Export</button>` : ''}
         </div>
 
         <div class="card">
@@ -292,6 +294,24 @@ const CharactersPage = (() => {
     backToList();
   }
 
+  async function exportCharacter(id) {
+    const char = await DB.get(DB.STORES.characters, id);
+    if (!char) return App.toast('Character not found', 'error');
+    const data = {
+      characters: [char],
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = char.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    a.download = `character-${safeName}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    App.toast('Character exported!', 'success');
+  }
+
   async function deleteCharacter(id, name) {
     App.showModal(`
       <div class="modal-title">Delete Character</div>
@@ -315,6 +335,6 @@ const CharactersPage = (() => {
     newCharacter, editCharacter, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage,
-    saveCharacter, deleteCharacter, confirmDelete,
+    saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
   };
 })();

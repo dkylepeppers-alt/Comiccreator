@@ -64,6 +64,7 @@ const WorldsPage = (() => {
               <div class="list-item-desc">${escHtml(w.description || '').slice(0, 80)}</div>
             </div>
             <div class="list-item-actions">
+              <button class="btn btn-sm btn-secondary" title="Export" onclick="event.stopPropagation();WorldsPage.exportWorld('${w.id}')">&#128229;</button>
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();WorldsPage.deleteWorld('${w.id}','${escHtml(w.name)}')">&#128465;</button>
             </div>
           </div>
@@ -86,6 +87,7 @@ const WorldsPage = (() => {
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
           <button class="btn btn-sm btn-secondary" onclick="WorldsPage.backToList()">&#8592; Back</button>
           <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} World</h2>
+          ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" onclick="WorldsPage.exportWorld('${editingId}')">&#128229; Export</button>` : ''}
         </div>
 
         <div class="card">
@@ -268,6 +270,24 @@ const WorldsPage = (() => {
     backToList();
   }
 
+  async function exportWorld(id) {
+    const world = await DB.get(DB.STORES.worlds, id);
+    if (!world) return App.toast('World not found', 'error');
+    const data = {
+      worlds: [world],
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = world.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    a.download = `world-${safeName}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    App.toast('World exported!', 'success');
+  }
+
   async function deleteWorld(id, name) {
     App.showModal(`
       <div class="modal-title">Delete World</div>
@@ -290,6 +310,6 @@ const WorldsPage = (() => {
     render, newWorld, editWorld, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage,
-    saveWorld, deleteWorld, confirmDelete,
+    saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();
