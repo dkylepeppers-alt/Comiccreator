@@ -4,7 +4,7 @@
  */
 const DB = (() => {
   const DB_NAME = 'ComicCreatorDB';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let db = null;
 
   const STORES = {
@@ -114,6 +114,21 @@ const DB = (() => {
     });
   }
 
+  /**
+   * Migrate a character record from the legacy single-imageData format to
+   * the new images[] format.  Safe to call on already-migrated records.
+   * Does NOT persist the change — callers should call DB.put() if they wish
+   * to store the migration result.
+   */
+  function migrateCharacter(char) {
+    if (!char) return char;
+    if (Array.isArray(char.images) && char.images.length > 0) return char;
+    const images = char.imageData
+      ? [{ dataUrl: char.imageData, tag: 'default', description: '', embedding: null }]
+      : [];
+    return Object.assign({}, char, { images, primaryImageIndex: 0 });
+  }
+
   // Seed default presets on first run (idempotent — stable IDs prevent duplicates)
   // Low, stable timestamps ensure seed presets sort to the bottom of the list (below user-created presets)
   const SEED_PRESETS = [
@@ -188,6 +203,7 @@ const DB = (() => {
     getSetting,
     setSetting,
     fileToDataURL,
+    migrateCharacter,
     seedDefaults,
     dedupePresets,
   };

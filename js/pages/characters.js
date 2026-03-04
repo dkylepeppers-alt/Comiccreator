@@ -5,16 +5,23 @@ const CharactersPage = (() => {
   let currentView = 'list'; // 'list' or 'edit'
   let editingId = null;
 
+  // In-editor image list: [{ dataUrl, tag, description, embedding }]
+  let editorImages = [];
+  let editorPrimaryIndex = 0;
+  // Index of the image slot currently being filled (for file picker)
+  let _pendingSlotIdx = -1;
+
+  const IMAGE_TAGS = ['default', 'front-view', 'side-view', 'back-view', 'close-up', 'action-pose', 'alternate-outfit', 'expression', 'custom'];
+  const MAX_IMAGES = 6;
+
   async function render(param) {
     if (param === 'new') {
       currentView = 'edit';
       editingId = null;
     } else if (param) {
-      // param is a character ID — switch to edit mode
       currentView = 'edit';
       editingId = param;
     } else {
-      // Reset to list view on normal navigation (prevents stale edit state)
       currentView = 'list';
       editingId = null;
     }
@@ -42,10 +49,13 @@ const CharactersPage = (() => {
             <div class="empty-state-text">No characters yet. Create your first hero!</div>
             <button class="btn btn-primary" onclick="CharactersPage.newCharacter()">Create Character</button>
           </div>
-        ` : characters.map(c => `
+        ` : characters.map(c => {
+          const migrated = DB.migrateCharacter(c);
+          const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || migrated.imageData || '';
+          return `
           <div class="list-item" onclick="CharactersPage.editCharacter('${c.id}')">
             <div class="list-item-avatar">
-              ${c.imageData ? `<img src="${c.imageData}" alt="${escHtml(c.name)}">` : '&#129464;'}
+              ${thumb ? `<img src="${thumb}" alt="${escHtml(c.name)}">` : '&#129464;'}
             </div>
             <div class="list-item-info">
               <div class="list-item-title">${escHtml(c.name)}</div>
@@ -55,17 +65,19 @@ const CharactersPage = (() => {
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();CharactersPage.deleteCharacter('${c.id}','${escHtml(c.name)}')">&#128465;</button>
             </div>
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }
 
   async function renderEditor() {
-    let char = { name: '', role: 'hero', description: '', appearance: '', backstory: '', powers: '', imageData: '' };
+    let char = { name: '', role: 'hero', description: '', appearance: '', backstory: '', powers: '', images: [], primaryImageIndex: 0 };
     if (editingId) {
       const saved = await DB.get(DB.STORES.characters, editingId);
-      if (saved) char = saved;
+      if (saved) char = DB.migrateCharacter(saved);
     }
+    editorImages = (char.images || []).map(img => Object.assign({}, img));
+    editorPrimaryIndex = char.primaryImageIndex ?? 0;
 
     return `
       <div class="slide-up">
@@ -75,13 +87,14 @@ const CharactersPage = (() => {
         </div>
 
         <div class="card">
-          <!-- Reference Image -->
+          <!-- Reference Images (up to ${MAX_IMAGES}) -->
           <div class="form-group">
-            <label class="form-label">Reference Image</label>
-            <div class="img-upload" id="char-img-upload" onclick="CharactersPage.pickImage()">
-              ${char.imageData ? `<img src="${char.imageData}" alt="Reference">` : '<span>&#128247; Tap to upload</span>'}
+            <label class="form-label">Reference Images (up to ${MAX_IMAGES})</label>
+            <div class="char-img-gallery" id="char-img-gallery">
+              ${renderGallerySlots(editorImages, editorPrimaryIndex)}
             </div>
             <input type="file" id="char-img-input" accept="image/*" class="hidden" onchange="CharactersPage.handleImage(event)">
+            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="CharactersPage.addImageSlot()">+ Add Image</button>` : ''}
           </div>
 
           <div class="form-group">
@@ -119,11 +132,60 @@ const CharactersPage = (() => {
           </div>
         </div>
 
-        <button class="btn btn-primary btn-block mt-sm" onclick="CharactersPage.saveCharacter()">
+        <button class="btn btn-primary btn-block mt-sm" id="char-save-btn" onclick="CharactersPage.saveCharacter()">
           ${editingId ? 'Update' : 'Create'} Character
         </button>
       </div>
     `;
+  }
+
+  function renderGallerySlots(images, primaryIdx) {
+    return images.map((img, i) => `
+      <div class="char-img-slot" data-idx="${i}">
+        <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="CharactersPage.pickImageForSlot(${i})">
+          ${img.dataUrl ? `<img src="${img.dataUrl}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
+        </div>
+        <div class="char-img-meta">
+          <select class="char-img-tag" data-idx="${i}" onchange="CharactersPage.updateTag(${i},this.value)">
+            ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+          <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Battle armor with sword drawn" oninput="CharactersPage.updateDesc(${i},this.value)">
+          <div class="char-img-actions">
+            <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="CharactersPage.setPrimary(${i})">&#11088;</button>
+            <button class="char-img-delete" title="Remove" onclick="CharactersPage.removeImage(${i})">&#x2715;</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function refreshGallery() {
+    const gallery = document.getElementById('char-img-gallery');
+    if (!gallery) return;
+    gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
+    // Update "Add Image" button visibility (walk past hidden file input)
+    let addBtn = gallery.nextElementSibling;
+    let steps = 0;
+    while (addBtn && addBtn.tagName !== 'BUTTON' && steps < 5) {
+      addBtn = addBtn.nextElementSibling;
+      steps++;
+    }
+    if (addBtn && addBtn.tagName === 'BUTTON') {
+      addBtn.style.display = editorImages.length < MAX_IMAGES ? '' : 'none';
+    }
+  }
+
+  function addImageSlot() {
+    if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
+    editorImages.push({ dataUrl: '', tag: 'default', description: '', embedding: null });
+    refreshGallery();
+    // Immediately open file picker for the new slot
+    pickImageForSlot(editorImages.length - 1);
+  }
+
+  function pickImageForSlot(idx) {
+    _pendingSlotIdx = idx;
+    document.getElementById('char-img-input').click();
   }
 
   function newCharacter() {
@@ -138,17 +200,49 @@ const CharactersPage = (() => {
     App.navigate('characters', null);
   }
 
+  // Legacy single-upload handler (kept for backward compat)
   function pickImage() {
-    document.getElementById('char-img-input').click();
+    pickImageForSlot(0);
   }
 
   async function handleImage(event) {
     const file = event.target.files[0];
     if (!file) return;
     const dataUrl = await DB.fileToDataURL(file);
-    const upload = document.getElementById('char-img-upload');
-    upload.innerHTML = `<img src="${dataUrl}" alt="Reference">`;
-    upload.dataset.imageData = dataUrl;
+    const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
+    if (idx >= editorImages.length) {
+      editorImages.push({ dataUrl, tag: 'default', description: '', embedding: null });
+    } else {
+      editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl, embedding: null });
+    }
+    refreshGallery();
+    // Reset file input so same file can be re-picked
+    event.target.value = '';
+  }
+
+  function updateTag(idx, value) {
+    if (editorImages[idx]) editorImages[idx].tag = value;
+  }
+
+  function updateDesc(idx, value) {
+    if (editorImages[idx]) {
+      editorImages[idx].description = value;
+      editorImages[idx].embedding = null; // invalidate stale embedding
+    }
+  }
+
+  function setPrimary(idx) {
+    editorPrimaryIndex = idx;
+    // Update star button states in place
+    document.querySelectorAll('.char-img-primary').forEach((btn, i) => {
+      btn.classList.toggle('active', i === idx);
+    });
+  }
+
+  function removeImage(idx) {
+    editorImages.splice(idx, 1);
+    if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
+    refreshGallery();
   }
 
   async function saveCharacter() {
@@ -157,7 +251,27 @@ const CharactersPage = (() => {
     if (!name) return App.toast('Name is required', 'error');
     if (!description) return App.toast('Description is required', 'error');
 
-    const upload = document.getElementById('char-img-upload');
+    // Filter out empty slots (no dataUrl)
+    const validImages = editorImages.filter(img => img.dataUrl);
+    let primaryIdx = editorPrimaryIndex;
+    if (primaryIdx >= validImages.length) primaryIdx = 0;
+
+    // Generate embeddings for images that have descriptions but no embedding
+    const needsEmbedding = validImages.filter(img => img.description && !img.embedding);
+    if (needsEmbedding.length > 0) {
+      const saveBtn = document.getElementById('char-save-btn');
+      if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
+      await Promise.all(needsEmbedding.map(async (img) => {
+        try {
+          const emb = await API.generateEmbedding(img.description);
+          if (emb) img.embedding = emb;
+        } catch { /* skip on error */ }
+      }));
+      if (saveBtn) saveBtn.textContent = editingId ? 'Update Character' : 'Create Character';
+    }
+
+    const existingChar = editingId ? await DB.get(DB.STORES.characters, editingId) : null;
+
     const char = {
       id: editingId || DB.uuid(),
       name,
@@ -166,8 +280,10 @@ const CharactersPage = (() => {
       appearance: document.getElementById('char-appearance').value.trim(),
       backstory: document.getElementById('char-backstory').value.trim(),
       powers: document.getElementById('char-powers').value.trim(),
-      imageData: upload.dataset?.imageData || (editingId ? (await DB.get(DB.STORES.characters, editingId))?.imageData : '') || '',
-      createdAt: editingId ? (await DB.get(DB.STORES.characters, editingId))?.createdAt || Date.now() : Date.now(),
+      images: validImages,
+      primaryImageIndex: primaryIdx,
+      imageData: '',  // clear legacy field when images[] is present
+      createdAt: existingChar?.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
 
@@ -194,5 +310,11 @@ const CharactersPage = (() => {
     App.refreshPage();
   }
 
-  return { render, newCharacter, editCharacter, backToList, pickImage, handleImage, saveCharacter, deleteCharacter, confirmDelete };
+  return {
+    render,
+    newCharacter, editCharacter, backToList,
+    pickImage, pickImageForSlot, handleImage, addImageSlot,
+    updateTag, updateDesc, setPrimary, removeImage,
+    saveCharacter, deleteCharacter, confirmDelete,
+  };
 })();

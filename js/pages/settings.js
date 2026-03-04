@@ -26,6 +26,7 @@ const SettingsPage = (() => {
     const maxTokens = await DB.getSetting('maxTokens', 2048);
     const enableImages = await DB.getSetting('enableImages', true);
     const useRefImages = await DB.getSetting('useRefImages', true);
+    const charRefMode = await DB.getSetting('charRefMode', 'auto');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
@@ -105,6 +106,17 @@ const SettingsPage = (() => {
               Use Reference Images
             </label>
             <div class="form-hint">Send character/world images as style references for consistent visuals (uses more credits)</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Character Ref Selection</label>
+            <select id="set-charrefmode">
+              <option value="auto" ${charRefMode === 'auto' ? 'selected' : ''}>Auto (use embeddings when available, fall back to keyword)</option>
+              <option value="semantic" ${charRefMode === 'semantic' ? 'selected' : ''}>Semantic (always use text embeddings)</option>
+              <option value="keyword" ${charRefMode === 'keyword' ? 'selected' : ''}>Keyword (tag-based matching only)</option>
+              <option value="composite" ${charRefMode === 'composite' ? 'selected' : ''}>Composite (always build character sheet)</option>
+            </select>
+            <div class="form-hint">How to select the best reference image for each panel from a character's image gallery</div>
           </div>
 
           <div class="form-group">
@@ -632,6 +644,7 @@ const SettingsPage = (() => {
     await DB.setSetting('imageModel', document.getElementById('set-imgmodel').value);
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
+    await DB.setSetting('charRefMode', document.getElementById('set-charrefmode').value);
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
     const sizeEl = document.getElementById('set-imgsize');
     const imageSizeVal = sizeEl.value.trim();
