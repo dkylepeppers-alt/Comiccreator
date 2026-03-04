@@ -136,6 +136,9 @@ describe('API integration', () => {
       calls.push({ url, opts });
       return new Response(JSON.stringify({
         data: [
+          // Real API shape: sizes under supported_parameters.resolutions
+          { id: 'gpt-image-1', name: 'GPT 4o Image', owned_by: 'openai', supported_parameters: { resolutions: ['1024x1024', '1536x1024', '1024x1536', 'auto'] } },
+          // Legacy field names still supported as fallbacks
           { id: 'flux-pro', name: 'Flux Pro', owned_by: 'Black Forest Labs', sizes: ['512x512', '1024x1024'] },
           { id: 'dall-e-3', name: 'DALL-E 3', owned_by: 'OpenAI', supported_sizes: ['1024x1024', '1024x1792'] },
         ],
@@ -148,15 +151,17 @@ describe('API integration', () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].opts.headers.Authorization, 'Bearer test-key');
 
-    // Models should be sorted by id and sizes captured
-    assert.equal(models[0].id, 'dall-e-3');
-    assert.deepEqual(models[0].sizes, ['1024x1024', '1024x1792']);
-    assert.equal(models[1].id, 'flux-pro');
-    assert.deepEqual(models[1].sizes, ['512x512', '1024x1024']);
+    // Models should be sorted by id and sizes captured from all field variants
+    const gpt = models.find(m => m.id === 'gpt-image-1');
+    assert.deepEqual(gpt.sizes, ['1024x1024', '1536x1024', '1024x1536', 'auto']);
+    const dall3 = models.find(m => m.id === 'dall-e-3');
+    assert.deepEqual(dall3.sizes, ['1024x1024', '1024x1792']);
+    const flux = models.find(m => m.id === 'flux-pro');
+    assert.deepEqual(flux.sizes, ['512x512', '1024x1024']);
 
     // Sizes should be available via getModelSizes after fetch
-    const sizes = await ctx.API.getModelSizes('flux-pro');
-    assert.deepEqual(sizes, ['512x512', '1024x1024']);
+    const sizes = await ctx.API.getModelSizes('gpt-image-1');
+    assert.deepEqual(sizes, ['1024x1024', '1536x1024', '1024x1536', 'auto']);
   });
 
   it('getModelSizes returns cached sizes when present, null when missing or no sizes', async () => {

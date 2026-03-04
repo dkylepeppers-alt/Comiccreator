@@ -467,8 +467,8 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         owned_by: m.owned_by || m.provider || '',
         pricing: m.pricing || null,
         supports_edit: m.supports_edit || false,
-        // Capture supported sizes if the API provides them
-        sizes: m.sizes || m.supported_sizes || m.image_sizes || null,
+        // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
+        sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
       })).sort((a, b) => a.id.localeCompare(b.id));
 
       await DB.setSetting(CACHE_KEY, models);
