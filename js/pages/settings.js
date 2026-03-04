@@ -370,22 +370,29 @@ const SettingsPage = (() => {
     const id = model.id.toLowerCase();
     if (id.startsWith('gpt-') || id.startsWith('chatgpt') || id.startsWith('dall-e') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) return 'OpenAI';
     if (id.startsWith('claude')) return 'Anthropic';
-    if (id.startsWith('gemini')) return 'Google';
+    if (id.startsWith('gemini') || id.startsWith('nano-banana')) return 'Google';
     if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
     if (id.startsWith('mistral') || id.startsWith('codestral') || id.startsWith('pixtral')) return 'Mistral';
     if (id.startsWith('deepseek')) return 'DeepSeek';
     if (id.startsWith('grok')) return 'xAI';
-    if (id.startsWith('qwen')) return 'Qwen';
+    if (id.startsWith('qwen') || id.startsWith('wan-') || id.startsWith('z-image')) return 'Alibaba';
     if (id.startsWith('command')) return 'Cohere';
     if (id.startsWith('flux') || id.startsWith('schnell')) return 'Black Forest Labs';
     if (id.startsWith('stable-diffusion') || id.startsWith('sdxl') || id.startsWith('sd3')) return 'Stability AI';
+    if (id.startsWith('seedream') || id.startsWith('seedvr')) return 'ByteDance';
+    if (id.startsWith('hunyuan')) return 'Tencent';
+    if (id.startsWith('cogview') || id.startsWith('glm')) return 'Zhipu';
+    if (id.startsWith('kling')) return 'Kling';
+    if (id.startsWith('vidu')) return 'Vidu';
+    if (id.startsWith('minimax')) return 'MiniMax';
     if (id.startsWith('yi-')) return '01.AI';
     if (id.startsWith('phi-')) return 'Microsoft';
     if (id.startsWith('nova-') || id.startsWith('amazon')) return 'Amazon';
-    if (id.startsWith('glm')) return 'Zhipu';
     if (id.startsWith('kimi')) return 'Moonshot';
     if (id.startsWith('hidream')) return 'HiDream';
     if (id.startsWith('midjourney')) return 'Midjourney';
+    if (id.startsWith('riverflow')) return 'Sourceful';
+    if (id.startsWith('lucid')) return 'Leonardo AI';
     return 'Other';
   }
 
@@ -397,7 +404,17 @@ const SettingsPage = (() => {
     if (m.supports_edit) parts.push('edit');
     if (m.pricing) {
       if (typeof m.pricing === 'object') {
-        if (m.pricing.prompt) parts.push(`$${m.pricing.prompt}/1M in`);
+        // Text models: pricing.prompt is per-million-tokens
+        if (m.pricing.prompt) {
+          parts.push(`$${m.pricing.prompt}/1M in`);
+        // Image models: pricing.per_image is { resolution: cost }
+        } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
+          const prices = Object.values(m.pricing.per_image).filter(v => typeof v === 'number');
+          if (prices.length > 0) {
+            const minPrice = Math.min(...prices);
+            parts.push(`$${minPrice}/img`);
+          }
+        }
       } else if (typeof m.pricing === 'string') {
         parts.push(m.pricing);
       }

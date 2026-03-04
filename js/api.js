@@ -11,6 +11,21 @@ const API = (() => {
   // Keys are model IDs (or ID prefixes), values are arrays of supported WxH strings.
   const KNOWN_IMAGE_SIZES = {
     'gpt-image-1':          ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+    'gpt-image-1.5':        ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+    'gpt-image-1-mini':     ['1024x1024', 'auto'],
+    'flux-2-turbo':         ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-flash':         ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-pro':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-max':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-dev':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-flex':          ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'seedream-v4':          ['1024x1024', '1536x1024', '1024x1536', '2048x2048'],
+    'seedream-v3':          ['1024x1024', '1152x896', '896x1152', '1344x768', '768x1344'],
+    'nano-banana':          ['auto'],
+    'nano-banana-pro':      ['1k', '2k', '4k'],
+    'qwen-image':           ['auto', '1024x1024', '512x512', '768x1024', '1024x768'],
+    'hunyuan-image-3':      ['auto', '1024x1024', '768x1024', '1024x768', '1024x1536', '1536x1024', '512x512'],
+    // Legacy entries retained for backward compatibility
     'dall-e-3':             ['1024x1024', '1024x1792', '1792x1024'],
     'dall-e-2':             ['256x256', '512x512', '1024x1024'],
     'gpt-4o-image':         ['1024x1024', '1024x1792', '1792x1024'],
@@ -523,26 +538,24 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
   // Fallback lists used only when API is unreachable and no cache exists
   const FALLBACK_TEXT_MODELS = [
-    'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano',
-    'chatgpt-4o-latest', 'gpt-4.5-preview',
-    'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
-    'claude-3-opus-20240229', 'claude-3-haiku-20240307',
+    'openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5',
+    'openai/gpt-5.1', 'openai/gpt-5.2',
+    'claude-sonnet-4-5-20250929',
     'deepseek-chat', 'deepseek-reasoner',
-    'gemini-2.0-flash', 'gemini-2.5-pro-preview-05-06',
-    'gemini-1.5-pro', 'gemini-1.5-flash',
-    'llama-3.3-70b', 'llama-3.1-405b',
+    'gemini-2.5-flash', 'gemini-2.5-pro',
     'mistral-large-latest', 'mistral-small-latest',
-    'grok-2', 'grok-2-mini',
-    'qwen-2.5-72b-instruct', 'qwen-2.5-coder-32b-instruct',
-    'command-r-plus', 'command-r',
-    'yi-large', 'phi-4',
+    'grok-2', 'grok-3-mini',
+    'qwen-2.5-72b-instruct',
+    'llama-4-scout', 'llama-4-maverick',
+    'command-r-plus',
   ];
 
   const FALLBACK_IMAGE_MODELS = [
-    'gpt-image-1', 'dall-e-3', 'gpt-4o-image',
-    'flux-pro', 'flux-kontext', 'flux-schnell',
-    'stable-diffusion-xl', 'stable-diffusion-3',
-    'hidream', 'midjourney',
+    'gpt-image-1', 'gpt-image-1.5', 'gpt-image-1-mini',
+    'flux-2-turbo', 'flux-2-pro', 'flux-2-dev',
+    'seedream-v4', 'seedream-v4.5',
+    'nano-banana', 'nano-banana-pro',
+    'qwen-image', 'hunyuan-image-3',
   ];
 
   return {

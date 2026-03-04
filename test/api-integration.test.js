@@ -319,4 +319,67 @@ describe('API integration', () => {
     assert.equal(requestBody.n, 1);
     assert.ok(requestBody.size);
   });
+
+  it('generateEmbedding returns null when no API key is set', async () => {
+    await ctx.DB.setSetting('apiKey', '');
+    const result = await ctx.API.generateEmbedding('test text');
+    assert.equal(result, null);
+  });
+
+  it('generateEmbedding sends correct request body and returns embedding array', async () => {
+    const calls = [];
+    const fakeEmbedding = [0.1, -0.2, 0.3, 0.4];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body), headers: opts.headers });
+      return new Response(JSON.stringify({
+        object: 'list',
+        data: [{ object: 'embedding', index: 0, embedding: fakeEmbedding }],
+        model: 'text-embedding-3-small',
+        usage: { prompt_tokens: 5, total_tokens: 5 },
+      }), { status: 200 });
+    };
+
+    const result = await ctx.API.generateEmbedding('hero with cape');
+
+    assert.deepEqual(result, fakeEmbedding);
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.endsWith('/embeddings'));
+    assert.equal(calls[0].headers['Authorization'], 'Bearer test-key');
+    assert.equal(calls[0].body.input, 'hero with cape');
+    assert.equal(calls[0].body.model, 'text-embedding-3-small');
+    assert.equal(calls[0].body.encoding_format, 'float');
+    assert.equal(calls[0].body.dimensions, 256);
+  });
+
+  it('generateEmbedding uses custom model and dimensions when provided', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({
+        data: [{ embedding: [0.5, 0.5] }],
+      }), { status: 200 });
+    };
+
+    await ctx.API.generateEmbedding('test', { model: 'BAAI/bge-m3', dimensions: 512 });
+    assert.equal(requestBody.model, 'BAAI/bge-m3');
+    assert.equal(requestBody.dimensions, 512);
+  });
+
+  it('generateEmbedding returns null on HTTP error', async () => {
+    ctx.fetch = async () => new Response('{"error":{"message":"bad request"}}', { status: 400 });
+    const result = await ctx.API.generateEmbedding('test text');
+    assert.equal(result, null);
+  });
+
+  it('generateEmbedding returns null on network error', async () => {
+    ctx.fetch = async () => { throw new Error('network down'); };
+    const result = await ctx.API.generateEmbedding('test text');
+    assert.equal(result, null);
+  });
+
+  it('generateEmbedding returns null when response has no embedding data', async () => {
+    ctx.fetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
+    const result = await ctx.API.generateEmbedding('test text');
+    assert.equal(result, null);
+  });
 });

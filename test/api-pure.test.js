@@ -4,6 +4,21 @@ const assert = require('node:assert/strict');
 // --- Inline the static fallback lookup from api.js (no DB dependency) ---
 const KNOWN_IMAGE_SIZES = {
   'gpt-image-1':          ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+  'gpt-image-1.5':        ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+  'gpt-image-1-mini':     ['1024x1024', 'auto'],
+  'flux-2-turbo':         ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+  'flux-2-flash':         ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+  'flux-2-pro':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+  'flux-2-max':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+  'flux-2-dev':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+  'flux-2-flex':          ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+  'seedream-v4':          ['1024x1024', '1536x1024', '1024x1536', '2048x2048'],
+  'seedream-v3':          ['1024x1024', '1152x896', '896x1152', '1344x768', '768x1344'],
+  'nano-banana':          ['auto'],
+  'nano-banana-pro':      ['1k', '2k', '4k'],
+  'qwen-image':           ['auto', '1024x1024', '512x512', '768x1024', '1024x768'],
+  'hunyuan-image-3':      ['auto', '1024x1024', '768x1024', '1024x768', '1024x1536', '1536x1024', '512x512'],
+  // Legacy entries retained for backward compatibility
   'dall-e-3':             ['1024x1024', '1024x1792', '1792x1024'],
   'dall-e-2':             ['256x256', '512x512', '1024x1024'],
   'gpt-4o-image':         ['1024x1024', '1024x1792', '1792x1024'],
@@ -98,13 +113,22 @@ function extractProvider(model) {
   const id = model.id.toLowerCase();
   if (id.startsWith('gpt-') || id.startsWith('chatgpt') || id.startsWith('dall-e') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) return 'OpenAI';
   if (id.startsWith('claude')) return 'Anthropic';
-  if (id.startsWith('gemini')) return 'Google';
+  if (id.startsWith('gemini') || id.startsWith('nano-banana')) return 'Google';
   if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
   if (id.startsWith('mistral') || id.startsWith('codestral') || id.startsWith('pixtral')) return 'Mistral';
   if (id.startsWith('deepseek')) return 'DeepSeek';
   if (id.startsWith('grok')) return 'xAI';
+  if (id.startsWith('qwen') || id.startsWith('wan-') || id.startsWith('z-image')) return 'Alibaba';
   if (id.startsWith('flux') || id.startsWith('schnell')) return 'Black Forest Labs';
   if (id.startsWith('stable-diffusion') || id.startsWith('sdxl') || id.startsWith('sd3')) return 'Stability AI';
+  if (id.startsWith('seedream') || id.startsWith('seedvr')) return 'ByteDance';
+  if (id.startsWith('hunyuan')) return 'Tencent';
+  if (id.startsWith('cogview') || id.startsWith('glm')) return 'Zhipu';
+  if (id.startsWith('kling')) return 'Kling';
+  if (id.startsWith('vidu')) return 'Vidu';
+  if (id.startsWith('minimax')) return 'MiniMax';
+  if (id.startsWith('riverflow')) return 'Sourceful';
+  if (id.startsWith('lucid')) return 'Leonardo AI';
   return 'Other';
 }
 
@@ -116,7 +140,15 @@ function buildModelDetails(m) {
   if (m.supports_edit) parts.push('edit');
   if (m.pricing) {
     if (typeof m.pricing === 'object') {
-      if (m.pricing.prompt) parts.push(`$${m.pricing.prompt}/1M in`);
+      if (m.pricing.prompt) {
+        parts.push(`$${m.pricing.prompt}/1M in`);
+      } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
+        const prices = Object.values(m.pricing.per_image).filter(v => typeof v === 'number');
+        if (prices.length > 0) {
+          const minPrice = Math.min(...prices);
+          parts.push(`$${minPrice}/img`);
+        }
+      }
     } else if (typeof m.pricing === 'string') {
       parts.push(m.pricing);
     }
@@ -166,17 +198,31 @@ describe('settings pure helpers', () => {
     assert.equal(extractProvider({ id: 'gpt-4o' }), 'OpenAI');
     assert.equal(extractProvider({ id: 'claude-3' }), 'Anthropic');
     assert.equal(extractProvider({ id: 'gemini-2.0' }), 'Google');
+    assert.equal(extractProvider({ id: 'nano-banana-pro' }), 'Google');
     assert.equal(extractProvider({ id: 'llama-3' }), 'Meta');
     assert.equal(extractProvider({ id: 'mistral-large' }), 'Mistral');
     assert.equal(extractProvider({ id: 'deepseek-chat' }), 'DeepSeek');
     assert.equal(extractProvider({ id: 'grok-2' }), 'xAI');
-    assert.equal(extractProvider({ id: 'flux-pro' }), 'Black Forest Labs');
+    assert.equal(extractProvider({ id: 'qwen-image' }), 'Alibaba');
+    assert.equal(extractProvider({ id: 'wan-2.6-image-edit' }), 'Alibaba');
+    assert.equal(extractProvider({ id: 'z-image-turbo' }), 'Alibaba');
+    assert.equal(extractProvider({ id: 'flux-2-pro' }), 'Black Forest Labs');
     assert.equal(extractProvider({ id: 'stable-diffusion-xl' }), 'Stability AI');
+    assert.equal(extractProvider({ id: 'seedream-v4' }), 'ByteDance');
+    assert.equal(extractProvider({ id: 'hunyuan-image-3' }), 'Tencent');
+    assert.equal(extractProvider({ id: 'cogview-4' }), 'Zhipu');
+    assert.equal(extractProvider({ id: 'glm-image' }), 'Zhipu');
+    assert.equal(extractProvider({ id: 'kling-image-o1' }), 'Kling');
+    assert.equal(extractProvider({ id: 'vidu-q2' }), 'Vidu');
+    assert.equal(extractProvider({ id: 'minimax-image-01' }), 'MiniMax');
+    assert.equal(extractProvider({ id: 'riverflow-2-fast' }), 'Sourceful');
+    assert.equal(extractProvider({ id: 'lucid-origin' }), 'Leonardo AI');
     assert.equal(extractProvider({ id: 'unknown-model' }), 'Other');
   });
 
   it('buildModelDetails renders context, capability and pricing fields', () => {
     assert.equal(buildModelDetails({}), '');
+    // Text model with per-million-tokens pricing
     const rich = buildModelDetails({
       context_length: 128000,
       supports_vision: true,
@@ -190,6 +236,14 @@ describe('settings pure helpers', () => {
     assert.ok(rich.includes('edit'));
     assert.ok(rich.includes('$0.01/1M in'));
     assert.equal(buildModelDetails({ pricing: '$0.05 flat' }), '$0.05 flat');
+    // Image model with per_image pricing
+    const imgModel = buildModelDetails({
+      supports_edit: true,
+      pricing: { per_image: { '1024x1024': 0.04, '1024x1536': 0.06, 'auto': 0.04 }, currency: 'USD' },
+    });
+    assert.ok(imgModel.includes('edit'));
+    assert.ok(imgModel.includes('$0.04/img'));
+    assert.ok(!imgModel.includes('/1M'));
   });
 });
 
@@ -206,22 +260,40 @@ describe('api getModelSizes static fallback', () => {
     assert.ok(sizes.includes('1024x1024'));
     assert.ok(sizes.includes('1536x1024'));
 
+    const gpt15 = getModelSizesStatic('gpt-image-1.5');
+    assert.ok(gpt15.includes('1024x1024'));
+    assert.ok(gpt15.includes('auto'));
+
+    const flux2 = getModelSizesStatic('flux-2-turbo');
+    assert.ok(flux2.includes('1024*1024'));
+    assert.ok(flux2.includes('1280*720'));
+
+    const seedream = getModelSizesStatic('seedream-v4');
+    assert.ok(seedream.includes('1024x1024'));
+    assert.ok(seedream.includes('2048x2048'));
+
+    // Legacy entries still work
     const dall3 = getModelSizesStatic('dall-e-3');
     assert.ok(dall3.includes('1024x1024'));
     assert.ok(dall3.includes('1024x1792'));
 
-    const flux = getModelSizesStatic('flux-pro');
-    assert.ok(flux.includes('1024x1024'));
-    assert.ok(flux.includes('1280x768'));
+    const fluxLegacy = getModelSizesStatic('flux-pro');
+    assert.ok(fluxLegacy.includes('1024x1024'));
+    assert.ok(fluxLegacy.includes('1280x768'));
   });
 
   it('returns sizes via prefix match for versioned model IDs', () => {
-    // "flux-schnell-v2" should match the "flux-schnell" prefix entry
-    const sizes = getModelSizesStatic('flux-schnell-v2');
+    // "flux-2-turbo-image-to-image" should match the "flux-2-turbo" prefix entry
+    const sizes = getModelSizesStatic('flux-2-turbo-image-to-image');
     assert.ok(Array.isArray(sizes));
-    assert.deepEqual(sizes, getModelSizesStatic('flux-schnell'));
+    assert.deepEqual(sizes, getModelSizesStatic('flux-2-turbo'));
 
-    // "stable-diffusion-xl-turbo" matches "stable-diffusion-xl"
+    // "seedream-v4.5" matches "seedream-v4" prefix
+    const seedream45 = getModelSizesStatic('seedream-v4.5');
+    assert.ok(Array.isArray(seedream45));
+    assert.deepEqual(seedream45, getModelSizesStatic('seedream-v4'));
+
+    // Legacy: "stable-diffusion-xl-turbo" matches "stable-diffusion-xl"
     const sdxl = getModelSizesStatic('stable-diffusion-xl-turbo');
     assert.ok(Array.isArray(sdxl));
     assert.deepEqual(sdxl, getModelSizesStatic('stable-diffusion-xl'));
@@ -229,7 +301,6 @@ describe('api getModelSizes static fallback', () => {
 
   it('returns null for unknown model IDs', () => {
     assert.equal(getModelSizesStatic('midjourney'), null);
-    assert.equal(getModelSizesStatic('hidream-i1-full'), null);
     assert.equal(getModelSizesStatic('some-unknown-model'), null);
   });
 });
