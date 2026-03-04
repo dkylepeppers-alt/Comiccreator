@@ -25,6 +25,9 @@ export default [
         indexedDB: 'readonly',
         IDBKeyRange: 'readonly',
         Promise: 'readonly',
+        crypto: 'readonly',
+        caches: 'readonly',
+        module: 'readonly',
 
         // App globals (IIFEs)
         DB: 'readonly',
