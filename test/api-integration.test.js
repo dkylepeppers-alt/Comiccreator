@@ -130,6 +130,35 @@ describe('API integration', () => {
     assert.ok(fallback.length > 0);
   });
 
+  it('fetchImageModels sends Authorization header and caches sizes from response', async () => {
+    const calls = [];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, opts });
+      return new Response(JSON.stringify({
+        data: [
+          { id: 'flux-pro', name: 'Flux Pro', owned_by: 'Black Forest Labs', sizes: ['512x512', '1024x1024'] },
+          { id: 'dall-e-3', name: 'DALL-E 3', owned_by: 'OpenAI', supported_sizes: ['1024x1024', '1024x1792'] },
+        ],
+      }), { status: 200 });
+    };
+
+    const models = await ctx.API.fetchImageModels(true);
+
+    // Auth header must be sent
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].opts.headers.Authorization, 'Bearer test-key');
+
+    // Models should be sorted by id and sizes captured
+    assert.equal(models[0].id, 'dall-e-3');
+    assert.deepEqual(models[0].sizes, ['1024x1024', '1024x1792']);
+    assert.equal(models[1].id, 'flux-pro');
+    assert.deepEqual(models[1].sizes, ['512x512', '1024x1024']);
+
+    // Sizes should be available via getModelSizes after fetch
+    const sizes = await ctx.API.getModelSizes('flux-pro');
+    assert.deepEqual(sizes, ['512x512', '1024x1024']);
+  });
+
   it('getModelSizes returns cached sizes when present, null when missing or no sizes', async () => {
     // Seed the IndexedDB cache with one model that has sizes and one without
     await ctx.DB.setSetting('cachedImageModels', [
@@ -157,6 +186,15 @@ describe('API integration', () => {
     // Null/undefined modelId should return null
     assert.equal(await ctx.API.getModelSizes(null), null);
     assert.equal(await ctx.API.getModelSizes(''), null);
+  });
+
+  it('generateImage throws when no image model is configured', async () => {
+    // Ensure no imageModel is saved (empty string = not configured)
+    await ctx.DB.setSetting('imageModel', '');
+    await assert.rejects(
+      () => ctx.API.generateImage('draw scene'),
+      /No image model configured/
+    );
   });
 
   it('generateImage throws with diagnostic properties and makes exactly one request on 500 error', async () => {

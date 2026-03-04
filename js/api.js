@@ -216,9 +216,10 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+    const imageModel = await DB.getSetting('imageModel', '');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const modelId = options.model || imageModel;
+    if (!modelId) throw new Error('No image model configured. Go to Settings to select an image model.');
     const resolution = options.resolution || '1024x1024';
 
     // Collect and compress reference images (configurable cap)
@@ -441,6 +442,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
   /**
    * Fetch all available image generation models from NanoGPT.
+   * Requires authentication so the API returns detailed info including supported sizes.
    */
   async function fetchImageModels(forceRefresh = false) {
     const CACHE_KEY = 'cachedImageModels';
@@ -454,7 +456,9 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     }
 
     try {
-      const res = await fetch(`${BASE_URL}/image-models?detailed=true`);
+      const apiKey = await getApiKey();
+      const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {};
+      const res = await fetch(`${BASE_URL}/image-models?detailed=true`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const models = (data.data || data || []).map(m => ({

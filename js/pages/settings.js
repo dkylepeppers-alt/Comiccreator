@@ -20,7 +20,7 @@ const SettingsPage = (() => {
   async function render() {
     const apiKey = await DB.getSetting('apiKey', '');
     const model = await DB.getSetting('model', 'gpt-4o-mini');
-    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+    const imageModel = await DB.getSetting('imageModel', '');
     const temperature = await DB.getSetting('temperature', 0.7);
     const topP = await DB.getSetting('topP', 0.9);
     const maxTokens = await DB.getSetting('maxTokens', 2048);
@@ -76,7 +76,7 @@ const SettingsPage = (() => {
             <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
             <div class="model-picker" id="image-model-picker">
               <div class="model-picker-selected" onclick="SettingsPage.togglePicker('image')">
-                <span id="image-model-display">${escHtml(imageModel)}</span>
+                <span id="image-model-display">${imageModel ? escHtml(imageModel) : 'Select a model\u2026'}</span>
                 <span class="model-picker-arrow">&#9662;</span>
               </div>
               <div class="model-picker-dropdown hidden" id="image-model-dropdown">
@@ -240,8 +240,23 @@ const SettingsPage = (() => {
       loadModels('text'),
       loadModels('image'),
     ]);
-    // After image models are loaded, rebuild the size dropdown for the current model
-    const currentImageModel = document.getElementById('set-imgmodel')?.value;
+    // After image models are loaded, auto-select the first model if none is saved
+    let currentImageModel = document.getElementById('set-imgmodel')?.value;
+    if (!currentImageModel && imageModels.length > 0) {
+      currentImageModel = imageModels[0].id;
+      const hiddenEl = document.getElementById('set-imgmodel');
+      const displayEl = document.getElementById('image-model-display');
+      if (hiddenEl) hiddenEl.value = currentImageModel;
+      if (displayEl) displayEl.textContent = currentImageModel;
+      // Update selected state in the model list
+      const listEl = document.getElementById('image-model-list');
+      if (listEl) {
+        listEl.querySelectorAll('.model-option').forEach(el => {
+          el.classList.toggle('selected', el.dataset.modelId === currentImageModel);
+        });
+      }
+    }
+    // Rebuild the size dropdown for the current (or newly auto-selected) model
     if (currentImageModel) await updateImageSizeOptions(currentImageModel);
     // Close dropdowns when clicking outside
     document.addEventListener('click', handleOutsideClick);
