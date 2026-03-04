@@ -20,6 +20,7 @@
     "eslint": "^10.0.2",
     "fake-indexeddb": "^6.2.5",
     "nanogptjs": "^1.0.4",
-    "prettier": "^3.0.0"
+    "prettier": "^3.0.0",
+    "sharp": "^0.34.5"
   }
 }

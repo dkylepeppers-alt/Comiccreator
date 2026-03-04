@@ -13,48 +13,77 @@ function drawIcon(canvas) {
 
   // Background gradient
   const grad = ctx.createLinearGradient(0, 0, s, s);
-  grad.addColorStop(0, '#7c3aed');
-  grad.addColorStop(1, '#c084fc');
+  grad.addColorStop(0, '#4c1d95');
+  grad.addColorStop(1, '#7c3aed');
   ctx.fillStyle = grad;
-  roundRect(ctx, 0, 0, s, s, 96 * scale);
+  roundRect(ctx, 0, 0, s, s, 80 * scale);
   ctx.fill();
 
-  // White page
+  // White comic page
   ctx.fillStyle = '#fff';
-  roundRect(ctx, 96*scale, 80*scale, 320*scale, 352*scale, 16*scale);
+  roundRect(ctx, 72*scale, 64*scale, 368*scale, 384*scale, 16*scale);
   ctx.fill();
-
-  // Panel borders
   ctx.strokeStyle = '#1a1a3e';
-  ctx.lineWidth = 6 * scale;
-  roundRect(ctx, 112*scale, 96*scale, 288*scale, 320*scale, 8*scale);
+  ctx.lineWidth = 10 * scale;
+  roundRect(ctx, 72*scale, 64*scale, 368*scale, 384*scale, 16*scale);
   ctx.stroke();
 
   // Panel dividers
-  ctx.lineWidth = 4 * scale;
+  ctx.strokeStyle = '#1a1a3e';
+  ctx.lineWidth = 8 * scale;
   ctx.beginPath();
-  ctx.moveTo(256*scale, 96*scale);
-  ctx.lineTo(256*scale, 256*scale);
+  ctx.moveTo(72*scale, 268*scale);
+  ctx.lineTo(440*scale, 268*scale);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(112*scale, 256*scale);
-  ctx.lineTo(400*scale, 256*scale);
+  ctx.moveTo(256*scale, 64*scale);
+  ctx.lineTo(256*scale, 268*scale);
   ctx.stroke();
 
-  // AI text
-  ctx.fillStyle = '#7c3aed';
-  ctx.font = `bold ${48*scale}px sans-serif`;
+  // Top-left panel: Lightning bolt
+  ctx.fillStyle = '#fbbf24';
+  ctx.strokeStyle = '#d97706';
+  ctx.lineWidth = 6 * scale;
+  ctx.beginPath();
+  ctx.moveTo(190*scale, 80*scale);
+  ctx.lineTo(148*scale, 176*scale);
+  ctx.lineTo(176*scale, 176*scale);
+  ctx.lineTo(136*scale, 260*scale);
+  ctx.lineTo(205*scale, 168*scale);
+  ctx.lineTo(175*scale, 168*scale);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Top-right panel: "AI" text
+  ctx.fillStyle = '#6d28d9';
+  ctx.font = `bold ${80*scale}px Arial, sans-serif`;
   ctx.textAlign = 'center';
-  ctx.fillText('AI', 328*scale, 192*scale);
+  ctx.fillText('AI', 348*scale, 188*scale);
 
-  // Star
-  ctx.font = `${40*scale}px sans-serif`;
-  ctx.fillText('\u2605', 184*scale, 188*scale);
+  // Bottom panel: POW! starburst polygon
+  const pts = [
+    [256,280],[273,319],[313,303],[297,343],[336,360],
+    [297,377],[313,417],[273,401],[256,440],[239,401],
+    [199,417],[215,377],[176,360],[215,343],[199,303],[239,319]
+  ];
+  ctx.fillStyle = '#fbbf24';
+  ctx.strokeStyle = '#d97706';
+  ctx.lineWidth = 5 * scale;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0]*scale, pts[0][1]*scale);
+  for (let i = 1; i < pts.length; i++) {
+    ctx.lineTo(pts[i][0]*scale, pts[i][1]*scale);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 
-  // POW!
+  // POW! text
   ctx.fillStyle = '#1a1a3e';
-  ctx.font = `bold ${24*scale}px sans-serif`;
-  ctx.fillText('POW!', 328*scale, 344*scale);
+  ctx.font = `bold ${46*scale}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('POW!', 256*scale, 375*scale);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
