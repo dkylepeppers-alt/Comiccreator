@@ -682,7 +682,7 @@ const CreatePage = (() => {
 
           // 3. Fall back to primary image using configured primaryImageIndex
           const primaryIdx = typeof primaryImageIndex === 'number' ? primaryImageIndex : 0;
-          const primary = charImages[primaryIdx];
+          const primary = (charImages || [])[primaryIdx];
           return (primary && primary.dataUrl) ? primary : valid[0];
         }
 

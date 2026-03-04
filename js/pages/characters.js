@@ -163,12 +163,14 @@ const CharactersPage = (() => {
     const gallery = document.getElementById('char-img-gallery');
     if (!gallery) return;
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
-    // Update "Add Image" button visibility
+    // Update "Add Image" button visibility (walk past hidden file input)
     let addBtn = gallery.nextElementSibling;
-    while (addBtn && addBtn.tagName !== 'BUTTON') {
+    let steps = 0;
+    while (addBtn && addBtn.tagName !== 'BUTTON' && steps < 5) {
       addBtn = addBtn.nextElementSibling;
+      steps++;
     }
-    if (addBtn) {
+    if (addBtn && addBtn.tagName === 'BUTTON') {
       addBtn.style.display = editorImages.length < MAX_IMAGES ? '' : 'none';
     }
   }
