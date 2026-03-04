@@ -215,6 +215,138 @@ describe('parseComicResponse', () => {
   });
 });
 
+// prepareExportPages — extracted from exportData() in settings.js
+function prepareExportPages(pages) {
+  return pages.map(p => {
+    const copy = Object.assign({}, p);
+    if (copy.data && Array.isArray(copy.data.panels)) {
+      copy.data = Object.assign({}, copy.data, {
+        panels: copy.data.panels.map(panel => {
+          const panelCopy = Object.assign({}, panel);
+          if ('imageUrl' in panelCopy) {
+            delete panelCopy.imageUrl;
+          }
+          return panelCopy;
+        }),
+      });
+    }
+    return copy;
+  });
+}
+
+describe('exportData page preparation', () => {
+  it('should strip imageUrl from each panel in each page', () => {
+    const pages = [
+      {
+        id: '1',
+        comicId: 'c1',
+        pageNum: 1,
+        data: {
+          panels: [
+            { narration: 'Panel 1', imageUrl: 'data:image/png;base64,abc123' },
+            { narration: 'Panel 2', imageUrl: 'data:image/png;base64,xyz789' },
+          ],
+        },
+        createdAt: '2024-01-01T00:00:00.000Z',
+      },
+      {
+        id: '2',
+        comicId: 'c1',
+        pageNum: 2,
+        data: {
+          panels: [
+            { narration: 'Panel A', imageUrl: 'data:image/png;base64,def456' },
+            { narration: 'Panel B' },
+          ],
+        },
+        createdAt: '2024-01-02T00:00:00.000Z',
+      },
+    ];
+    const result = prepareExportPages(pages);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].data.panels[0].imageUrl, undefined);
+    assert.equal(result[0].data.panels[1].imageUrl, undefined);
+    assert.equal(result[1].data.panels[0].imageUrl, undefined);
+    assert.equal(result[1].data.panels[1].imageUrl, undefined);
+  });
+
+  it('should retain all other page fields', () => {
+    const pages = [
+      {
+        id: '1',
+        comicId: 'c1',
+        pageNum: 1,
+        title: 'Page 1',
+        data: {
+          panels: [
+            { narration: 'Test narration', imageUrl: 'data:image/png;base64,abc' },
+          ],
+          extraMeta: 'meta',
+        },
+        createdAt: '2024-01-01T12:00:00.000Z',
+      },
+    ];
+    const result = prepareExportPages(pages);
+    assert.equal(result[0].id, '1');
+    assert.equal(result[0].comicId, 'c1');
+    assert.equal(result[0].pageNum, 1);
+    assert.equal(result[0].title, 'Page 1');
+    assert.equal(result[0].createdAt, '2024-01-01T12:00:00.000Z');
+    assert.equal(result[0].data.extraMeta, 'meta');
+    assert.deepEqual(result[0].data.panels, [{ narration: 'Test narration' }]);
+  });
+
+  it('should not modify pages when panels have no imageUrl', () => {
+    const pages = [
+      {
+        id: '1',
+        comicId: 'c1',
+        pageNum: 1,
+        title: 'Text-only page',
+        data: {
+          panels: [{ narration: 'Only text' }],
+        },
+        createdAt: '2024-01-03T00:00:00.000Z',
+      },
+    ];
+    const result = prepareExportPages(pages);
+    assert.deepEqual(result[0], pages[0]);
+  });
+
+  it('should not mutate the original page objects', () => {
+    const original = {
+      id: '1',
+      comicId: 'c1',
+      pageNum: 1,
+      data: {
+        panels: [
+          { narration: 'Panel 1', imageUrl: 'data:image/png;base64,big' },
+        ],
+      },
+      createdAt: '2024-01-04T00:00:00.000Z',
+    };
+    const pages = [original];
+    const result = prepareExportPages(pages);
+    assert.equal(original.data.panels[0].imageUrl, 'data:image/png;base64,big');
+    assert.equal(result[0].data.panels[0].imageUrl, undefined);
+  });
+
+  it('should not use pretty-printed JSON in settings.js exportData', () => {
+    const settingsPath = path.join(__dirname, '..', 'js', 'pages', 'settings.js');
+    const settingsCode = fs.readFileSync(settingsPath, 'utf-8');
+    const stringifyCalls = settingsCode.match(/JSON\.stringify\([^)]*\)/g) || [];
+    assert.ok(stringifyCalls.length > 0, 'settings.js must contain at least one JSON.stringify call');
+    const prettyPrintedCalls = stringifyCalls.filter(call =>
+      /JSON\.stringify\([^)]*,\s*null\s*,\s*\d+\s*\)/.test(call),
+    );
+    assert.equal(
+      prettyPrintedCalls.length,
+      0,
+      'settings.js must not call JSON.stringify with an indentation argument',
+    );
+  });
+});
+
 describe('version.json', () => {
   it('should have valid version format', () => {
     const versionPath = path.join(__dirname, '..', 'version.json');
