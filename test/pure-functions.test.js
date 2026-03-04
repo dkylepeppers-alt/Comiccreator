@@ -215,6 +215,59 @@ describe('parseComicResponse', () => {
   });
 });
 
+// prepareExportPages — extracted from exportData() in settings.js
+function prepareExportPages(pages) {
+  return pages.map(p => {
+    const copy = Object.assign({}, p);
+    delete copy.imageUrl;
+    return copy;
+  });
+}
+
+describe('exportData page preparation', () => {
+  it('should strip imageUrl from each page', () => {
+    const pages = [
+      { id: '1', comicId: 'c1', title: 'Page 1', imageUrl: 'data:image/png;base64,abc123' },
+      { id: '2', comicId: 'c1', title: 'Page 2', imageUrl: 'data:image/png;base64,def456' },
+    ];
+    const result = prepareExportPages(pages);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].imageUrl, undefined);
+    assert.equal(result[1].imageUrl, undefined);
+  });
+
+  it('should retain all other page fields', () => {
+    const pages = [
+      { id: '1', comicId: 'c1', title: 'Page 1', panels: [{ narration: 'Test' }], imageUrl: 'data:image/png;base64,abc' },
+    ];
+    const result = prepareExportPages(pages);
+    assert.equal(result[0].id, '1');
+    assert.equal(result[0].comicId, 'c1');
+    assert.equal(result[0].title, 'Page 1');
+    assert.deepEqual(result[0].panels, [{ narration: 'Test' }]);
+  });
+
+  it('should not modify pages without imageUrl', () => {
+    const pages = [{ id: '1', comicId: 'c1', title: 'Text-only page' }];
+    const result = prepareExportPages(pages);
+    assert.deepEqual(result[0], { id: '1', comicId: 'c1', title: 'Text-only page' });
+  });
+
+  it('should not mutate the original page objects', () => {
+    const original = { id: '1', imageUrl: 'data:image/png;base64,big' };
+    const pages = [original];
+    prepareExportPages(pages);
+    assert.equal(original.imageUrl, 'data:image/png;base64,big');
+  });
+
+  it('should produce compact JSON (no indentation)', () => {
+    const data = { pages: [{ id: '1', title: 'Test' }], exportedAt: '2024-01-01T00:00:00.000Z' };
+    const json = JSON.stringify(data);
+    assert.ok(!json.includes('\n'), 'JSON should not contain newlines');
+    assert.ok(!json.includes('  '), 'JSON should not contain indentation');
+  });
+});
+
 describe('version.json', () => {
   it('should have valid version format', () => {
     const versionPath = path.join(__dirname, '..', 'version.json');

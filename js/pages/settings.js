@@ -668,16 +668,22 @@ const SettingsPage = (() => {
   }
 
   async function exportData() {
+    const rawPages = await DB.getAll(DB.STORES.pages);
     const data = {
       characters: await DB.getAll(DB.STORES.characters),
       worlds: await DB.getAll(DB.STORES.worlds),
       comics: await DB.getAll(DB.STORES.comics),
-      pages: await DB.getAll(DB.STORES.pages),
+      // Strip imageUrl from pages — AI-generated images are large and can be regenerated
+      pages: rawPages.map(p => {
+        const copy = Object.assign({}, p);
+        delete copy.imageUrl;
+        return copy;
+      }),
       presets: await DB.getAll(DB.STORES.presets),
       exportedAt: new Date().toISOString(),
     };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
