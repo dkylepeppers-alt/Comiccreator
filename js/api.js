@@ -7,11 +7,26 @@ const API = (() => {
   // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
   let _modelSizesCache = null;
 
+  // Static fallback sizes for well-known models when the live API doesn't return size info.
+  // Keys are model IDs (or ID prefixes), values are arrays of supported WxH strings.
+  const KNOWN_IMAGE_SIZES = {
+    'gpt-image-1':          ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+    'dall-e-3':             ['1024x1024', '1024x1792', '1792x1024'],
+    'dall-e-2':             ['256x256', '512x512', '1024x1024'],
+    'gpt-4o-image':         ['1024x1024', '1024x1792', '1792x1024'],
+    'flux-pro':             ['1024x1024', '1024x768', '768x1024', '1280x768', '768x1280'],
+    'flux-schnell':         ['1024x1024', '1024x768', '768x1024'],
+    'flux-kontext':         ['1024x1024', '1024x768', '768x1024'],
+    'stable-diffusion-xl':  ['1024x1024', '1024x768', '768x1024'],
+    'stable-diffusion-3':   ['1024x1024', '1024x768', '768x1024'],
+  };
+
   /**
    * Return the list of sizes supported by a given image model.
-   * Source: live API cache populated by fetchImageModels().
-   * Returns null when no size information is available for the model,
-   * indicating the caller should allow free-form size entry.
+   * Source: live API cache populated by fetchImageModels(), with a static
+   * fallback for well-known models when API size data is unavailable.
+   * Returns null when no size information is available, indicating the caller
+   * should allow free-form size entry.
    */
   async function getModelSizes(modelId) {
     if (!modelId) return null;
@@ -25,6 +40,13 @@ const API = (() => {
         if (m?.sizes?.length) return m.sizes;
       }
     } catch (_) { /* ignore cache errors */ }
+
+    // Fall back to static known sizes for well-known model IDs
+    if (KNOWN_IMAGE_SIZES[modelId]) return KNOWN_IMAGE_SIZES[modelId];
+    // Also match by prefix (e.g. "flux-schnell-v2" matches "flux-schnell")
+    for (const [prefix, sizes] of Object.entries(KNOWN_IMAGE_SIZES)) {
+      if (modelId.startsWith(prefix)) return sizes;
+    }
 
     return null;
   }
@@ -532,6 +554,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     getModelSizes,
     FALLBACK_TEXT_MODELS,
     FALLBACK_IMAGE_MODELS,
+    KNOWN_IMAGE_SIZES,
     BASE_URL,
   };
 })();
