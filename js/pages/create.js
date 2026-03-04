@@ -888,31 +888,14 @@ const CreatePage = (() => {
         const last = state.conversationHistory[state.conversationHistory.length - 1];
         if (last && last.role === 'user') state.conversationHistory.pop();
       }
-      // If a re-roll failed, restore the backed-up page so the user keeps their work
-      if (state.generatingContext === 'reroll' && _rerollBackup && state.pages.length === 0) {
-        state.pages.push(_rerollBackup.page);
-        state.pageIds.push(_rerollBackup.pageId);
-        state.conversationHistory = _rerollBackup.conversationHistory;
-        DB.put(DB.STORES.pages, {
-          id: _rerollBackup.pageId,
-          comicId: state.comicId,
-          pageNum: 1,
-          data: _rerollBackup.page,
-          createdAt: Date.now(),
-        }).catch(() => {});
-        DB.get(DB.STORES.comics, state.comicId).then(comic => {
-          if (comic) {
-            comic.pageCount = 1;
-            comic.conversationHistory = state.conversationHistory;
-            comic.updatedAt = Date.now();
-            DB.put(DB.STORES.comics, comic).catch(() => {});
-          }
-        }).catch(() => {});
+      // If a re-roll failed, restore the backed-up page (any page position)
+      if (state.generatingContext === 'reroll' && _rerollBackup) {
+        restoreRerollBackup();
         App.toast('Re-roll failed — previous page restored. ' + (err.message || 'Please try again.'), 'error');
       } else {
+        _rerollBackup = null;
         App.toast(err.message || 'Generation failed. Please try again.', 'error');
       }
-      _rerollBackup = null;
       state.step = state.pages.length > 0 ? 'reading' : 'setup';
       state.isGenerating = false;
       await App.refreshPage();
@@ -967,6 +950,35 @@ const CreatePage = (() => {
     App.navigate('library');
   }
 
+  /**
+   * Restore the backed-up page after a cancelled or failed re-roll.
+   * Works for any page position in the comic, not just single-page comics.
+   */
+  function restoreRerollBackup() {
+    if (!_rerollBackup) return;
+    state.pages.push(_rerollBackup.page);
+    state.pageIds.push(_rerollBackup.pageId);
+    state.conversationHistory = _rerollBackup.conversationHistory;
+    // Re-save the page record in DB (it was deleted by rerollPage)
+    DB.put(DB.STORES.pages, {
+      id: _rerollBackup.pageId,
+      comicId: state.comicId,
+      pageNum: _rerollBackup.pageNum,
+      data: _rerollBackup.page,
+      createdAt: _rerollBackup.createdAt,
+    }).catch(() => {});
+    // Restore comic record to reflect the re-appended page
+    DB.get(DB.STORES.comics, state.comicId).then(comic => {
+      if (comic) {
+        comic.pageCount = state.pages.length;
+        comic.conversationHistory = state.conversationHistory;
+        comic.updatedAt = Date.now();
+        DB.put(DB.STORES.comics, comic).catch(() => {});
+      }
+    }).catch(() => {});
+    _rerollBackup = null;
+  }
+
   function cancelGeneration() {
     if (abortController) {
       abortController.abort();
@@ -978,34 +990,13 @@ const CreatePage = (() => {
     }
     state.isGenerating = false;
 
-    // If a re-roll was in progress and the re-rolled page was the only page,
-    // restore the backup so the user doesn't lose their work.
-    if (state.generatingContext === 'reroll' && _rerollBackup && state.pages.length === 0) {
-      state.pages.push(_rerollBackup.page);
-      state.pageIds.push(_rerollBackup.pageId);
-      state.conversationHistory = _rerollBackup.conversationHistory;
-      // Re-save the page record in DB (it was deleted by rerollPage)
-      DB.put(DB.STORES.pages, {
-        id: _rerollBackup.pageId,
-        comicId: state.comicId,
-        pageNum: 1,
-        data: _rerollBackup.page,
-        createdAt: Date.now(),
-      }).catch(() => {});
-      // Restore comic record
-      DB.get(DB.STORES.comics, state.comicId).then(comic => {
-        if (comic) {
-          comic.pageCount = 1;
-          comic.conversationHistory = state.conversationHistory;
-          comic.updatedAt = Date.now();
-          DB.put(DB.STORES.comics, comic).catch(() => {});
-        }
-      }).catch(() => {});
+    // Restore the backed-up page whenever a re-roll is cancelled (any page position)
+    if (state.generatingContext === 'reroll' && _rerollBackup) {
+      restoreRerollBackup();
       App.toast('Re-roll cancelled — previous page restored', 'info');
     } else {
       App.toast('Generation cancelled', 'info');
     }
-    _rerollBackup = null;
 
     state.step = state.pages.length > 0 ? 'reading' : 'setup';
     App.refreshPage();
@@ -1019,11 +1010,20 @@ const CreatePage = (() => {
   async function rerollPage() {
     if (state.isGenerating || state.pages.length === 0) return;
 
-    // Save a backup so we can restore if the re-roll is cancelled or fails
+    const lastPageIdx = state.pages.length - 1;
+    const lastPageId = state.pageIds[lastPageIdx];
+
+    // Fetch the persisted record before deleting so we preserve ordering metadata
+    let originalRecord = null;
+    try { originalRecord = await DB.get(DB.STORES.pages, lastPageId); } catch (_) {}
+
+    // Deep-clone the backup so it can't be mutated while generation is in progress
     _rerollBackup = {
-      page: state.pages[state.pages.length - 1],
-      pageId: state.pageIds[state.pageIds.length - 1],
-      conversationHistory: [...state.conversationHistory],
+      page: structuredClone(state.pages[lastPageIdx]),
+      pageId: lastPageId,
+      pageNum: originalRecord?.pageNum ?? (lastPageIdx + 1),
+      createdAt: originalRecord?.createdAt ?? Date.now(),
+      conversationHistory: structuredClone(state.conversationHistory),
     };
 
     // Remove last assistant turn from history so the AI tries again.
@@ -1034,7 +1034,7 @@ const CreatePage = (() => {
     if (lastMsg?.role === 'assistant') state.conversationHistory.pop();
 
     // Delete the saved page from DB
-    const lastPageId = state.pageIds.pop();
+    state.pageIds.pop();
     if (lastPageId) await DB.del(DB.STORES.pages, lastPageId);
     state.pages.pop();
 
