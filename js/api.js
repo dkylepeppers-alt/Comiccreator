@@ -500,20 +500,35 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     }
   }
 
+  // Models that support the `dimensions` parameter for dimension reduction
+  const DIMENSION_REDUCTION_MODELS = new Set([
+    'text-embedding-3-small',
+    'text-embedding-3-large',
+    'Qwen/Qwen3-Embedding-0.6B',
+    'Qwen/Qwen3-Embedding-4B',
+    'qwen/qwen3-embedding-8b',
+  ]);
+
   /**
    * Generate a text embedding via NanoGPT embeddings API.
+   * Reads the embedding model from settings (configurable in Settings page).
+   * Only sends `dimensions` for models that support dimension reduction.
    * Returns a plain number array, or null if the call fails.
    */
   async function generateEmbedding(text, options = {}) {
     const apiKey = await getApiKey();
     if (!apiKey) return null;
 
+    const model = options.model || await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const body = {
       input: text,
-      model: options.model || 'text-embedding-3-small',
+      model,
       encoding_format: 'float',
-      dimensions: options.dimensions || 256,
     };
+    // Only include dimensions for models that support dimension reduction
+    if (DIMENSION_REDUCTION_MODELS.has(model)) {
+      body.dimensions = options.dimensions || 256;
+    }
 
     try {
       const res = await fetch(`${BASE_URL}/embeddings`, {

@@ -28,6 +28,7 @@ const SettingsPage = (() => {
     const enableImages = await DB.getSetting('enableImages', true);
     const useRefImages = await DB.getSetting('useRefImages', true);
     const charRefMode = await DB.getSetting('charRefMode', 'auto');
+    const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
@@ -118,6 +119,18 @@ const SettingsPage = (() => {
               <option value="composite" ${charRefMode === 'composite' ? 'selected' : ''}>Composite (always build character sheet)</option>
             </select>
             <div class="form-hint">How to select the best reference image for each panel from a character's image gallery</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Embedding Model</label>
+            <select id="set-embmodel">
+              <option value="text-embedding-3-small" ${embeddingModel === 'text-embedding-3-small' ? 'selected' : ''}>text-embedding-3-small &mdash; $0.02/1M (OpenAI, default)</option>
+              <option value="qwen/qwen3-embedding-8b" ${embeddingModel === 'qwen/qwen3-embedding-8b' ? 'selected' : ''}>qwen3-embedding-8b &mdash; $0.01/1M (8B params, best value)</option>
+              <option value="Qwen/Qwen3-Embedding-0.6B" ${embeddingModel === 'Qwen/Qwen3-Embedding-0.6B' ? 'selected' : ''}>qwen3-embedding-0.6B &mdash; $0.01/1M (lightweight)</option>
+              <option value="text-embedding-3-large" ${embeddingModel === 'text-embedding-3-large' ? 'selected' : ''}>text-embedding-3-large &mdash; $0.13/1M (highest quality)</option>
+              <option value="BAAI/bge-m3" ${embeddingModel === 'BAAI/bge-m3' ? 'selected' : ''}>bge-m3 &mdash; $0.01/1M (multilingual)</option>
+            </select>
+            <div class="form-hint">Model used for matching character images to panel prompts. Changing this invalidates existing character embeddings.</div>
           </div>
 
           <div class="form-group">
@@ -389,6 +402,7 @@ const SettingsPage = (() => {
     if (id.startsWith('phi-')) return 'Microsoft';
     if (id.startsWith('nova-') || id.startsWith('amazon')) return 'Amazon';
     if (id.startsWith('kimi')) return 'Moonshot';
+    // Retained for cached model data from older sessions or future API additions
     if (id.startsWith('hidream')) return 'HiDream';
     if (id.startsWith('midjourney')) return 'Midjourney';
     if (id.startsWith('riverflow')) return 'Sourceful';
@@ -688,6 +702,27 @@ const SettingsPage = (() => {
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('charRefMode', document.getElementById('set-charrefmode').value);
+
+    // Embedding model — invalidate stored character embeddings when the model changes
+    const newEmbModel = document.getElementById('set-embmodel').value;
+    const oldEmbModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
+    await DB.setSetting('embeddingModel', newEmbModel);
+    if (newEmbModel !== oldEmbModel) {
+      const chars = await DB.getAll(DB.STORES.characters);
+      let invalidated = 0;
+      for (const c of chars) {
+        if (!Array.isArray(c.images)) continue;
+        let changed = false;
+        for (const img of c.images) {
+          if (img.embedding) { img.embedding = null; changed = true; invalidated++; }
+        }
+        if (changed) await DB.put(DB.STORES.characters, c);
+      }
+      if (invalidated > 0) {
+        App.toast(`Embedding model changed — cleared ${invalidated} embedding(s). Re-save characters to regenerate.`, 'info');
+      }
+    }
+
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
     const sizeEl = document.getElementById('set-imgsize');
     const imageSizeVal = sizeEl.value.trim();

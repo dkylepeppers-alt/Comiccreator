@@ -326,7 +326,7 @@ describe('API integration', () => {
     assert.equal(result, null);
   });
 
-  it('generateEmbedding sends correct request body and returns embedding array', async () => {
+  it('generateEmbedding reads model from settings and sends dimensions for supported models', async () => {
     const calls = [];
     const fakeEmbedding = [0.1, -0.2, 0.3, 0.4];
     ctx.fetch = async (url, opts) => {
@@ -339,6 +339,7 @@ describe('API integration', () => {
       }), { status: 200 });
     };
 
+    // Default model (text-embedding-3-small) supports dimension reduction
     const result = await ctx.API.generateEmbedding('hero with cape');
 
     assert.deepEqual(result, fakeEmbedding);
@@ -348,10 +349,11 @@ describe('API integration', () => {
     assert.equal(calls[0].body.input, 'hero with cape');
     assert.equal(calls[0].body.model, 'text-embedding-3-small');
     assert.equal(calls[0].body.encoding_format, 'float');
-    assert.equal(calls[0].body.dimensions, 256);
+    assert.equal(calls[0].body.dimensions, 256, 'should include dimensions for supported models');
   });
 
-  it('generateEmbedding uses custom model and dimensions when provided', async () => {
+  it('generateEmbedding reads configured embeddingModel from settings', async () => {
+    await ctx.DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
     let requestBody;
     ctx.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
@@ -360,9 +362,39 @@ describe('API integration', () => {
       }), { status: 200 });
     };
 
-    await ctx.API.generateEmbedding('test', { model: 'BAAI/bge-m3', dimensions: 512 });
+    await ctx.API.generateEmbedding('test');
+    assert.equal(requestBody.model, 'qwen/qwen3-embedding-8b');
+    assert.equal(requestBody.dimensions, 256, 'qwen3-embedding-8b supports dimension reduction');
+  });
+
+  it('generateEmbedding omits dimensions for models that do not support it', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({
+        data: [{ embedding: [0.5, 0.5] }],
+      }), { status: 200 });
+    };
+
+    // BAAI/bge-m3 does NOT support dimension reduction
+    await ctx.API.generateEmbedding('test', { model: 'BAAI/bge-m3' });
     assert.equal(requestBody.model, 'BAAI/bge-m3');
-    assert.equal(requestBody.dimensions, 512);
+    assert.equal(requestBody.dimensions, undefined, 'should NOT send dimensions for unsupported models');
+  });
+
+  it('generateEmbedding uses explicit options.model override over settings', async () => {
+    await ctx.DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({
+        data: [{ embedding: [0.5, 0.5] }],
+      }), { status: 200 });
+    };
+
+    await ctx.API.generateEmbedding('test', { model: 'text-embedding-3-large' });
+    assert.equal(requestBody.model, 'text-embedding-3-large');
+    assert.equal(requestBody.dimensions, 256, 'text-embedding-3-large supports dimension reduction');
   });
 
   it('generateEmbedding returns null on HTTP error', async () => {
