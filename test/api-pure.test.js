@@ -1,6 +1,32 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
+// --- Inline the static fallback lookup from api.js (no DB dependency) ---
+const KNOWN_IMAGE_SIZES = {
+  'gpt-image-1':          ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+  'dall-e-3':             ['1024x1024', '1024x1792', '1792x1024'],
+  'dall-e-2':             ['256x256', '512x512', '1024x1024'],
+  'gpt-4o-image':         ['1024x1024', '1024x1792', '1792x1024'],
+  'flux-pro':             ['1024x1024', '1024x768', '768x1024', '1280x768', '768x1280'],
+  'flux-schnell':         ['1024x1024', '1024x768', '768x1024'],
+  'flux-kontext':         ['1024x1024', '1024x768', '768x1024'],
+  'stable-diffusion-xl':  ['1024x1024', '1024x768', '768x1024'],
+  'stable-diffusion-3':   ['1024x1024', '1024x768', '768x1024'],
+};
+
+/**
+ * Pure, synchronous version of getModelSizes() — only the static fallback path.
+ * Used to test the KNOWN_IMAGE_SIZES map and prefix-matching without needing IndexedDB.
+ */
+function getModelSizesStatic(modelId) {
+  if (!modelId) return null;
+  if (KNOWN_IMAGE_SIZES[modelId]) return KNOWN_IMAGE_SIZES[modelId];
+  for (const [prefix, sizes] of Object.entries(KNOWN_IMAGE_SIZES)) {
+    if (modelId.startsWith(prefix)) return sizes;
+  }
+  return null;
+}
+
 function parseComicResponse(text) {
   let jsonStr = text.trim();
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -164,5 +190,46 @@ describe('settings pure helpers', () => {
     assert.ok(rich.includes('edit'));
     assert.ok(rich.includes('$0.01/1K in'));
     assert.equal(buildModelDetails({ pricing: '$0.05 flat' }), '$0.05 flat');
+  });
+});
+
+describe('api getModelSizes static fallback', () => {
+  it('returns null for null/undefined/empty model ID', () => {
+    assert.equal(getModelSizesStatic(null), null);
+    assert.equal(getModelSizesStatic(undefined), null);
+    assert.equal(getModelSizesStatic(''), null);
+  });
+
+  it('returns correct sizes for exact known model IDs', () => {
+    const sizes = getModelSizesStatic('gpt-image-1');
+    assert.ok(Array.isArray(sizes));
+    assert.ok(sizes.includes('1024x1024'));
+    assert.ok(sizes.includes('1536x1024'));
+
+    const dall3 = getModelSizesStatic('dall-e-3');
+    assert.ok(dall3.includes('1024x1024'));
+    assert.ok(dall3.includes('1024x1792'));
+
+    const flux = getModelSizesStatic('flux-pro');
+    assert.ok(flux.includes('1024x1024'));
+    assert.ok(flux.includes('1280x768'));
+  });
+
+  it('returns sizes via prefix match for versioned model IDs', () => {
+    // "flux-schnell-v2" should match the "flux-schnell" prefix entry
+    const sizes = getModelSizesStatic('flux-schnell-v2');
+    assert.ok(Array.isArray(sizes));
+    assert.deepEqual(sizes, getModelSizesStatic('flux-schnell'));
+
+    // "stable-diffusion-xl-turbo" matches "stable-diffusion-xl"
+    const sdxl = getModelSizesStatic('stable-diffusion-xl-turbo');
+    assert.ok(Array.isArray(sdxl));
+    assert.deepEqual(sdxl, getModelSizesStatic('stable-diffusion-xl'));
+  });
+
+  it('returns null for unknown model IDs', () => {
+    assert.equal(getModelSizesStatic('midjourney'), null);
+    assert.equal(getModelSizesStatic('hidream-i1-full'), null);
+    assert.equal(getModelSizesStatic('some-unknown-model'), null);
   });
 });
