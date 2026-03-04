@@ -637,12 +637,13 @@ const CreatePage = (() => {
         }
 
         // Select the best image from a character's images[] using hybrid cascading strategy
-        async function selectBestImage(charImages, panelPromptText) {
+        async function selectBestImage(charImages, panelPromptText, charName) {
           const valid = (charImages || []).filter(img => img && img.dataUrl);
           if (!valid.length) return null;
           if (valid.length === 1) return valid[0];
 
           const panelLower = panelPromptText.toLowerCase();
+          const promptSnippet = panelPromptText.slice(0, 80);
 
           // 1. Embedding-based selection (unless mode is 'keyword')
           if (charRefMode !== 'keyword') {
@@ -658,6 +659,11 @@ const CreatePage = (() => {
                 }
                 return best;
               }
+              // Embedding fetch failed — fall through to keyword
+              App.logError('selectBestImage', new Error('Embedding fallback'), `Embedding unavailable for panel prompt, falling back to keyword matching. Character: ${charName}, prompt: "${promptSnippet}..."`);
+            } else {
+              // No stored embeddings — fall through to keyword
+              App.logError('selectBestImage', new Error('Embedding fallback'), `No stored embeddings for character "${charName}", falling back to keyword matching. Prompt: "${promptSnippet}..."`);
             }
           }
 
@@ -670,6 +676,8 @@ const CreatePage = (() => {
               if (score > bestScore) { bestScore = score; bestImg = img; }
             }
             if (bestScore > 0 && bestImg) return bestImg;
+            // No keyword match — fall through to primary
+            App.logError('selectBestImage', new Error('Keyword fallback'), `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`);
           }
 
           // 3. Fall back to primary image (first valid)
@@ -733,7 +741,7 @@ const CreatePage = (() => {
           // Select best image per character in this panel
           const charMatches = [];
           for (const name of charNamesInPanel) {
-            const img = await selectBestImage(state.characterImagesByName[name], panel.imagePrompt);
+            const img = await selectBestImage(state.characterImagesByName[name], panel.imagePrompt, name);
             if (img) charMatches.push({ name, img });
           }
 

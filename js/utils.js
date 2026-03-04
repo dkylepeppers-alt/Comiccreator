@@ -94,7 +94,11 @@
     // Collapse extra whitespace and orphaned punctuation
     cleaned = cleaned.replace(/\s{2,}/g, ' ').replace(/^\s*[,;]\s*/, '').trim();
 
-    return cleaned || rawPrompt;
+    if (!cleaned) {
+      if (typeof App !== 'undefined') App.logError('sanitizeImagePrompt', new Error('Sanitization fallback'), `Sanitization removed all content, falling back to original prompt: "${rawPrompt.slice(0, 100)}..."`);
+      return rawPrompt;
+    }
+    return cleaned;
   }
 
   exports.GENRES = GENRES;

@@ -469,10 +469,14 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        if (typeof App !== 'undefined') App.logError('generateEmbedding', new Error(`HTTP ${res.status}`), `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`);
+        return null;
+      }
       const data = await res.json();
       return data?.data?.[0]?.embedding || null;
-    } catch {
+    } catch (err) {
+      if (typeof App !== 'undefined') App.logError('generateEmbedding', err, `Embedding API call failed for text: "${text.slice(0, 80)}..."`);
       return null;
     }
   }
