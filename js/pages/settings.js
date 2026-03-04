@@ -24,6 +24,7 @@ const SettingsPage = (() => {
     const temperature = await DB.getSetting('temperature', 0.7);
     const topP = await DB.getSetting('topP', 0.9);
     const maxTokens = await DB.getSetting('maxTokens', 2048);
+    const contextExchanges = await DB.getSetting('contextExchanges', 6);
     const enableImages = await DB.getSetting('enableImages', true);
     const useRefImages = await DB.getSetting('useRefImages', true);
     const charRefMode = await DB.getSetting('charRefMode', 'auto');
@@ -173,6 +174,16 @@ const SettingsPage = (() => {
               <input type="range" id="set-tokens" min="256" max="8192" step="256" value="${maxTokens}" oninput="document.getElementById('set-tokens-val').textContent=this.value">
               <span class="text-sm text-muted">8192</span>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Context Length (exchanges): <span id="set-ctx-val">${contextExchanges}</span></label>
+            <div class="range-group">
+              <span class="text-sm text-muted">2</span>
+              <input type="range" id="set-ctx" min="2" max="20" step="1" value="${contextExchanges}" oninput="document.getElementById('set-ctx-val').textContent=this.value">
+              <span class="text-sm text-muted">20</span>
+            </div>
+            <div class="form-hint">Number of recent story exchanges kept in context. Higher values improve story coherence but use more tokens.</div>
           </div>
         </div>
 
@@ -660,6 +671,7 @@ const SettingsPage = (() => {
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));
     await DB.setSetting('maxTokens', parseInt(document.getElementById('set-tokens').value));
+    await DB.setSetting('contextExchanges', parseInt(document.getElementById('set-ctx').value));
 
     const repoInput = document.getElementById('set-update-repo');
     if (repoInput) await DB.setSetting('updateRepo', repoInput.value.trim() || DEFAULT_UPDATE_REPO);
