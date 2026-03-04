@@ -54,9 +54,54 @@
     return unique;
   }
 
+  /**
+   * Compute cosine similarity between two numeric arrays.
+   * Returns 0 if inputs are null, empty, or mismatched in length.
+   */
+  function cosineSimilarity(a, b) {
+    if (!a?.length || !b?.length || a.length !== b.length) return 0;
+    let dot = 0, magA = 0, magB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      magA += a[i] * a[i];
+      magB += b[i] * b[i];
+    }
+    return magA && magB ? dot / (Math.sqrt(magA) * Math.sqrt(magB)) : 0;
+  }
+
+  /**
+   * Strip narrative/story noise from an image prompt so that only
+   * visual descriptors (poses, lighting, composition, appearance) remain.
+   */
+  function sanitizeImagePrompt(rawPrompt) {
+    if (!rawPrompt) return rawPrompt;
+    let cleaned = rawPrompt;
+
+    // Remove quoted dialogue that leaked in
+    cleaned = cleaned.replace(/"[^"]{0,200}"/g, '');
+    cleaned = cleaned.replace(/'[^']{0,200}'/g, '');
+
+    // Remove narrative lead-ins and internal states
+    const narrativePatterns = [
+      /\b(meanwhile|little did (they|he|she|it) know|unbeknownst to|as the story continues|hours? later|the next (morning|day|evening)|moments? (later|before))\b[^.]*\.\s*/gi,
+      /\b(thinking about|wondering if|remembering when|feeling (conflicted|torn|uncertain|determined)|pondering|reflecting on)\b[^.]*\.\s*/gi,
+      /\b(in this panel|the reader sees|cut to|we see|the scene shifts to)\b[^,.]*/gi,
+    ];
+    for (const regex of narrativePatterns) {
+      cleaned = cleaned.replace(regex, '');
+    }
+
+    // Collapse extra whitespace and orphaned punctuation
+    cleaned = cleaned.replace(/\s{2,}/g, ' ').replace(/^\s*[,;]\s*/, '').trim();
+
+    return cleaned || rawPrompt;
+  }
+
   exports.GENRES = GENRES;
   exports.escHtml = escHtml;
   exports.timeAgo = timeAgo;
   exports.getGenreEmoji = getGenreEmoji;
   exports.dedupeByNameLatest = dedupeByNameLatest;
+  exports.cosineSimilarity = cosineSimilarity;
+  exports.sanitizeImagePrompt = sanitizeImagePrompt;
 })(typeof module !== 'undefined' ? module.exports : this);

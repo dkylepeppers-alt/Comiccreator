@@ -43,6 +43,9 @@ export default [
         timeAgo: 'readonly',
         getGenreEmoji: 'readonly',
         GENRES: 'readonly',
+        dedupeByNameLatest: 'readonly',
+        cosineSimilarity: 'readonly',
+        sanitizeImagePrompt: 'readonly',
       },
     },
     rules: {

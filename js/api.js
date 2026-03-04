@@ -217,7 +217,10 @@ const API = (() => {
     if (labeledRefs?.length > 0) {
       const legend = labeledRefs
         .slice(0, maxRefImages)
-        .map((ref, i) => `Reference image ${i + 1}: ${ref.label} (${ref.type}).`)
+        .map((ref, i) => {
+          const details = ref.description ? ` — ${ref.description}` : (ref.tag && ref.tag !== 'default' ? ` (${ref.tag})` : '');
+          return `Reference image ${i + 1}: ${ref.label}${details} (${ref.type} reference). Replicate this character's exact appearance.`;
+        })
         .join(' ');
       finalPrompt = `${legend} ${prompt}`;
     }
@@ -442,6 +445,38 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     }
   }
 
+  /**
+   * Generate a text embedding via NanoGPT embeddings API.
+   * Returns a plain number array, or null if the call fails.
+   */
+  async function generateEmbedding(text, options = {}) {
+    const apiKey = await getApiKey();
+    if (!apiKey) return null;
+
+    const body = {
+      input: text,
+      model: options.model || 'text-embedding-3-small',
+      encoding_format: 'float',
+      dimensions: options.dimensions || 256,
+    };
+
+    try {
+      const res = await fetch(`${BASE_URL}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.data?.[0]?.embedding || null;
+    } catch {
+      return null;
+    }
+  }
+
   // Fallback lists used only when API is unreachable and no cache exists
   const FALLBACK_TEXT_MODELS = [
     'gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano',
@@ -470,6 +505,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     chatCompletion,
     chatCompletionStream,
     generateImage,
+    generateEmbedding,
     buildSystemPrompt,
     parseComicResponse,
     getApiKey,
