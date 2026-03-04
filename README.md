@@ -401,7 +401,7 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 
 **Subpath caveats:**
 - `manifest.json` uses `"start_url": "./"` (relative) so it resolves correctly under `/Comiccreator/`.
-- `sw.js` computes `BASE_PATH` from `self.location.pathname` at runtime, so all cached asset URLs are automatically prefixed with `/Comiccreator` on GitHub Pages and with `""` when running locally.
+- `sw.js` computes `BASE_PATH` from `new URL(self.registration.scope).pathname` at runtime, so all cached asset URLs are automatically prefixed with `/Comiccreator` on GitHub Pages and with `""` when running locally.
 - `.nojekyll` at the repo root prevents GitHub Pages from treating underscore-prefixed files specially.
 - After a new deployment, users may need to hard-refresh (`Ctrl+Shift+R`) or clear site data to force the service worker to pick up the new cache version.
 
