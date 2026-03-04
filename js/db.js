@@ -129,6 +129,24 @@ const DB = (() => {
     return Object.assign({}, char, { images, primaryImageIndex: 0 });
   }
 
+  /**
+   * Migrate a world record from the legacy images: string[] format to
+   * the new images: [{dataUrl, tag, description}] format.
+   * Safe to call on already-migrated records.
+   * Does NOT persist the change — callers should call DB.put() if they wish
+   * to store the migration result.
+   */
+  function migrateWorld(world) {
+    if (!world) return world;
+    if (Array.isArray(world.images) && world.images.length > 0 && typeof world.images[0] === 'object') return world;
+    const images = (world.images || [])
+      .filter(img => img)
+      .map(img => typeof img === 'string'
+        ? { dataUrl: img, tag: 'establishing', description: '' }
+        : img);
+    return Object.assign({}, world, { images, primaryImageIndex: world.primaryImageIndex ?? 0 });
+  }
+
   // Seed default presets on first run (idempotent — stable IDs prevent duplicates)
   // Low, stable timestamps ensure seed presets sort to the bottom of the list (below user-created presets)
   const SEED_PRESETS = [
@@ -204,6 +222,7 @@ const DB = (() => {
     setSetting,
     fileToDataURL,
     migrateCharacter,
+    migrateWorld,
     seedDefaults,
     dedupePresets,
   };

@@ -319,9 +319,10 @@ const CreatePage = (() => {
       }
       if (state.selectedWorld) {
         const world = await DB.get(DB.STORES.worlds, state.selectedWorld);
-        if (world?.images) {
-          for (const img of world.images) {
-            if (img) refImages.push({ dataUrl: img, label: world.name, type: 'world' });
+        if (world) {
+          const migratedWorld = DB.migrateWorld(world);
+          for (const img of migratedWorld.images || []) {
+            if (img?.dataUrl) refImages.push({ dataUrl: img.dataUrl, label: world.name, tag: img.tag || '', description: img.description || '', type: 'world' });
           }
         }
       }
@@ -479,9 +480,10 @@ const CreatePage = (() => {
           if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
         }
       }
-      if (world?.images) {
-        for (const img of world.images) {
-          if (img) refImages.push({ dataUrl: img, label: world.name, type: 'world' });
+      if (world) {
+        const migratedWorld = DB.migrateWorld(world);
+        for (const img of migratedWorld.images || []) {
+          if (img?.dataUrl) refImages.push({ dataUrl: img.dataUrl, label: world.name, tag: img.tag || '', description: img.description || '', type: 'world' });
         }
       }
     }
@@ -543,7 +545,7 @@ const CreatePage = (() => {
    * Trim conversation history to prevent payload overflow.
    * Keeps system prompt, first user message, and the most recent exchanges.
    */
-  function trimConversationHistory(maxExchanges = 6) {
+  function trimConversationHistory(maxExchanges) {
     if (state.conversationHistory.length <= 2 + maxExchanges * 2) return;
     const system = state.conversationHistory[0];
     const firstUser = state.conversationHistory[1];
@@ -553,7 +555,8 @@ const CreatePage = (() => {
 
   async function generatePage(presetData) {
     try {
-      trimConversationHistory();
+      const contextExchanges = await DB.getSetting('contextExchanges', 6);
+      trimConversationHistory(contextExchanges);
 
       const options = {};
       if (presetData) {

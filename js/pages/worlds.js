@@ -5,6 +5,15 @@ const WorldsPage = (() => {
   let currentView = 'list';
   let editingId = null;
 
+  // In-editor image list: [{ dataUrl, tag, description }]
+  let editorImages = [];
+  let editorPrimaryIndex = 0;
+  // Index of the image slot currently being filled (for file picker)
+  let _pendingSlotIdx = -1;
+
+  const IMAGE_TAGS = ['establishing', 'interior', 'exterior', 'aerial', 'night', 'day', 'detail', 'landmark', 'custom'];
+  const MAX_IMAGES = 6;
+
   async function render(param) {
     if (param === 'new') {
       currentView = 'edit';
@@ -42,10 +51,13 @@ const WorldsPage = (() => {
             <div class="empty-state-text">No worlds yet. Build your first setting!</div>
             <button class="btn btn-primary" onclick="WorldsPage.newWorld()">Create World</button>
           </div>
-        ` : worlds.map(w => `
+        ` : worlds.map(w => {
+          const migrated = DB.migrateWorld(w);
+          const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || '';
+          return `
           <div class="list-item" onclick="WorldsPage.editWorld('${w.id}')">
             <div class="list-item-avatar">
-              ${w.images && w.images[0] ? `<img src="${w.images[0]}" alt="${escHtml(w.name)}">` : '&#127758;'}
+              ${thumb ? `<img src="${thumb}" alt="${escHtml(w.name)}">` : '&#127758;'}
             </div>
             <div class="list-item-info">
               <div class="list-item-title">${escHtml(w.name)}</div>
@@ -55,18 +67,19 @@ const WorldsPage = (() => {
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();WorldsPage.deleteWorld('${w.id}','${escHtml(w.name)}')">&#128465;</button>
             </div>
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }
 
   async function renderEditor() {
-    let world = { name: '', description: '', details: '', era: '', atmosphere: '', images: [] };
+    let world = { name: '', description: '', details: '', era: '', atmosphere: '', images: [], primaryImageIndex: 0 };
     if (editingId) {
       const saved = await DB.get(DB.STORES.worlds, editingId);
-      if (saved) world = saved;
+      if (saved) world = DB.migrateWorld(saved);
     }
-    const images = world.images || [];
+    editorImages = (world.images || []).map(img => Object.assign({}, img));
+    editorPrimaryIndex = world.primaryImageIndex ?? 0;
 
     return `
       <div class="slide-up">
@@ -76,17 +89,14 @@ const WorldsPage = (() => {
         </div>
 
         <div class="card">
-          <!-- Reference Images (up to 3) -->
+          <!-- Reference Images (up to ${MAX_IMAGES}) -->
           <div class="form-group">
-            <label class="form-label">Reference Images (up to 3)</label>
-            <div class="img-upload-grid" id="world-images">
-              ${[0, 1, 2].map(i => `
-                <div class="img-upload" data-idx="${i}" onclick="WorldsPage.pickImage(${i})">
-                  ${images[i] ? `<img src="${images[i]}" alt="Ref ${i+1}">` : `<span>&#128247; Image ${i+1}</span>`}
-                </div>
-              `).join('')}
+            <label class="form-label">Reference Images (up to ${MAX_IMAGES})</label>
+            <div class="char-img-gallery" id="world-img-gallery">
+              ${renderGallerySlots(editorImages, editorPrimaryIndex)}
             </div>
             <input type="file" id="world-img-input" accept="image/*" class="hidden" onchange="WorldsPage.handleImage(event)">
+            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
           </div>
 
           <div class="form-group">
@@ -115,14 +125,60 @@ const WorldsPage = (() => {
           </div>
         </div>
 
-        <button class="btn btn-primary btn-block mt-sm" onclick="WorldsPage.saveWorld()">
+        <button class="btn btn-primary btn-block mt-sm" id="world-save-btn" onclick="WorldsPage.saveWorld()">
           ${editingId ? 'Update' : 'Create'} World
         </button>
       </div>
     `;
   }
 
-  let activeImageIdx = 0;
+  function renderGallerySlots(images, primaryIdx) {
+    return images.map((img, i) => `
+      <div class="char-img-slot" data-idx="${i}">
+        <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="WorldsPage.pickImageForSlot(${i})">
+          ${img.dataUrl ? `<img src="${img.dataUrl}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
+        </div>
+        <div class="char-img-meta">
+          <select class="char-img-tag" data-idx="${i}" onchange="WorldsPage.updateTag(${i},this.value)">
+            ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+          <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Neon-lit alley at night" oninput="WorldsPage.updateDesc(${i},this.value)">
+          <div class="char-img-actions">
+            <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="WorldsPage.setPrimary(${i})">&#11088;</button>
+            <button class="char-img-delete" title="Remove" onclick="WorldsPage.removeImage(${i})">&#x2715;</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function refreshGallery() {
+    const gallery = document.getElementById('world-img-gallery');
+    if (!gallery) return;
+    gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
+    let addBtn = gallery.nextElementSibling;
+    let steps = 0;
+    // Walk past the hidden file input to find the "+ Add Image" button (≤5 siblings)
+    while (addBtn && addBtn.tagName !== 'BUTTON' && steps < 5) {
+      addBtn = addBtn.nextElementSibling;
+      steps++;
+    }
+    if (addBtn && addBtn.tagName === 'BUTTON') {
+      addBtn.style.display = editorImages.length < MAX_IMAGES ? '' : 'none';
+    }
+  }
+
+  function addImageSlot() {
+    if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
+    editorImages.push({ dataUrl: '', tag: 'establishing', description: '' });
+    refreshGallery();
+    pickImageForSlot(editorImages.length - 1);
+  }
+
+  function pickImageForSlot(idx) {
+    _pendingSlotIdx = idx;
+    document.getElementById('world-img-input').click();
+  }
 
   function newWorld() {
     App.navigate('worlds', 'new');
@@ -136,21 +192,44 @@ const WorldsPage = (() => {
     App.navigate('worlds', null);
   }
 
+  // Legacy handler kept for backward compat
   function pickImage(idx) {
-    activeImageIdx = idx;
-    document.getElementById('world-img-input').click();
+    pickImageForSlot(idx);
   }
 
   async function handleImage(event) {
     const file = event.target.files[0];
     if (!file) return;
     const dataUrl = await DB.fileToDataURL(file);
-    const slots = document.querySelectorAll('#world-images .img-upload');
-    const slot = slots[activeImageIdx];
-    if (slot) {
-      slot.innerHTML = `<img src="${dataUrl}" alt="Ref">`;
-      slot.dataset.imageData = dataUrl;
+    const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
+    if (idx >= editorImages.length) {
+      editorImages.push({ dataUrl, tag: 'establishing', description: '' });
+    } else {
+      editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl });
     }
+    refreshGallery();
+    event.target.value = '';
+  }
+
+  function updateTag(idx, value) {
+    if (editorImages[idx]) editorImages[idx].tag = value;
+  }
+
+  function updateDesc(idx, value) {
+    if (editorImages[idx]) editorImages[idx].description = value;
+  }
+
+  function setPrimary(idx) {
+    editorPrimaryIndex = idx;
+    document.querySelectorAll('#world-img-gallery .char-img-primary').forEach((btn, i) => {
+      btn.classList.toggle('active', i === idx);
+    });
+  }
+
+  function removeImage(idx) {
+    editorImages.splice(idx, 1);
+    if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
+    refreshGallery();
   }
 
   async function saveWorld() {
@@ -159,22 +238,12 @@ const WorldsPage = (() => {
     if (!name) return App.toast('World name is required', 'error');
     if (!description) return App.toast('Description is required', 'error');
 
-    // Gather images
-    const slots = document.querySelectorAll('#world-images .img-upload');
-    const newImages = [];
-    let existingImages = [];
-    if (editingId) {
-      const existing = await DB.get(DB.STORES.worlds, editingId);
-      existingImages = existing?.images || [];
-    }
-    slots.forEach((slot, i) => {
-      if (slot.dataset.imageData) {
-        newImages[i] = slot.dataset.imageData;
-      } else if (existingImages[i]) {
-        newImages[i] = existingImages[i];
-      }
-    });
-    const images = newImages.filter(Boolean);
+    // Filter out empty slots (no dataUrl)
+    const validImages = editorImages.filter(img => img.dataUrl);
+    let primaryIdx = editorPrimaryIndex;
+    if (primaryIdx >= validImages.length) primaryIdx = 0;
+
+    const existingWorld = editingId ? await DB.get(DB.STORES.worlds, editingId) : null;
 
     const world = {
       id: editingId || DB.uuid(),
@@ -183,8 +252,9 @@ const WorldsPage = (() => {
       era: document.getElementById('world-era').value.trim(),
       atmosphere: document.getElementById('world-atmosphere').value.trim(),
       details: document.getElementById('world-details').value.trim(),
-      images,
-      createdAt: editingId ? (await DB.get(DB.STORES.worlds, editingId))?.createdAt || Date.now() : Date.now(),
+      images: validImages,
+      primaryImageIndex: primaryIdx,
+      createdAt: existingWorld?.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
 
@@ -211,5 +281,10 @@ const WorldsPage = (() => {
     App.refreshPage();
   }
 
-  return { render, newWorld, editWorld, backToList, pickImage, handleImage, saveWorld, deleteWorld, confirmDelete };
+  return {
+    render, newWorld, editWorld, backToList,
+    pickImage, pickImageForSlot, handleImage, addImageSlot,
+    updateTag, updateDesc, setPrimary, removeImage,
+    saveWorld, deleteWorld, confirmDelete,
+  };
 })();
