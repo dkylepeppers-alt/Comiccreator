@@ -2,7 +2,7 @@
   "name": "AI Comic Creator",
   "short_name": "Comic Creator",
   "description": "Create unique comic books with AI-generated artwork and narratives",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0a0a1a",

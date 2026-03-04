@@ -2,6 +2,8 @@
 
 A fully installable Progressive Web App for creating AI-generated comic books with interactive narratives, custom characters, and detailed world-building. Powered by [NanoGPT](https://nano-gpt.com) and optimized for Android devices running Termux.
 
+**Live demo (GitHub Pages):** [https://dkylepeppers-alt.github.io/Comiccreator/](https://dkylepeppers-alt.github.io/Comiccreator/)
+
 ---
 
 ## Features
@@ -44,11 +46,19 @@ A fully installable Progressive Web App for creating AI-generated comic books wi
 
 ## Quick Start
 
+### GitHub Pages (no install required)
+
+The app is deployed at **[https://dkylepeppers-alt.github.io/Comiccreator/](https://dkylepeppers-alt.github.io/Comiccreator/)**.
+
+Open the URL in Chrome or Brave, enter your NanoGPT API key in Settings, and start creating comics. You can install it as a PWA directly from the browser.
+
+> **Subpath note:** The app is served from `/Comiccreator/` on GitHub Pages. The service worker and manifest are configured for this subpath automatically — no manual changes are needed.
+
+### Running locally
+
 ### Running in Termux (Android)
 
 #### One-command install (recommended)
-
-Paste this into Termux to install everything automatically:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dkylepeppers-alt/Comiccreator/master/install.sh | bash
@@ -111,6 +121,8 @@ npx serve -s -l 8080
 # PHP
 php -S 0.0.0.0:8080
 ```
+
+> **Testing locally vs. GitHub Pages:** When running locally, `sw.js` is served from `/sw.js` so `BASE_PATH` is `""` and all assets are cached with absolute root paths (e.g. `/index.html`). On GitHub Pages, `sw.js` is served from `/Comiccreator/sw.js` so `BASE_PATH` is `/Comiccreator` and assets are cached with subpath-prefixed URLs. The same `sw.js` file handles both cases automatically.
 
 ---
 
@@ -374,6 +386,24 @@ For each merge, update **all three** of these files:
 > Increment `PATCH` for bug fixes, `MINOR` for new features, `MAJOR` for breaking changes.
 
 Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` lets `update.sh` set the correct cache name after `git pull`, which forces browsers to load the updated app shell, and ensures the Settings page displays the correct version number.
+
+---
+
+### GitHub Pages Deployment
+
+The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `claude/ai-comic-generator-pwa-UxZty` branch. The workflow uses the official GitHub Pages actions:
+
+- `actions/configure-pages` — configures the Pages environment
+- `actions/upload-pages-artifact` — uploads only the runtime site assets (HTML, CSS, JS, icons, SW, manifest)
+- `actions/deploy-pages` — publishes the artifact
+
+The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
+
+**Subpath caveats:**
+- `manifest.json` uses `"start_url": "./"` (relative) so it resolves correctly under `/Comiccreator/`.
+- `sw.js` computes `BASE_PATH` from `new URL(self.registration.scope).pathname` at runtime, so all cached asset URLs are automatically prefixed with `/Comiccreator` on GitHub Pages and with `""` when running locally.
+- `.nojekyll` at the repo root prevents GitHub Pages from treating underscore-prefixed files specially.
+- After a new deployment, users may need to hard-refresh (`Ctrl+Shift+R`) or clear site data to force the service worker to pick up the new cache version.
 
 ---
 
