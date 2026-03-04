@@ -246,13 +246,16 @@ describe('API integration', () => {
     assert.equal(await ctx.API.getModelSizes(''), null);
   });
 
-  it('generateImage throws when no image model is configured', async () => {
-    // Ensure no imageModel is saved (empty string = not configured)
-    await ctx.DB.setSetting('imageModel', '');
-    await assert.rejects(
-      () => ctx.API.generateImage('draw scene'),
-      /No image model configured/
-    );
+  it('generateImage uses default gpt-image-1 model when none explicitly configured', async () => {
+    // No imageModel saved — should use default 'gpt-image-1'
+    const calls = [];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body) });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'default-img' }] }), { status: 200 });
+    };
+    const result = await ctx.API.generateImage('draw scene');
+    assert.equal(result, 'default-img');
+    assert.equal(calls[0].body.model, 'gpt-image-1');
   });
 
   it('generateImage throws with diagnostic properties and makes exactly one request on 500 error', async () => {

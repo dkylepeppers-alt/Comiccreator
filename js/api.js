@@ -231,10 +231,9 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const imageModel = await DB.getSetting('imageModel', '');
+    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const modelId = options.model || imageModel;
-    if (!modelId) throw new Error('No image model configured. Go to Settings to select an image model.');
     const resolution = options.resolution || '1024x1024';
 
     // Collect and compress reference images (configurable cap)
@@ -440,8 +439,8 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         context_length: m.context_length || null,
         pricing: m.pricing || null,
         // NanoGPT API returns capabilities under a nested `capabilities` object
-        supports_vision: m.capabilities?.vision || m.supports_vision || false,
-        supports_tools: m.capabilities?.tool_calling || m.supports_tools || false,
+        supports_vision: (m.capabilities?.vision ?? m.supports_vision) ?? false,
+        supports_tools: (m.capabilities?.tool_calling ?? m.supports_tools) ?? false,
       })).sort((a, b) => a.id.localeCompare(b.id));
 
       await DB.setSetting(CACHE_KEY, models);
@@ -483,7 +482,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         owned_by: m.owned_by || m.provider || '',
         pricing: m.pricing || null,
         // NanoGPT API returns image_to_image support under capabilities.image_to_image
-        supports_edit: m.capabilities?.image_to_image || m.supports_edit || false,
+        supports_edit: (m.capabilities?.image_to_image ?? m.supports_edit) ?? false,
         // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
         sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
       })).sort((a, b) => a.id.localeCompare(b.id));

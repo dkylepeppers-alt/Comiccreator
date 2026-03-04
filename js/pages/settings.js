@@ -419,7 +419,7 @@ const SettingsPage = (() => {
     if (m.pricing) {
       if (typeof m.pricing === 'object') {
         // Text models: pricing.prompt is per-million-tokens
-        if (m.pricing.prompt) {
+        if (m.pricing.prompt != null) {
           parts.push(`$${m.pricing.prompt}/1M in`);
         // Image models: pricing.per_image is { resolution: cost }
         } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {

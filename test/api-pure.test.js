@@ -140,7 +140,7 @@ function buildModelDetails(m) {
   if (m.supports_edit) parts.push('edit');
   if (m.pricing) {
     if (typeof m.pricing === 'object') {
-      if (m.pricing.prompt) {
+      if (m.pricing.prompt != null) {
         parts.push(`$${m.pricing.prompt}/1M in`);
       } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
         const prices = Object.values(m.pricing.per_image).filter(v => typeof v === 'number');
@@ -244,6 +244,9 @@ describe('settings pure helpers', () => {
     assert.ok(imgModel.includes('edit'));
     assert.ok(imgModel.includes('$0.04/img'));
     assert.ok(!imgModel.includes('/1M'));
+    // Free/experimental model with pricing.prompt = 0 should still show pricing
+    const freeModel = buildModelDetails({ pricing: { prompt: 0 } });
+    assert.ok(freeModel.includes('$0/1M in'), 'pricing.prompt of 0 should still be displayed');
   });
 });
 
