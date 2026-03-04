@@ -28,6 +28,7 @@ export default [
         crypto: 'readonly',
         caches: 'readonly',
         module: 'readonly',
+        structuredClone: 'readonly',
 
         // App globals (IIFEs)
         DB: 'readonly',

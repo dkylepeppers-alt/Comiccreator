@@ -20,7 +20,7 @@ const SettingsPage = (() => {
   async function render() {
     const apiKey = await DB.getSetting('apiKey', '');
     const model = await DB.getSetting('model', 'gpt-4o-mini');
-    const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+    const imageModel = await DB.getSetting('imageModel', '');
     const temperature = await DB.getSetting('temperature', 0.7);
     const topP = await DB.getSetting('topP', 0.9);
     const maxTokens = await DB.getSetting('maxTokens', 2048);
@@ -28,6 +28,7 @@ const SettingsPage = (() => {
     const enableImages = await DB.getSetting('enableImages', true);
     const useRefImages = await DB.getSetting('useRefImages', true);
     const charRefMode = await DB.getSetting('charRefMode', 'auto');
+    const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
@@ -76,7 +77,7 @@ const SettingsPage = (() => {
             <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
             <div class="model-picker" id="image-model-picker">
               <div class="model-picker-selected" onclick="SettingsPage.togglePicker('image')">
-                <span id="image-model-display">${escHtml(imageModel)}</span>
+                <span id="image-model-display">${imageModel ? escHtml(imageModel) : 'Select a model\u2026'}</span>
                 <span class="model-picker-arrow">&#9662;</span>
               </div>
               <div class="model-picker-dropdown hidden" id="image-model-dropdown">
@@ -118,6 +119,18 @@ const SettingsPage = (() => {
               <option value="composite" ${charRefMode === 'composite' ? 'selected' : ''}>Composite (always build character sheet)</option>
             </select>
             <div class="form-hint">How to select the best reference image for each panel from a character's image gallery</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Embedding Model</label>
+            <select id="set-embmodel">
+              <option value="text-embedding-3-small" ${embeddingModel === 'text-embedding-3-small' ? 'selected' : ''}>text-embedding-3-small &mdash; $0.02/1M (OpenAI, default)</option>
+              <option value="qwen/qwen3-embedding-8b" ${embeddingModel === 'qwen/qwen3-embedding-8b' ? 'selected' : ''}>qwen3-embedding-8b &mdash; $0.01/1M (8B params, best value)</option>
+              <option value="Qwen/Qwen3-Embedding-0.6B" ${embeddingModel === 'Qwen/Qwen3-Embedding-0.6B' ? 'selected' : ''}>qwen3-embedding-0.6B &mdash; $0.01/1M (lightweight)</option>
+              <option value="text-embedding-3-large" ${embeddingModel === 'text-embedding-3-large' ? 'selected' : ''}>text-embedding-3-large &mdash; $0.13/1M (highest quality)</option>
+              <option value="BAAI/bge-m3" ${embeddingModel === 'BAAI/bge-m3' ? 'selected' : ''}>bge-m3 &mdash; $0.01/1M (multilingual)</option>
+            </select>
+            <div class="form-hint">Model used for matching character images to panel prompts. Changing this invalidates existing character embeddings.</div>
           </div>
 
           <div class="form-group">
@@ -240,8 +253,23 @@ const SettingsPage = (() => {
       loadModels('text'),
       loadModels('image'),
     ]);
-    // After image models are loaded, rebuild the size dropdown for the current model
-    const currentImageModel = document.getElementById('set-imgmodel')?.value;
+    // After image models are loaded, auto-select the first model if none is saved
+    let currentImageModel = document.getElementById('set-imgmodel')?.value;
+    if (!currentImageModel && imageModels.length > 0) {
+      currentImageModel = imageModels[0].id;
+      const hiddenEl = document.getElementById('set-imgmodel');
+      const displayEl = document.getElementById('image-model-display');
+      if (hiddenEl) hiddenEl.value = currentImageModel;
+      if (displayEl) displayEl.textContent = currentImageModel;
+      // Update selected state in the model list
+      const listEl = document.getElementById('image-model-list');
+      if (listEl) {
+        listEl.querySelectorAll('.model-option').forEach(el => {
+          el.classList.toggle('selected', el.dataset.modelId === currentImageModel);
+        });
+      }
+    }
+    // Rebuild the size dropdown for the current (or newly auto-selected) model
     if (currentImageModel) await updateImageSizeOptions(currentImageModel);
     // Close dropdowns when clicking outside
     document.addEventListener('click', handleOutsideClick);
@@ -355,22 +383,30 @@ const SettingsPage = (() => {
     const id = model.id.toLowerCase();
     if (id.startsWith('gpt-') || id.startsWith('chatgpt') || id.startsWith('dall-e') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) return 'OpenAI';
     if (id.startsWith('claude')) return 'Anthropic';
-    if (id.startsWith('gemini')) return 'Google';
+    if (id.startsWith('gemini') || id.startsWith('nano-banana')) return 'Google';
     if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
     if (id.startsWith('mistral') || id.startsWith('codestral') || id.startsWith('pixtral')) return 'Mistral';
     if (id.startsWith('deepseek')) return 'DeepSeek';
     if (id.startsWith('grok')) return 'xAI';
-    if (id.startsWith('qwen')) return 'Qwen';
+    if (id.startsWith('qwen') || id.startsWith('wan-') || id.startsWith('z-image')) return 'Alibaba';
     if (id.startsWith('command')) return 'Cohere';
     if (id.startsWith('flux') || id.startsWith('schnell')) return 'Black Forest Labs';
     if (id.startsWith('stable-diffusion') || id.startsWith('sdxl') || id.startsWith('sd3')) return 'Stability AI';
+    if (id.startsWith('seedream') || id.startsWith('seedvr')) return 'ByteDance';
+    if (id.startsWith('hunyuan')) return 'Tencent';
+    if (id.startsWith('cogview') || id.startsWith('glm')) return 'Zhipu';
+    if (id.startsWith('kling')) return 'Kling';
+    if (id.startsWith('vidu')) return 'Vidu';
+    if (id.startsWith('minimax')) return 'MiniMax';
     if (id.startsWith('yi-')) return '01.AI';
     if (id.startsWith('phi-')) return 'Microsoft';
     if (id.startsWith('nova-') || id.startsWith('amazon')) return 'Amazon';
-    if (id.startsWith('glm')) return 'Zhipu';
     if (id.startsWith('kimi')) return 'Moonshot';
+    // Retained for cached model data from older sessions or future API additions
     if (id.startsWith('hidream')) return 'HiDream';
     if (id.startsWith('midjourney')) return 'Midjourney';
+    if (id.startsWith('riverflow')) return 'Sourceful';
+    if (id.startsWith('lucid')) return 'Leonardo AI';
     return 'Other';
   }
 
@@ -382,7 +418,17 @@ const SettingsPage = (() => {
     if (m.supports_edit) parts.push('edit');
     if (m.pricing) {
       if (typeof m.pricing === 'object') {
-        if (m.pricing.prompt) parts.push(`$${m.pricing.prompt}/1K in`);
+        // Text models: pricing.prompt is per-million-tokens
+        if (m.pricing.prompt != null) {
+          parts.push(`$${m.pricing.prompt}/1M in`);
+        // Image models: pricing.per_image is { resolution: cost }
+        } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
+          const prices = Object.values(m.pricing.per_image).filter(v => typeof v === 'number');
+          if (prices.length > 0) {
+            const minPrice = Math.min(...prices);
+            parts.push(`$${minPrice}/img`);
+          }
+        }
       } else if (typeof m.pricing === 'string') {
         parts.push(m.pricing);
       }
@@ -656,6 +702,27 @@ const SettingsPage = (() => {
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('charRefMode', document.getElementById('set-charrefmode').value);
+
+    // Embedding model — invalidate stored character embeddings when the model changes
+    const newEmbModel = document.getElementById('set-embmodel').value;
+    const oldEmbModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
+    await DB.setSetting('embeddingModel', newEmbModel);
+    if (newEmbModel !== oldEmbModel) {
+      const chars = await DB.getAll(DB.STORES.characters);
+      let invalidated = 0;
+      for (const c of chars) {
+        if (!Array.isArray(c.images)) continue;
+        let changed = false;
+        for (const img of c.images) {
+          if (img.embedding) { img.embedding = null; changed = true; invalidated++; }
+        }
+        if (changed) await DB.put(DB.STORES.characters, c);
+      }
+      if (invalidated > 0) {
+        App.toast(`Embedding model changed — cleared ${invalidated} embedding(s). Re-save characters to regenerate.`, 'info');
+      }
+    }
+
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
     const sizeEl = document.getElementById('set-imgsize');
     const imageSizeVal = sizeEl.value.trim();
