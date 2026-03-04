@@ -138,7 +138,7 @@ const DB = (() => {
    */
   function migrateWorld(world) {
     if (!world) return world;
-    if (Array.isArray(world.images) && world.images.length > 0 && typeof world.images[0] === 'object') return world;
+    if (Array.isArray(world.images) && world.images.length > 0 && world.images[0] !== null && typeof world.images[0] === 'object' && typeof world.images[0].dataUrl === 'string') return world;
     const images = (world.images || [])
       .filter(img => img)
       .map(img => typeof img === 'string'

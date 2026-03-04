@@ -57,7 +57,7 @@ const WorldsPage = (() => {
           return `
           <div class="list-item" onclick="WorldsPage.editWorld('${w.id}')">
             <div class="list-item-avatar">
-              ${thumb ? `<img src="${thumb}" alt="${escHtml(w.name)}">` : '&#127758;'}
+              ${thumb ? `<img src="${escHtml(thumb)}" alt="${escHtml(w.name)}">` : '&#127758;'}
             </div>
             <div class="list-item-info">
               <div class="list-item-title">${escHtml(w.name)}</div>
@@ -136,7 +136,7 @@ const WorldsPage = (() => {
     return images.map((img, i) => `
       <div class="char-img-slot" data-idx="${i}">
         <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="WorldsPage.pickImageForSlot(${i})">
-          ${img.dataUrl ? `<img src="${img.dataUrl}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
+          ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
         </div>
         <div class="char-img-meta">
           <select class="char-img-tag" data-idx="${i}" onchange="WorldsPage.updateTag(${i},this.value)">
@@ -238,10 +238,15 @@ const WorldsPage = (() => {
     if (!name) return App.toast('World name is required', 'error');
     if (!description) return App.toast('Description is required', 'error');
 
-    // Filter out empty slots (no dataUrl)
-    const validImages = editorImages.filter(img => img.dataUrl);
-    let primaryIdx = editorPrimaryIndex;
-    if (primaryIdx >= validImages.length) primaryIdx = 0;
+    // Filter out empty slots (no dataUrl), remapping primary index to the filtered list
+    const validImages = [];
+    let primaryIdx = 0;
+    editorImages.forEach((img, idx) => {
+      if (!img || !img.dataUrl) return;
+      if (idx === editorPrimaryIndex) primaryIdx = validImages.length;
+      validImages.push(img);
+    });
+    if (validImages.length > 0 && primaryIdx >= validImages.length) primaryIdx = 0;
 
     const existingWorld = editingId ? await DB.get(DB.STORES.worlds, editingId) : null;
 
