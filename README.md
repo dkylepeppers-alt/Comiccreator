@@ -394,7 +394,7 @@ Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` lets `update.
 The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `claude/ai-comic-generator-pwa-UxZty` branch. The workflow uses the official GitHub Pages actions:
 
 - `actions/configure-pages` — configures the Pages environment
-- `actions/upload-pages-artifact` — uploads the repo root as the site artifact
+- `actions/upload-pages-artifact` — uploads only the runtime site assets (HTML, CSS, JS, icons, SW, manifest)
 - `actions/deploy-pages` — publishes the artifact
 
 The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
