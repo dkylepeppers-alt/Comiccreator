@@ -55,7 +55,7 @@ jobs:
           git add -A
           git commit -m "chore: release v${{ steps.version.outputs.version }}"
           git tag "v${{ steps.version.outputs.version }}"
-          git push origin HEAD
+          git push origin "HEAD:${{ github.ref_name }}"
           git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Create GitHub Release
