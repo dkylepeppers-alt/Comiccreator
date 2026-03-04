@@ -87,7 +87,7 @@ const WorldsPage = (() => {
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
           <button class="btn btn-sm btn-secondary" onclick="WorldsPage.backToList()">&#8592; Back</button>
           <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} World</h2>
-          ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" onclick="WorldsPage.exportWorld('${editingId}')">&#128229; Export</button>` : ''}
+          ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" onclick="WorldsPage.exportWorld('${editingId}')">&#128229; Export</button>` : ''}
         </div>
 
         <div class="card">

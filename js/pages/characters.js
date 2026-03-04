@@ -85,7 +85,7 @@ const CharactersPage = (() => {
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
           <button class="btn btn-sm btn-secondary" onclick="CharactersPage.backToList()">&#8592; Back</button>
           <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} Character</h2>
-          ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" onclick="CharactersPage.exportCharacter('${editingId}')">&#128229; Export</button>` : ''}
+          ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" onclick="CharactersPage.exportCharacter('${editingId}')">&#128229; Export</button>` : ''}
         </div>
 
         <div class="card">
