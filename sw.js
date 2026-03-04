@@ -2,6 +2,9 @@
  * Service Worker - Offline caching for the Comic Creator PWA
  */
 const CACHE_NAME = 'comic-creator-v1.6.4';
+// Base path derived from the service worker's registered scope so the app works
+// under any subpath (e.g. "" when served from root, "/Comiccreator" on GitHub Pages).
+const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -28,7 +31,7 @@ const STATIC_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+      return cache.addAll(STATIC_ASSETS.map((asset) => BASE_PATH + asset));
     })
   );
   self.skipWaiting();
@@ -73,7 +76,7 @@ self.addEventListener('fetch', (event) => {
       }).catch(() => {
         // Offline fallback for navigation
         if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
+          return caches.match(BASE_PATH + '/index.html');
         }
         return new Response('Offline', { status: 503 });
       });
