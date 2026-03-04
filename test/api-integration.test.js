@@ -121,6 +121,40 @@ describe('API integration', () => {
     assert.equal(fetchCalls, 2);
   });
 
+  it('fetchTextModels maps capabilities.vision and capabilities.tool_calling', async () => {
+    ctx.fetch = async () => new Response(JSON.stringify({
+      data: [
+        // Real NanoGPT API shape: capabilities nested object
+        {
+          id: 'gpt-4o',
+          name: 'GPT-4o',
+          owned_by: 'openai',
+          context_length: 128000,
+          capabilities: { vision: true, tool_calling: true, reasoning: false },
+          pricing: { prompt: 2.5, completion: 10, currency: 'USD', unit: 'per_million_tokens' },
+        },
+        // Model with no capabilities / vision & tools both false
+        {
+          id: 'no-caps-model',
+          name: 'No Caps',
+          owned_by: 'other',
+          capabilities: { vision: false, tool_calling: false },
+        },
+      ],
+    }), { status: 200 });
+
+    const models = await ctx.API.fetchTextModels(true);
+
+    const gpt4o = models.find(m => m.id === 'gpt-4o');
+    assert.equal(gpt4o.supports_vision, true, 'should read vision from capabilities.vision');
+    assert.equal(gpt4o.supports_tools, true, 'should read tools from capabilities.tool_calling');
+
+    const noCaps = models.find(m => m.id === 'no-caps-model');
+    assert.equal(noCaps.supports_vision, false);
+    assert.equal(noCaps.supports_tools, false);
+  });
+
+
   it('fetchImageModels caches and falls back to defaults when empty cache', async () => {
     ctx.fetch = async () => {
       throw new Error('down');
@@ -162,6 +196,25 @@ describe('API integration', () => {
     // Sizes should be available via getModelSizes after fetch
     const sizes = await ctx.API.getModelSizes('gpt-image-1');
     assert.deepEqual(sizes, ['1024x1024', '1536x1024', '1024x1536', 'auto']);
+  });
+
+  it('fetchImageModels maps capabilities.image_to_image to supports_edit', async () => {
+    ctx.fetch = async () => new Response(JSON.stringify({
+      data: [
+        // Real NanoGPT API shape: edit support under capabilities.image_to_image
+        { id: 'flux-kontext', name: 'Flux Kontext', owned_by: 'Black Forest Labs', capabilities: { image_generation: true, image_to_image: true }, supported_parameters: { resolutions: ['1024x1024'] } },
+        // Text-to-image only model
+        { id: 'nano-banana-pro-ultra', name: 'NBP Ultra', owned_by: 'gemini', capabilities: { image_generation: true, image_to_image: false }, supported_parameters: { resolutions: ['4k', '8k'] } },
+      ],
+    }), { status: 200 });
+
+    const models = await ctx.API.fetchImageModels(true);
+
+    const editModel = models.find(m => m.id === 'flux-kontext');
+    assert.equal(editModel.supports_edit, true, 'should read supports_edit from capabilities.image_to_image');
+
+    const textOnly = models.find(m => m.id === 'nano-banana-pro-ultra');
+    assert.equal(textOnly.supports_edit, false);
   });
 
   it('getModelSizes returns cached sizes when present, null when missing or no sizes', async () => {

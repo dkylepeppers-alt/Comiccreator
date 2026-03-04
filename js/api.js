@@ -424,8 +424,9 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         owned_by: m.owned_by || '',
         context_length: m.context_length || null,
         pricing: m.pricing || null,
-        supports_vision: m.supports_vision || false,
-        supports_tools: m.supports_tools || false,
+        // NanoGPT API returns capabilities under a nested `capabilities` object
+        supports_vision: m.capabilities?.vision || m.supports_vision || false,
+        supports_tools: m.capabilities?.tool_calling || m.supports_tools || false,
       })).sort((a, b) => a.id.localeCompare(b.id));
 
       await DB.setSetting(CACHE_KEY, models);
@@ -466,7 +467,8 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
         name: m.name || m.id || m.model,
         owned_by: m.owned_by || m.provider || '',
         pricing: m.pricing || null,
-        supports_edit: m.supports_edit || false,
+        // NanoGPT API returns image_to_image support under capabilities.image_to_image
+        supports_edit: m.capabilities?.image_to_image || m.supports_edit || false,
         // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
         sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
       })).sort((a, b) => a.id.localeCompare(b.id));

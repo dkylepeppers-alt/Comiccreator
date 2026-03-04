@@ -116,7 +116,7 @@ function buildModelDetails(m) {
   if (m.supports_edit) parts.push('edit');
   if (m.pricing) {
     if (typeof m.pricing === 'object') {
-      if (m.pricing.prompt) parts.push(`$${m.pricing.prompt}/1K in`);
+      if (m.pricing.prompt) parts.push(`$${m.pricing.prompt}/1M in`);
     } else if (typeof m.pricing === 'string') {
       parts.push(m.pricing);
     }
@@ -188,7 +188,7 @@ describe('settings pure helpers', () => {
     assert.ok(rich.includes('vision'));
     assert.ok(rich.includes('tools'));
     assert.ok(rich.includes('edit'));
-    assert.ok(rich.includes('$0.01/1K in'));
+    assert.ok(rich.includes('$0.01/1M in'));
     assert.equal(buildModelDetails({ pricing: '$0.05 flat' }), '$0.05 flat');
   });
 });
