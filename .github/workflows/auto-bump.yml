@@ -1,0 +1,45 @@
+name: Auto Bump Version
+
+on:
+  push:
+    branches:
+      - Main
+
+# Cancel any in-progress bump if a newer commit arrives on Main
+concurrency:
+  group: auto-bump
+  cancel-in-progress: true
+
+jobs:
+  auto-bump:
+    runs-on: ubuntu-latest
+    # Skip commits already made by the bot to prevent infinite loops.
+    # (GITHUB_TOKEN pushes also don't re-trigger workflows, but this adds
+    # an explicit safety net for any PAT-based or third-party push scenarios.)
+    if: github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        run: bash scripts/bump-version.sh patch
+
+      - name: Read new version
+        id: version
+        run: |
+          NEW_VERSION="$(jq -r .version package.json)"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push version bump
+        run: |
+          git diff --staged --quiet || git commit -m "chore: bump version to v${{ steps.version.outputs.version }}"
+          git push origin "HEAD:${{ github.ref_name }}"
