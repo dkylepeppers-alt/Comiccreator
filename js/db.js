@@ -138,12 +138,11 @@ const DB = (() => {
    */
   function migrateWorld(world) {
     if (!world) return world;
-    if (Array.isArray(world.images) && world.images.length > 0 && world.images[0] !== null && typeof world.images[0] === 'object' && typeof world.images[0].dataUrl === 'string') return world;
     const images = (world.images || [])
       .filter(img => img)
       .map(img => typeof img === 'string'
-        ? { dataUrl: img, tag: 'establishing', description: '' }
-        : img);
+        ? { dataUrl: img, tag: 'establishing', description: '', embedding: null }
+        : Object.assign({ embedding: null }, img));
     return Object.assign({}, world, { images, primaryImageIndex: world.primaryImageIndex ?? 0 });
   }
 

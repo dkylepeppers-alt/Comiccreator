@@ -101,3 +101,54 @@ describe('DB module', () => {
     assert.equal(rows[0].id, 'new');
   });
 });
+
+describe('DB.migrateWorld', () => {
+  const SAMPLE_IMAGE_URL = 'data:image/png;base64,abc';
+
+  it('returns null/undefined unchanged', () => {
+    assert.equal(DB.migrateWorld(null), null);
+    assert.equal(DB.migrateWorld(undefined), undefined);
+  });
+
+  it('converts legacy string image array to object format with embedding: null', () => {
+    const world = { id: '1', images: [SAMPLE_IMAGE_URL] };
+    const result = DB.migrateWorld(world);
+    assert.equal(result.images.length, 1);
+    assert.equal(result.images[0].dataUrl, SAMPLE_IMAGE_URL);
+    assert.equal(result.images[0].tag, 'establishing');
+    assert.equal(result.images[0].description, '');
+    assert.equal(result.images[0].embedding, null);
+  });
+
+  it('adds embedding: null to already-migrated object-format images that are missing the field', () => {
+    const world = { id: '2', images: [{ dataUrl: 'data:image/png;base64,xyz', tag: 'interior', description: 'A cave' }] };
+    const result = DB.migrateWorld(world);
+    assert.equal(result.images[0].embedding, null);
+    assert.equal(result.images[0].description, 'A cave');
+  });
+
+  it('preserves an existing embedding value during migration', () => {
+    const embedding = [0.1, 0.2, 0.3];
+    const world = { id: '3', images: [{ dataUrl: 'data:image/png;base64,xyz', tag: 'exterior', description: 'Open sky', embedding }] };
+    const result = DB.migrateWorld(world);
+    assert.deepEqual(result.images[0].embedding, embedding);
+  });
+
+  it('filters out null/undefined image entries', () => {
+    const world = { id: '4', images: [null, SAMPLE_IMAGE_URL, undefined] };
+    const result = DB.migrateWorld(world);
+    assert.equal(result.images.length, 1);
+  });
+
+  it('sets primaryImageIndex to 0 when missing', () => {
+    const world = { id: '5', images: [SAMPLE_IMAGE_URL] };
+    const result = DB.migrateWorld(world);
+    assert.equal(result.primaryImageIndex, 0);
+  });
+
+  it('does not mutate the original world object', () => {
+    const world = { id: '6', images: [SAMPLE_IMAGE_URL] };
+    DB.migrateWorld(world);
+    assert.equal(typeof world.images[0], 'string');
+  });
+});

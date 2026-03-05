@@ -5,7 +5,7 @@ const WorldsPage = (() => {
   let currentView = 'list';
   let editingId = null;
 
-  // In-editor image list: [{ dataUrl, tag, description }]
+  // In-editor image list: [{ dataUrl, tag, description, embedding }]
   let editorImages = [];
   let editorPrimaryIndex = 0;
   // Index of the image slot currently being filled (for file picker)
@@ -172,7 +172,7 @@ const WorldsPage = (() => {
 
   function addImageSlot() {
     if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
-    editorImages.push({ dataUrl: '', tag: 'establishing', description: '' });
+    editorImages.push({ dataUrl: '', tag: 'establishing', description: '', embedding: null });
     refreshGallery();
     pickImageForSlot(editorImages.length - 1);
   }
@@ -205,9 +205,9 @@ const WorldsPage = (() => {
     const dataUrl = await DB.fileToDataURL(file);
     const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
     if (idx >= editorImages.length) {
-      editorImages.push({ dataUrl, tag: 'establishing', description: '' });
+      editorImages.push({ dataUrl, tag: 'establishing', description: '', embedding: null });
     } else {
-      editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl });
+      editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl, embedding: null });
     }
     refreshGallery();
     event.target.value = '';
@@ -218,7 +218,10 @@ const WorldsPage = (() => {
   }
 
   function updateDesc(idx, value) {
-    if (editorImages[idx]) editorImages[idx].description = value;
+    if (editorImages[idx]) {
+      editorImages[idx].description = value;
+      editorImages[idx].embedding = null; // invalidate stale embedding
+    }
   }
 
   function setPrimary(idx) {
@@ -249,6 +252,20 @@ const WorldsPage = (() => {
       validImages.push(img);
     });
     if (validImages.length > 0 && primaryIdx >= validImages.length) primaryIdx = 0;
+
+    // Generate embeddings for images that have descriptions but no embedding
+    const needsEmbedding = validImages.filter(img => img.description && !img.embedding);
+    if (needsEmbedding.length > 0) {
+      const saveBtn = document.getElementById('world-save-btn');
+      if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
+      await Promise.all(needsEmbedding.map(async (img) => {
+        try {
+          const emb = await API.generateEmbedding(img.description);
+          if (emb) img.embedding = emb;
+        } catch { /* skip on error */ }
+      }));
+      if (saveBtn) saveBtn.textContent = editingId ? 'Update World' : 'Create World';
+    }
 
     const existingWorld = editingId ? await DB.get(DB.STORES.worlds, editingId) : null;
 
