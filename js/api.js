@@ -394,8 +394,14 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       else if (c === '}' || c === ']') stack.pop();
     }
 
-    // Close any unclosed string literal
-    if (inString) s += '"';
+    // Close any unclosed string literal.
+    // If the string ended on a dangling backslash (escape still true), the '\' is
+    // incomplete — drop it before appending the closing quote so the quote doesn't
+    // get accidentally escaped (e.g. `{"a":"foo\` → `{"a":"foo"`).
+    if (inString) {
+      if (escape) s = s.slice(0, -1);
+      s += '"';
+    }
     // Remove trailing comma left by a truncated array or object
     s = s.replace(/,\s*$/, '');
     // Close all unclosed structures
@@ -444,7 +450,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       try {
         return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
       } catch (_e2) {
-        if (typeof App !== 'undefined') App.logError('parseComicResponse', e, text?.substring(0, 200));
+        if (typeof App !== 'undefined') App.logError('parseComicResponse', _e2, text?.substring(0, 200));
         return null;
       }
     }

@@ -57,7 +57,10 @@ function repairTruncatedJson(str) {
     else if (c === '[') stack.push(']');
     else if (c === '}' || c === ']') stack.pop();
   }
-  if (inString) s += '"';
+  if (inString) {
+    if (escape) s = s.slice(0, -1);
+    s += '"';
+  }
   s = s.replace(/,\s*$/, '');
   while (stack.length > 0) s += stack.pop();
   return s;

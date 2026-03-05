@@ -52,7 +52,10 @@ function repairTruncatedJson(str) {
     else if (c === '}' || c === ']') stack.pop();
   }
 
-  if (inString) s += '"';
+  if (inString) {
+    if (escape) s = s.slice(0, -1);
+    s += '"';
+  }
   s = s.replace(/,\s*$/, '');
   while (stack.length > 0) s += stack.pop();
   return s;
@@ -271,6 +274,15 @@ describe('parseComicResponse', () => {
     const result = parseComicResponse(truncated);
     assert.ok(result, 'should recover missing outer brace');
     assert.equal(result.title, 'Test');
+  });
+
+  it('should handle truncation ending on a dangling backslash inside a string', () => {
+    // If the LLM output is cut right after a backslash inside a value, the trailing
+    // backslash must be dropped so the closing quote is not accidentally escaped.
+    const truncated = '{"title":"Anthony\\';
+    const result = parseComicResponse(truncated);
+    assert.ok(result, 'should recover dangling-backslash truncation');
+    assert.equal(result.title, 'Anthony');
   });
 });
 
