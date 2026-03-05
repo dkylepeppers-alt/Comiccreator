@@ -158,17 +158,29 @@ const App = (() => {
   }
 
   // Toast
-  function toast(message, type = 'info') {
+  // options.duration: ms before auto-dismiss (0 = persistent until clicked)
+  // options.onClick: optional click handler; also dismisses the toast on click
+  function toast(message, type = 'info', options = {}) {
+    const { duration = 3000, onClick = null } = options;
     const container = document.getElementById('toast-container');
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;
     el.textContent = message;
+    if (onClick) {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => {
+        el.remove();
+        onClick();
+      });
+    }
     container.appendChild(el);
-    setTimeout(() => {
-      el.style.opacity = '0';
-      el.style.transition = 'opacity 0.3s';
-      setTimeout(() => el.remove(), 300);
-    }, 3000);
+    if (duration > 0) {
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.3s';
+        setTimeout(() => el.remove(), 300);
+      }, duration);
+    }
   }
 
   // --- Global Error Log ---
@@ -269,8 +281,25 @@ const App = (() => {
 
   // Service Worker
   let _swVisibilityListenerAdded = false;
+  let _swControllerChangeListenerAdded = false;
   function registerSW() {
     if ('serviceWorker' in navigator) {
+      // Track whether there was already a controller when the page loaded.
+      // Used to distinguish a first-time install (no reload needed) from an
+      // update (user must reload to get fresh assets).
+      const hadController = !!navigator.serviceWorker.controller;
+
+      // Shared helper — show a persistent, tap-to-reload banner when a new
+      // version of the SW has taken over.  duration:0 keeps it visible until
+      // the user acts; the onClick callback reloads the page to apply the
+      // freshly cached assets.
+      function showUpdateToast() {
+        toast('App updated — tap here to reload', 'info', {
+          duration: 0,
+          onClick: () => window.location.reload(),
+        });
+      }
+
       navigator.serviceWorker.register('sw.js').then(reg => {
         console.log('SW registered:', reg.scope);
 
@@ -280,14 +309,25 @@ const App = (() => {
           if (!newWorker) return;
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // A new version has been cached and is ready — prompt the user
-              toast('App update ready! Reload the page to apply it.', 'info');
+              // A new version has been cached and is ready — show persistent tap-to-reload prompt
+              showUpdateToast();
             }
           });
         });
       }).catch(err => {
         logError('SW registration', err);
       });
+
+      // Also listen for the controller changing (fires after skipWaiting + clients.claim).
+      // This is a reliable second trigger in case the statechange fires too fast.
+      // Guard against duplicate registrations if registerSW() is ever called again.
+      if (!_swControllerChangeListenerAdded) {
+        _swControllerChangeListenerAdded = true;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!hadController) return; // first install — no reload needed
+          showUpdateToast();
+        });
+      }
 
       // Re-check for SW updates whenever the user returns to the tab (register once)
       if (!_swVisibilityListenerAdded) {

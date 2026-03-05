@@ -630,7 +630,20 @@ const SettingsPage = (() => {
     } catch (_) { /* fall back to hardcoded APP_VERSION */ }
 
     try {
-      const url = `https://raw.githubusercontent.com/${repo}/master/version.json?_=${Date.now()}`;
+      // Detect the repository's default branch so the check works regardless of
+      // whether the repo uses 'main', 'Main', 'master', etc.
+      // Uses the unauthenticated GitHub API (60 req/hr per IP), which is ample
+      // for a manual "Check for Updates" button.
+      let branch = 'main';
+      try {
+        const infoRes = await fetch(`https://api.github.com/repos/${repo}`);
+        if (infoRes.ok) {
+          const info = await infoRes.json();
+          branch = info.default_branch || 'main';
+        }
+      } catch (_) { /* use fallback branch name */ }
+
+      const url = `https://raw.githubusercontent.com/${repo}/${branch}/version.json?_=${Date.now()}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const remote = await res.json();
