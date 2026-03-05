@@ -372,6 +372,43 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
   /**
    * Parse comic page JSON from LLM response
    */
+  /**
+   * Attempt to repair a truncated JSON string by closing any unclosed strings,
+   * removing trailing commas, and appending missing closing brackets/braces.
+   * Returns the repaired string (which may still be invalid if truncation was severe).
+   */
+  function repairTruncatedJson(str) {
+    let s = str.trimEnd();
+    const stack = [];
+    let inString = false;
+    let escape = false;
+
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (escape) { escape = false; continue; }
+      if (c === '\\' && inString) { escape = true; continue; }
+      if (c === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (c === '{') stack.push('}');
+      else if (c === '[') stack.push(']');
+      else if (c === '}' || c === ']') stack.pop();
+    }
+
+    // Close any unclosed string literal.
+    // If the string ended on a dangling backslash (escape still true), the '\' is
+    // incomplete — drop it before appending the closing quote so the quote doesn't
+    // get accidentally escaped (e.g. `{"a":"foo\` → `{"a":"foo"`).
+    if (inString) {
+      if (escape) s = s.slice(0, -1);
+      s += '"';
+    }
+    // Remove trailing comma left by a truncated array or object
+    s = s.replace(/,\s*$/, '');
+    // Close all unclosed structures
+    while (stack.length > 0) s += stack.pop();
+    return s;
+  }
+
   function parseComicResponse(text) {
     // Try to extract JSON from the response
     let jsonStr = text.trim();
@@ -389,26 +426,33 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
     }
 
+    const buildResult = parsed => ({
+      title: parsed.title || 'Untitled Page',
+      panels: (parsed.panels || []).map(p => ({
+        narration: p.narration || '',
+        imagePrompt: p.imagePrompt || p.image_prompt || '',
+        dialogue: (p.dialogue || []).map(d => ({
+          speaker: d.speaker || 'Unknown',
+          text: d.text || '',
+        })),
+      })),
+      choices: (parsed.choices || []).map(c => ({
+        text: c.text || c.description || '',
+        summary: c.summary || '',
+      })),
+    });
+
     try {
-      const parsed = JSON.parse(jsonStr);
-      return {
-        title: parsed.title || 'Untitled Page',
-        panels: (parsed.panels || []).map(p => ({
-          narration: p.narration || '',
-          imagePrompt: p.imagePrompt || p.image_prompt || '',
-          dialogue: (p.dialogue || []).map(d => ({
-            speaker: d.speaker || 'Unknown',
-            text: d.text || '',
-          })),
-        })),
-        choices: (parsed.choices || []).map(c => ({
-          text: c.text || c.description || '',
-          summary: c.summary || '',
-        })),
-      };
+      return buildResult(JSON.parse(jsonStr));
     } catch (e) {
-      if (typeof App !== 'undefined') App.logError('parseComicResponse', e, text?.substring(0, 200));
-      return null;
+      // First parse failed — the LLM response may have been truncated.
+      // Attempt to repair the JSON and retry before giving up.
+      try {
+        return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
+      } catch (_e2) {
+        if (typeof App !== 'undefined') App.logError('parseComicResponse', _e2, text?.substring(0, 200));
+        return null;
+      }
     }
   }
 

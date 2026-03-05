@@ -42,6 +42,30 @@ function getModelSizesStatic(modelId) {
   return null;
 }
 
+function repairTruncatedJson(str) {
+  let s = str.trimEnd();
+  const stack = [];
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{') stack.push('}');
+    else if (c === '[') stack.push(']');
+    else if (c === '}' || c === ']') stack.pop();
+  }
+  if (inString) {
+    if (escape) s = s.slice(0, -1);
+    s += '"';
+  }
+  s = s.replace(/,\s*$/, '');
+  while (stack.length > 0) s += stack.pop();
+  return s;
+}
+
 function parseComicResponse(text) {
   let jsonStr = text.trim();
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -49,25 +73,29 @@ function parseComicResponse(text) {
   const firstBrace = jsonStr.indexOf('{');
   const lastBrace = jsonStr.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+  const buildResult = parsed => ({
+    title: parsed.title || 'Untitled Page',
+    panels: (parsed.panels || []).map(p => ({
+      narration: p.narration || '',
+      imagePrompt: p.imagePrompt || p.image_prompt || '',
+      dialogue: (p.dialogue || []).map(d => ({
+        speaker: d.speaker || 'Unknown',
+        text: d.text || '',
+      })),
+    })),
+    choices: (parsed.choices || []).map(c => ({
+      text: c.text || c.description || '',
+      summary: c.summary || '',
+    })),
+  });
   try {
-    const parsed = JSON.parse(jsonStr);
-    return {
-      title: parsed.title || 'Untitled Page',
-      panels: (parsed.panels || []).map(p => ({
-        narration: p.narration || '',
-        imagePrompt: p.imagePrompt || p.image_prompt || '',
-        dialogue: (p.dialogue || []).map(d => ({
-          speaker: d.speaker || 'Unknown',
-          text: d.text || '',
-        })),
-      })),
-      choices: (parsed.choices || []).map(c => ({
-        text: c.text || c.description || '',
-        summary: c.summary || '',
-      })),
-    };
+    return buildResult(JSON.parse(jsonStr));
   } catch {
-    return null;
+    try {
+      return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
+    } catch {
+      return null;
+    }
   }
 }
 
