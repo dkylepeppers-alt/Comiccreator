@@ -634,12 +634,14 @@ const SettingsPage = (() => {
       // whether the repo uses 'main', 'Main', 'master', etc.
       // Uses the unauthenticated GitHub API (60 req/hr per IP), which is ample
       // for a manual "Check for Updates" button.
-      let branch = 'main';
+      // Fallback is 'Main' (capital M) — matches the default branch of the
+      // DEFAULT_UPDATE_REPO; raw.githubusercontent.com URLs are case-sensitive.
+      let branch = 'Main';
       try {
         const infoRes = await fetch(`https://api.github.com/repos/${repo}`);
         if (infoRes.ok) {
           const info = await infoRes.json();
-          branch = info.default_branch || 'main';
+          branch = info.default_branch || 'Main';
         }
       } catch (_) { /* use fallback branch name */ }
 
