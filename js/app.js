@@ -12,6 +12,7 @@ const App = (() => {
     create: CreatePage,
     library: LibraryPage,
     presets: PresetsPage,
+    'image-presets': ImagePresetsPage,
     settings: SettingsPage,
   };
 
@@ -22,6 +23,7 @@ const App = (() => {
     create: 'Create Comic',
     library: 'My Comics',
     presets: 'Prompt Presets',
+    'image-presets': 'Image Style Presets',
     settings: 'Settings',
   };
 

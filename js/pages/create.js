@@ -9,6 +9,7 @@ const CreatePage = (() => {
     selectedCharacters: [],
     selectedWorld: null,
     selectedPreset: null,
+    selectedImagePreset: null,
     comicId: null,
     title: '',
     storyPrompt: '',
@@ -71,8 +72,9 @@ const CreatePage = (() => {
     const characters = await DB.getAll(DB.STORES.characters);
     const worlds = await DB.getAll(DB.STORES.worlds);
     const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
+    const imagePresets = dedupeByNameLatest(await DB.getAll(DB.STORES.imagePresets));
     const hasDraft = state.genre || state.title || state.storyPrompt ||
-      (state.selectedCharacters?.length > 0) || state.selectedWorld || state.selectedPreset;
+      (state.selectedCharacters?.length > 0) || state.selectedWorld || state.selectedPreset || state.selectedImagePreset;
 
     return `
       <div class="slide-up">
@@ -147,9 +149,25 @@ const CreatePage = (() => {
           </div>
         </div>
 
-        <!-- Step 5: Story Setup -->
+        <!-- Step 5: Image Style Preset -->
         <div class="card">
-          <h3 class="card-title mb-sm">5. Story Setup</h3>
+          <h3 class="card-title mb-sm">5. Image Style Preset (optional)</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <div class="chip ${!state.selectedImagePreset ? 'active' : ''}" onclick="CreatePage.selectImagePreset(null)">Default</div>
+            ${imagePresets.map(p => `
+              <div class="chip ${state.selectedImagePreset === p.id ? 'active' : ''}" onclick="CreatePage.selectImagePreset('${p.id}')">
+                ${escHtml(p.name)}
+              </div>
+            `).join('')}
+          </div>
+          <div class="form-hint" style="margin-top:8px;">
+            <a href="#" onclick="event.preventDefault();App.navigate('image-presets')">Manage image style presets</a>
+          </div>
+        </div>
+
+        <!-- Step 6: Story Setup -->
+        <div class="card">
+          <h3 class="card-title mb-sm">6. Story Setup</h3>
           <div class="form-group">
             <label class="form-label">Comic Title</label>
             <input type="text" id="comic-title" value="${escHtml(state.title)}" placeholder="e.g. The Last Guardian" oninput="CreatePage.setTitle(this.value)">
@@ -293,6 +311,7 @@ const CreatePage = (() => {
     state.selectedCharacters = comic.characterIds || [];
     state.selectedWorld = comic.worldId || null;
     state.selectedPreset = comic.presetId || null;
+    state.selectedImagePreset = comic.imagePresetId || null;
     state.pages = pages.map(p => p.data);
     state.pageIds = pages.map(p => p.id);   // restore ids for re-roll/undo
     state.conversationHistory = comic.conversationHistory || [];
@@ -363,6 +382,7 @@ const CreatePage = (() => {
       selectedCharacters: state.selectedCharacters,
       selectedWorld: state.selectedWorld,
       selectedPreset: state.selectedPreset,
+      selectedImagePreset: state.selectedImagePreset,
       title: state.title,
       storyPrompt: state.storyPrompt,
     });
@@ -390,6 +410,7 @@ const CreatePage = (() => {
       state.selectedCharacters = Array.isArray(draft.selectedCharacters) ? draft.selectedCharacters : [];
       state.selectedWorld = draft.selectedWorld || null;
       state.selectedPreset = draft.selectedPreset || null;
+      state.selectedImagePreset = draft.selectedImagePreset || null;
       state.title = draft.title || '';
       state.storyPrompt = draft.storyPrompt || '';
     }
@@ -401,6 +422,7 @@ const CreatePage = (() => {
     state.selectedCharacters = [];
     state.selectedWorld = null;
     state.selectedPreset = null;
+    state.selectedImagePreset = null;
     state.title = '';
     state.storyPrompt = '';
     state.draftLoaded = true; // mark as loaded so we don't re-load old draft
@@ -441,6 +463,12 @@ const CreatePage = (() => {
 
   function selectPreset(id) {
     state.selectedPreset = id;
+    scheduleDraftSave();
+    App.refreshPage();
+  }
+
+  function selectImagePreset(id) {
+    state.selectedImagePreset = id;
     scheduleDraftSave();
     App.refreshPage();
   }
@@ -531,6 +559,7 @@ const CreatePage = (() => {
       characterIds: state.selectedCharacters,
       worldId: state.selectedWorld,
       presetId: state.selectedPreset,
+      imagePresetId: state.selectedImagePreset,
       pageCount: 0,
       conversationHistory: state.conversationHistory,
       createdAt: Date.now(),
@@ -620,7 +649,10 @@ const CreatePage = (() => {
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
         const imageResolution = await DB.getSetting('imageSize', '1024x1024');
-        const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
+        const imagePresetData = state.selectedImagePreset
+          ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
+          : null;
+        const imagePromptPrefix = imagePresetData?.promptPrefix || '';
         const charRefMode = await DB.getSetting('charRefMode', 'auto');
         const maxRefImages = await DB.getSetting('maxRefImages', 4);
 
@@ -1161,7 +1193,7 @@ const CreatePage = (() => {
   }
 
   return {
-    render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset,
+    render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset, selectImagePreset,
     toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration,
     rerollPage, undoChoice, zoomPanel, resetState,
     setTitle, setStoryPrompt, resetSetup,

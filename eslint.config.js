@@ -40,6 +40,7 @@ export default [
         CreatePage: 'readonly',
         LibraryPage: 'readonly',
         PresetsPage: 'readonly',
+        ImagePresetsPage: 'readonly',
         SettingsPage: 'readonly',
 
         // Shared utilities from home.js

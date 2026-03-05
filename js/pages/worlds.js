@@ -13,7 +13,7 @@ const WorldsPage = (() => {
   let _pendingSlotIdx = -1;
 
   const IMAGE_TAGS = ['establishing', 'interior', 'exterior', 'aerial', 'night', 'day', 'detail', 'landmark', 'custom'];
-  const MAX_IMAGES = 6;
+  const MAX_IMAGES = 12;
 
   async function render(param) {
     if (param === 'new') {

@@ -33,6 +33,7 @@ describe('DB module', () => {
     assert.ok(db.objectStoreNames.contains(DB.STORES.comics));
     assert.ok(db.objectStoreNames.contains(DB.STORES.pages));
     assert.ok(db.objectStoreNames.contains(DB.STORES.presets));
+    assert.ok(db.objectStoreNames.contains(DB.STORES.imagePresets));
     assert.ok(db.objectStoreNames.contains(DB.STORES.settings));
 
     const tx = db.transaction(DB.STORES.comics, 'readonly');
@@ -85,9 +86,13 @@ describe('DB module', () => {
     await DB.seedDefaults();
     const first = await DB.getAll(DB.STORES.presets);
     assert.equal(first.length, 3);
+    const firstImagePresets = await DB.getAll(DB.STORES.imagePresets);
+    assert.equal(firstImagePresets.length, 5);
     await DB.seedDefaults();
     const second = await DB.getAll(DB.STORES.presets);
     assert.equal(second.length, 3);
+    const secondImagePresets = await DB.getAll(DB.STORES.imagePresets);
+    assert.equal(secondImagePresets.length, 5);
   });
 
   it('dedupePresets removes older duplicates by name', async () => {

@@ -4,7 +4,7 @@
  */
 const DB = (() => {
   const DB_NAME = 'ComicCreatorDB';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let db = null;
 
   const STORES = {
@@ -13,6 +13,7 @@ const DB = (() => {
     comics: 'comics',
     pages: 'pages',
     presets: 'presets',
+    imagePresets: 'imagePresets',
     settings: 'settings',
   };
 
@@ -38,6 +39,9 @@ const DB = (() => {
         }
         if (!d.objectStoreNames.contains(STORES.presets)) {
           d.createObjectStore(STORES.presets, { keyPath: 'id' });
+        }
+        if (!d.objectStoreNames.contains(STORES.imagePresets)) {
+          d.createObjectStore(STORES.imagePresets, { keyPath: 'id' });
         }
         if (!d.objectStoreNames.contains(STORES.settings)) {
           d.createObjectStore(STORES.settings, { keyPath: 'key' });
@@ -181,10 +185,53 @@ const DB = (() => {
     },
   ];
 
+  // Seed default image style presets on first run (idempotent — stable IDs prevent duplicates)
+  const SEED_IMAGE_PRESETS = [
+    {
+      id: 'seed-imgpreset-comic',
+      name: 'Comic Book Ink',
+      description: 'Classic bold ink comic book style',
+      promptPrefix: 'bold ink outlines, comic book art style, halftone shading, dynamic composition, vibrant colors',
+      createdAt: 1000000000010,
+    },
+    {
+      id: 'seed-imgpreset-realistic',
+      name: 'Photorealistic',
+      description: 'Highly detailed photorealistic renders',
+      promptPrefix: 'photorealistic, ultra detailed, 8K resolution, cinematic lighting, hyper realistic',
+      createdAt: 1000000000011,
+    },
+    {
+      id: 'seed-imgpreset-anime',
+      name: 'Anime / Manga',
+      description: 'Japanese animation and manga aesthetic',
+      promptPrefix: 'anime style, manga art, cel shading, vibrant colors, expressive characters',
+      createdAt: 1000000000012,
+    },
+    {
+      id: 'seed-imgpreset-watercolor',
+      name: 'Watercolor',
+      description: 'Soft painterly watercolor aesthetic',
+      promptPrefix: 'watercolor painting, soft edges, gentle color washes, artistic, painterly',
+      createdAt: 1000000000013,
+    },
+    {
+      id: 'seed-imgpreset-3d',
+      name: '3D Render',
+      description: 'Modern 3D CGI aesthetic',
+      promptPrefix: '3D render, CGI, volumetric lighting, physically based rendering, high detail, studio quality',
+      createdAt: 1000000000014,
+    },
+  ];
+
   async function seedDefaults() {
     for (const p of SEED_PRESETS) {
       const existing = await get(STORES.presets, p.id);
       if (!existing) await put(STORES.presets, p);
+    }
+    for (const p of SEED_IMAGE_PRESETS) {
+      const existing = await get(STORES.imagePresets, p.id);
+      if (!existing) await put(STORES.imagePresets, p);
     }
   }
 
