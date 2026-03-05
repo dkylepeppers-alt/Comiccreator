@@ -8,6 +8,7 @@ const CharactersPage = (() => {
   // In-editor image list: [{ dataUrl, tag, description, embedding }]
   let editorImages = [];
   let editorPrimaryIndex = 0;
+  let editorName = '';
   // Index of the image slot currently being filled (for file picker)
   let _pendingSlotIdx = -1;
 
@@ -79,6 +80,7 @@ const CharactersPage = (() => {
     }
     editorImages = (char.images || []).map(img => Object.assign({}, img));
     editorPrimaryIndex = char.primaryImageIndex ?? 0;
+    editorName = char.name || '';
 
     return `
       <div class="slide-up">
@@ -145,7 +147,7 @@ const CharactersPage = (() => {
   }
 
   function renderGallerySlots(images, primaryIdx) {
-    const charName = document.getElementById('char-name')?.value.trim() || '';
+    const charName = editorName;
     return images.map((img, i) => {
       // Embedding status badge
       let embBadge = '';
@@ -164,7 +166,7 @@ const CharactersPage = (() => {
       return `
       <div class="char-img-slot" data-idx="${i}">
         <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="CharactersPage.pickImageForSlot(${i})">
-          ${img.dataUrl ? `<img src="${img.dataUrl}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
+          ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
         </div>
         <div class="char-img-meta">
           <div style="display:flex;align-items:center;gap:6px;">
@@ -187,6 +189,9 @@ const CharactersPage = (() => {
   function refreshGallery() {
     const gallery = document.getElementById('char-img-gallery');
     if (!gallery) return;
+    // Sync editorName from DOM (available after initial render)
+    const nameEl = document.getElementById('char-name');
+    if (nameEl) editorName = nameEl.value.trim();
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
     // Update toolbar button visibility
     const toolbar = document.getElementById('char-img-toolbar');

@@ -8,6 +8,7 @@ const WorldsPage = (() => {
   // In-editor image list: [{ dataUrl, tag, description, embedding }]
   let editorImages = [];
   let editorPrimaryIndex = 0;
+  let editorName = '';
   // Index of the image slot currently being filled (for file picker)
   let _pendingSlotIdx = -1;
 
@@ -81,6 +82,7 @@ const WorldsPage = (() => {
     }
     editorImages = (world.images || []).map(img => Object.assign({}, img));
     editorPrimaryIndex = world.primaryImageIndex ?? 0;
+    editorName = world.name || '';
 
     return `
       <div class="slide-up">
@@ -138,7 +140,7 @@ const WorldsPage = (() => {
   }
 
   function renderGallerySlots(images, primaryIdx) {
-    const worldName = document.getElementById('world-name')?.value.trim() || '';
+    const worldName = editorName;
     return images.map((img, i) => {
       // Embedding status badge
       let embBadge = '';
@@ -180,6 +182,9 @@ const WorldsPage = (() => {
   function refreshGallery() {
     const gallery = document.getElementById('world-img-gallery');
     if (!gallery) return;
+    // Sync editorName from DOM (available after initial render)
+    const nameEl = document.getElementById('world-name');
+    if (nameEl) editorName = nameEl.value.trim();
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
     // Update toolbar button visibility
     const toolbar = document.getElementById('world-img-toolbar');

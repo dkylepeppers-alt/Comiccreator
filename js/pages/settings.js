@@ -350,8 +350,18 @@ const SettingsPage = (() => {
         ? API.FALLBACK_TEXT_MODELS.map(id => ({ id, name: id, owned_by: '' }))
         : API.FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
 
-      if (type === 'text') textModels = fallback;
-      else imageModels = fallback;
+      if (type === 'text') {
+        textModels = fallback;
+        // Also update caption models from fallback (all fallback text models assumed vision-capable)
+        captionModels = fallback;
+        const captionCountEl = document.getElementById('caption-model-count');
+        if (captionCountEl) captionCountEl.textContent = captionModels.length;
+        const captionStatusEl = document.getElementById('caption-model-status');
+        if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+        renderModelList('caption', captionModels);
+      } else {
+        imageModels = fallback;
+      }
 
       if (countEl) countEl.textContent = fallback.length;
       renderModelList(type, fallback);
@@ -506,8 +516,11 @@ const SettingsPage = (() => {
   function togglePicker(type) {
     const dropdown = document.getElementById(`${type}-model-dropdown`);
     const isOpen = !dropdown.classList.contains('hidden');
-    // Close the other picker
-    closePicker(type === 'text' ? 'image' : 'text');
+    // Close all other pickers
+    const allTypes = ['text', 'image', 'caption'];
+    for (const t of allTypes) {
+      if (t !== type) closePicker(t);
+    }
     if (isOpen) {
       dropdown.classList.add('hidden');
     } else {
