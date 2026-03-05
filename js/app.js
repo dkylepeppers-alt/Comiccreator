@@ -158,19 +158,21 @@ const App = (() => {
   }
 
   // Toast
-  // options.duration: ms before auto-dismiss (0 = persistent until clicked)
-  // options.onClick: optional click handler; also dismisses the toast on click
+  // options.duration: ms before auto-dismiss (default: 3000; 0 = persistent — click to dismiss)
+  // options.onClick: optional callback fired when the user clicks the toast
   function toast(message, type = 'info', options = {}) {
     const { duration = 3000, onClick = null } = options;
     const container = document.getElementById('toast-container');
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;
     el.textContent = message;
-    if (onClick) {
+    // Persistent toasts (duration === 0) are always click-to-dismiss so they
+    // can never become permanently stuck even if no onClick handler is given.
+    if (duration === 0 || onClick) {
       el.style.cursor = 'pointer';
       el.addEventListener('click', () => {
         el.remove();
-        onClick();
+        if (onClick) onClick();
       });
     }
     container.appendChild(el);
@@ -282,6 +284,7 @@ const App = (() => {
   // Service Worker
   let _swVisibilityListenerAdded = false;
   let _swControllerChangeListenerAdded = false;
+  let _swUpdateToastShown = false;
   function registerSW() {
     if ('serviceWorker' in navigator) {
       // Track whether there was already a controller when the page loaded.
@@ -292,8 +295,12 @@ const App = (() => {
       // Shared helper — show a persistent, tap-to-reload banner when a new
       // version of the SW has taken over.  duration:0 keeps it visible until
       // the user acts; the onClick callback reloads the page to apply the
-      // freshly cached assets.
+      // freshly cached assets.  The flag prevents both the statechange path
+      // and the controllerchange path from each firing for the same update,
+      // which would stack two identical toasts.
       function showUpdateToast() {
+        if (_swUpdateToastShown) return;
+        _swUpdateToastShown = true;
         toast('App updated — tap here to reload', 'info', {
           duration: 0,
           onClick: () => window.location.reload(),
