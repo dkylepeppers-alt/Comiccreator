@@ -417,4 +417,77 @@ describe('API integration', () => {
     const result = await ctx.API.generateEmbedding('test text');
     assert.equal(result, null);
   });
+
+  it('generateImageCaption returns null when no API key is set', async () => {
+    await ctx.DB.setSetting('apiKey', '');
+    const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
+    assert.equal(result, null);
+  });
+
+  it('generateImageCaption returns null (silently) for non-vision models without calling fetch', async () => {
+    // Seed the model cache with a model that explicitly has supports_vision = false
+    await ctx.DB.setSetting('cachedTextModels', [
+      { id: 'no-vision-model', supports_vision: false, supports_tools: false },
+    ]);
+    await ctx.DB.setSetting('cachedTextModelsAt', Date.now());
+    await ctx.DB.setSetting('captionModel', 'no-vision-model');
+    let fetchCalled = false;
+    ctx.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }); };
+    const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
+    assert.equal(result, null, 'should return null without calling fetch');
+    assert.equal(fetchCalled, false, 'should not call fetch for non-vision model');
+  });
+
+  it('generateImageCaption uses captionModel setting when set, falls back to text model', async () => {
+    const calls = [];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, body: JSON.parse(opts.body) });
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'A hero in red armor.' } }] }), { status: 200 });
+    };
+    // With explicit captionModel
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    const r1 = await ctx.API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose' });
+    assert.equal(r1, 'A hero in red armor.');
+    assert.equal(calls[0].body.model, 'gpt-4o');
+    // Without captionModel, falls back to text model from settings
+    await ctx.DB.setSetting('captionModel', '');
+    await ctx.API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man' });
+    assert.equal(calls[1].body.model, 'gpt-4o-mini'); // default from beforeEach
+  });
+
+  it('generateImageCaption sends vision message with compressed image and context', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Neon skyline at dusk.' } }] }), { status: 200 });
+    };
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    const result = await ctx.API.generateImageCaption(
+      'data:image/png;base64,aGVsbG8=',
+      { type: 'world', name: 'Neo-Tokyo', era: '2099', tag: 'night' },
+    );
+    assert.equal(result, 'Neon skyline at dusk.');
+    // Vision message structure
+    const userMsg = requestBody.messages[0];
+    assert.equal(userMsg.role, 'user');
+    assert.ok(Array.isArray(userMsg.content), 'content should be an array for vision');
+    const imagePart = userMsg.content.find(c => c.type === 'image_url');
+    assert.ok(imagePart, 'should include an image_url part');
+    // The image URL should be a compressed JPEG (from compressDataUrl)
+    assert.ok(imagePart.image_url.url.startsWith('data:image/'), 'image url should be a data URL');
+    const textPart = userMsg.content.find(c => c.type === 'text');
+    assert.ok(textPart.text.includes('Neo-Tokyo'), 'context should include world name');
+    assert.ok(textPart.text.includes('2099'), 'context should include era');
+    assert.ok(textPart.text.includes('night'), 'context should include tag');
+    // Model params
+    assert.equal(requestBody.max_tokens, 120);
+    assert.equal(requestBody.temperature, 0.3);
+  });
+
+  it('generateImageCaption returns null on API error', async () => {
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    ctx.fetch = async () => { throw new Error('network down'); };
+    const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', {});
+    assert.equal(result, null);
+  });
 });

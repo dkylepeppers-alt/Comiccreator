@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt } = require('../js/utils');
+const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt, buildImageEmbeddingText } = require('../js/utils');
 
 describe('utils escHtml', () => {
   it('handles nullish and empty', () => {
@@ -148,5 +148,82 @@ describe('utils sanitizeImagePrompt', () => {
     const input = '"Hello there" "How are you?"';
     const result = sanitizeImagePrompt(input);
     assert.equal(result, input);
+  });
+});
+
+describe('utils buildImageEmbeddingText', () => {
+  it('combines tag, name, and description with colon separator', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'action-pose', description: 'Fist raised' }, 'Iron Man'),
+      'action-pose Iron Man: Fist raised',
+    );
+  });
+
+  it('omits default tag but includes name', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'default', description: 'Red cape flowing' }, 'Superman'),
+      'Superman: Red cape flowing',
+    );
+  });
+
+  it('omits establishing tag but includes name for world images', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'establishing', description: 'Skyline at dusk' }, 'Metropolis'),
+      'Metropolis: Skyline at dusk',
+    );
+  });
+
+  it('omits custom tag but includes name', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'custom', description: 'Unique pose' }, 'Hero'),
+      'Hero: Unique pose',
+    );
+  });
+
+  it('uses non-default tag without name', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'front-view', description: 'Full body shot' }, ''),
+      'front-view: Full body shot',
+    );
+  });
+
+  it('returns description only when tag is default and no name', () => {
+    assert.equal(buildImageEmbeddingText({ tag: 'default', description: 'Cape flowing' }, ''), 'Cape flowing');
+  });
+
+  it('returns description only when no tag and no name', () => {
+    assert.equal(buildImageEmbeddingText({ tag: '', description: 'A hero standing tall' }, ''), 'A hero standing tall');
+  });
+
+  it('handles null/undefined img gracefully', () => {
+    assert.equal(buildImageEmbeddingText(null, 'Name'), 'Name');
+    assert.equal(buildImageEmbeddingText(undefined, ''), '');
+  });
+
+  it('includes world image tag like night', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'night', description: 'Neon-lit alley' }, 'Neo-Tokyo'),
+      'night Neo-Tokyo: Neon-lit alley',
+    );
+  });
+
+  it('handles name with no description', () => {
+    assert.equal(buildImageEmbeddingText({ tag: 'close-up', description: '' }, 'Batman'), 'close-up Batman');
+  });
+
+  it('trims whitespace-only contextName and description', () => {
+    // whitespace-only name treated as missing
+    assert.equal(buildImageEmbeddingText({ tag: 'front-view', description: 'Full body shot' }, '   '), 'front-view: Full body shot');
+    // whitespace-only description treated as missing
+    assert.equal(buildImageEmbeddingText({ tag: 'front-view', description: '  ' }, 'Batman'), 'front-view Batman');
+    // both whitespace-only
+    assert.equal(buildImageEmbeddingText({ tag: 'default', description: '  ' }, '   '), '');
+  });
+
+  it('trims leading/trailing whitespace from description and name', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'action-pose', description: '  Fist raised  ' }, '  Iron Man  '),
+      'action-pose Iron Man: Fist raised',
+    );
   });
 });

@@ -101,6 +101,36 @@
     return cleaned;
   }
 
+  /**
+   * Build an enriched text string for generating an image's semantic embedding.
+   * Prepends the image tag and the owning character/world name to the user-supplied
+   * description so the resulting vector is more aligned with panel prompts that
+   * reference names and visual contexts.
+   *
+   * Examples:
+   *   buildImageEmbeddingText({tag:'action-pose', description:'Fist raised'}, 'Iron Man')
+   *     → "action-pose Iron Man: Fist raised"
+   *   buildImageEmbeddingText({tag:'default', description:'Red cape'}, 'Superman')
+   *     → "Superman: Red cape"
+   *   buildImageEmbeddingText({tag:'interior', description:'Dimly lit lab'}, 'Gotham')
+   *     → "interior Gotham: Dimly lit lab"
+   */
+  function buildImageEmbeddingText(img, contextName) {
+    const parts = [];
+    const tag = img?.tag;
+    // Skip tags that carry no meaningful semantic content
+    if (tag && tag !== 'default' && tag !== 'establishing' && tag !== 'custom') {
+      parts.push(tag);
+    }
+    const name = (contextName || '').trim();
+    if (name) parts.push(name);
+    const desc = (img?.description || '').trim();
+    if (parts.length > 0 && desc) {
+      return `${parts.join(' ')}: ${desc}`;
+    }
+    return [...parts, desc].filter(Boolean).join(' ') || desc;
+  }
+
   exports.GENRES = GENRES;
   exports.escHtml = escHtml;
   exports.timeAgo = timeAgo;
@@ -108,4 +138,5 @@
   exports.dedupeByNameLatest = dedupeByNameLatest;
   exports.cosineSimilarity = cosineSimilarity;
   exports.sanitizeImagePrompt = sanitizeImagePrompt;
+  exports.buildImageEmbeddingText = buildImageEmbeddingText;
 })(typeof module !== 'undefined' ? module.exports : this);

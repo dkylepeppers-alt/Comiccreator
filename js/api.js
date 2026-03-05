@@ -553,6 +553,72 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
   ]);
 
   /**
+   * Generate a contextual caption for an uploaded image using a vision-capable model.
+   * The caption is optimised for use as an embedding description that matches comic
+   * panel prompts.  contextHints narrows the prompt to the specific character or world:
+   *   { type: 'character'|'world', name, role, tag, era }
+   * Uses the `captionModel` setting when set, otherwise falls back to the configured
+   * text model.  Returns a trimmed string, or null on failure / missing API key /
+   * non-vision model.
+   */
+  async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
+    const apiKey = await getApiKey();
+    if (!apiKey) return null;
+
+    const model = options.model || await DB.getSetting('captionModel', '') || await getModel();
+
+    // Silently skip models that are known not to support vision to avoid error-log spam.
+    // fetchTextModels is cached (6 h TTL), so this lookup is cheap on subsequent calls.
+    try {
+      const textModels = await fetchTextModels();
+      const modelInfo = textModels.find(m => m.id === model);
+      // Only gate when we have explicit capability data; unknown models are attempted.
+      if (modelInfo && modelInfo.supports_vision === false) return null;
+    } catch { /* ignore cache errors — attempt captioning anyway */ }
+
+    const { type = 'character', name = '', role = '', tag = '', era = '' } = contextHints;
+
+    let contextLine = '';
+    if (type === 'character') {
+      if (name) contextLine = `This reference image is for a character named "${name}"${role ? `, who is a ${role}` : ''}. `;
+      contextLine += `The image is tagged as "${tag || 'default'}".`;
+    } else {
+      if (name) contextLine = `This reference image is for a world/location called "${name}"${era ? ` (${era})` : ''}. `;
+      contextLine += `The image is tagged as "${tag || 'establishing'}".`;
+    }
+
+    // Compress the image before sending to avoid 413 payloads on large camera photos.
+    const compressedUrl = await compressDataUrl(dataUrl, 512, 0.75);
+
+    const messages = [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: compressedUrl } },
+          {
+            type: 'text',
+            text: `${contextLine} Describe what you see in 1-2 concise sentences, focusing on visual details (appearance, pose, outfit, setting, mood) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.`,
+          },
+        ],
+      },
+    ];
+
+    try {
+      const caption = await chatCompletion(messages, {
+        model,
+        maxTokens: 120,
+        temperature: 0.3,
+      });
+      return caption?.trim() || null;
+    } catch (err) {
+      if (typeof App !== 'undefined') {
+        App.logError('generateImageCaption', err, `Caption generation failed for ${type} "${name || 'unknown'}"`);
+      }
+      return null;
+    }
+  }
+
+  /**
    * Generate a text embedding via NanoGPT embeddings API.
    * Reads the embedding model from settings (configurable in Settings page).
    * Only sends `dimensions` for models that support dimension reduction.
@@ -621,6 +687,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     chatCompletionStream,
     generateImage,
     generateEmbedding,
+    generateImageCaption,
     buildSystemPrompt,
     parseComicResponse,
     getApiKey,
