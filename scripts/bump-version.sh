@@ -99,6 +99,53 @@ echo "  Updated: package.json"
 sed_i "s/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* \&middot; PWA/v$NEW \&middot; PWA/" "$INDEX_HTML"
 echo "  Updated: index.html"
 
+# ---------- Verify all files were updated ----------
+VERIFY_FAILED=0
+
+verify_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  if ! grep -q "$pattern" "$file"; then
+    echo "ERROR: $label still does not contain expected version string '$pattern'" >&2
+    VERIFY_FAILED=1
+  fi
+}
+
+verify_not_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  if grep -q "$pattern" "$file"; then
+    echo "ERROR: $label still contains old version string '$pattern'" >&2
+    VERIFY_FAILED=1
+  fi
+}
+
+echo ""
+echo "Verifying updates..."
+
+verify_contains "$VERSION_JSON"  "\"version\": \"$NEW\""                      "version.json"
+verify_contains "$SW_JS"         "comic-creator-v$NEW"                         "sw.js"
+verify_contains "$SETTINGS_JS"   "APP_VERSION = '$NEW'"                        "js/pages/settings.js"
+verify_contains "$PACKAGE_JSON"  "\"version\": \"$NEW\""                       "package.json"
+verify_contains "$INDEX_HTML"    "v$NEW &middot; PWA"                          "index.html"
+
+verify_not_contains "$VERSION_JSON"  "\"version\": \"$CURRENT\""               "version.json"
+verify_not_contains "$SW_JS"         "comic-creator-v$CURRENT"                 "sw.js"
+verify_not_contains "$SETTINGS_JS"   "APP_VERSION = '$CURRENT'"                "js/pages/settings.js"
+verify_not_contains "$PACKAGE_JSON"  "\"version\": \"$CURRENT\""               "package.json"
+verify_not_contains "$INDEX_HTML"    "v$CURRENT &middot; PWA"                  "index.html"
+
+if [ "$VERIFY_FAILED" -ne 0 ]; then
+  echo "" >&2
+  echo "Version bump INCOMPLETE — one or more files were not updated correctly." >&2
+  echo "Fix the above errors manually and try again." >&2
+  exit 1
+fi
+
+echo "  All 5 files verified at version $NEW."
+
 # ---------- Stage the changed files ----------
 git -C "$REPO_ROOT" add \
   "$VERSION_JSON" \
