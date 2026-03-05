@@ -210,4 +210,20 @@ describe('utils buildImageEmbeddingText', () => {
   it('handles name with no description', () => {
     assert.equal(buildImageEmbeddingText({ tag: 'close-up', description: '' }, 'Batman'), 'close-up Batman');
   });
+
+  it('trims whitespace-only contextName and description', () => {
+    // whitespace-only name treated as missing
+    assert.equal(buildImageEmbeddingText({ tag: 'front-view', description: 'Full body shot' }, '   '), 'front-view: Full body shot');
+    // whitespace-only description treated as missing
+    assert.equal(buildImageEmbeddingText({ tag: 'front-view', description: '  ' }, 'Batman'), 'front-view Batman');
+    // both whitespace-only
+    assert.equal(buildImageEmbeddingText({ tag: 'default', description: '  ' }, '   '), '');
+  });
+
+  it('trims leading/trailing whitespace from description and name', () => {
+    assert.equal(
+      buildImageEmbeddingText({ tag: 'action-pose', description: '  Fist raised  ' }, '  Iron Man  '),
+      'action-pose Iron Man: Fist raised',
+    );
+  });
 });

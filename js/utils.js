@@ -122,8 +122,9 @@
     if (tag && tag !== 'default' && tag !== 'establishing' && tag !== 'custom') {
       parts.push(tag);
     }
-    if (contextName) parts.push(contextName);
-    const desc = img?.description || '';
+    const name = (contextName || '').trim();
+    if (name) parts.push(name);
+    const desc = (img?.description || '').trim();
     if (parts.length > 0 && desc) {
       return `${parts.join(' ')}: ${desc}`;
     }

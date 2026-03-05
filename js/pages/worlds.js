@@ -214,7 +214,7 @@ const WorldsPage = (() => {
 
     // Auto-caption: if the slot has no description, generate one via vision model
     const img = editorImages[idx];
-    if (img && !img.description) {
+    if (img && !img.description?.trim()) {
       const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
       if (descInput) {
         descInput.disabled = true;
@@ -229,7 +229,7 @@ const WorldsPage = (() => {
         tag: img.tag,
       }).catch(() => null);
       // Only apply if this slot wasn't replaced while we were waiting
-      if (editorImages[idx] === img && !img.description && caption) {
+      if (editorImages[idx] === img && !img.description?.trim() && caption) {
         img.description = caption;
         img.embedding = null;
         img.embeddingText = null;
@@ -289,7 +289,7 @@ const WorldsPage = (() => {
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
     const needsEmbedding = validImages.filter(img => {
-      if (!img.description) return false;
+      if (!img.description?.trim()) return false;
       const enriched = buildImageEmbeddingText(img, name);
       // Re-embed if text changed (new description, tag change, name change, or first-time)
       return img.embeddingText !== enriched || !img.embedding;

@@ -558,13 +558,24 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
    * panel prompts.  contextHints narrows the prompt to the specific character or world:
    *   { type: 'character'|'world', name, role, tag, era }
    * Uses the `captionModel` setting when set, otherwise falls back to the configured
-   * text model.  Returns a trimmed string, or null on failure / missing API key.
+   * text model.  Returns a trimmed string, or null on failure / missing API key /
+   * non-vision model.
    */
   async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
     const apiKey = await getApiKey();
     if (!apiKey) return null;
 
     const model = options.model || await DB.getSetting('captionModel', '') || await getModel();
+
+    // Silently skip models that are known not to support vision to avoid error-log spam.
+    // fetchTextModels is cached (6 h TTL), so this lookup is cheap on subsequent calls.
+    try {
+      const textModels = await fetchTextModels();
+      const modelInfo = textModels.find(m => m.id === model);
+      // Only gate when we have explicit capability data; unknown models are attempted.
+      if (modelInfo && modelInfo.supports_vision === false) return null;
+    } catch { /* ignore cache errors — attempt captioning anyway */ }
+
     const { type = 'character', name = '', role = '', tag = '', era = '' } = contextHints;
 
     let contextLine = '';
@@ -576,11 +587,14 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       contextLine += `The image is tagged as "${tag || 'establishing'}".`;
     }
 
+    // Compress the image before sending to avoid 413 payloads on large camera photos.
+    const compressedUrl = await compressDataUrl(dataUrl, 512, 0.75);
+
     const messages = [
       {
         role: 'user',
         content: [
-          { type: 'image_url', image_url: { url: dataUrl } },
+          { type: 'image_url', image_url: { url: compressedUrl } },
           {
             type: 'text',
             text: `${contextLine} Describe what you see in 1-2 concise sentences, focusing on visual details (appearance, pose, outfit, setting, mood) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.`,
