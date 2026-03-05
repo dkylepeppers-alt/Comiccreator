@@ -1,7 +1,7 @@
 /**
  * Service Worker - Offline caching for the Comic Creator PWA
  */
-const CACHE_NAME = 'comic-creator-v1.6.9';
+const CACHE_NAME = 'comic-creator-v1.6.10';
 // Base path derived from the service worker's registered scope so the app works
 // under any subpath (e.g. "" when served from root, "/Comiccreator" on GitHub Pages).
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   '/js/pages/create.js',
   '/js/pages/library.js',
   '/js/pages/presets.js',
+  '/js/pages/image-presets.js',
   '/js/pages/settings.js',
   '/version.json',
   '/manifest.json',

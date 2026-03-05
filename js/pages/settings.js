@@ -3,7 +3,7 @@
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 const SettingsPage = (() => {
-  const APP_VERSION = '1.6.9';
+  const APP_VERSION = '1.6.10';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
   // In-memory model lists populated on render
@@ -34,7 +34,6 @@ const SettingsPage = (() => {
     const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
-    const imagePromptPrefix = await DB.getSetting('imagePromptPrefix', '');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
     return `
@@ -177,9 +176,7 @@ const SettingsPage = (() => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Image Prompt Prefix</label>
-            <input type="text" id="set-imgprefix" value="${escHtml(imagePromptPrefix)}" placeholder="e.g. detailed 2d illustration, ultra detailed Pixar style">
-            <div class="form-hint">Text prepended to every image prompt for consistent art style</div>
+            <div class="form-hint">Image style presets (prompt prefixes) are managed on the <a href="#" onclick="event.preventDefault();App.navigate('image-presets')">Image Style Presets</a> page. Select a preset when creating a comic.</div>
           </div>
         </div>
 
@@ -812,7 +809,6 @@ const SettingsPage = (() => {
       return App.toast('Image size must be in WIDTHxHEIGHT format (e.g. 1024x1024)', 'error');
     }
     await DB.setSetting('imageSize', imageSizeVal);
-    await DB.setSetting('imagePromptPrefix', document.getElementById('set-imgprefix').value.trim());
     await DB.setSetting('temperature', parseFloat(document.getElementById('set-temp').value));
     await DB.setSetting('topP', parseFloat(document.getElementById('set-topp').value));
     await DB.setSetting('maxTokens', parseInt(document.getElementById('set-tokens').value));
@@ -847,6 +843,7 @@ const SettingsPage = (() => {
         return copy;
       }),
       presets: await DB.getAll(DB.STORES.presets),
+      imagePresets: await DB.getAll(DB.STORES.imagePresets),
       exportedAt: new Date().toISOString(),
     };
 
@@ -875,12 +872,14 @@ const SettingsPage = (() => {
       if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
       if (data.pages && !validArray(data.pages)) throw new Error('Invalid pages data');
       if (data.presets && !validArray(data.presets)) throw new Error('Invalid presets data');
+      if (data.imagePresets && !validArray(data.imagePresets)) throw new Error('Invalid imagePresets data');
 
       if (data.characters) for (const c of data.characters) await DB.put(DB.STORES.characters, c);
       if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, w);
       if (data.comics) for (const c of data.comics) await DB.put(DB.STORES.comics, c);
       if (data.pages) for (const p of data.pages) await DB.put(DB.STORES.pages, p);
       if (data.presets) for (const p of data.presets) await DB.put(DB.STORES.presets, p);
+      if (data.imagePresets) for (const p of data.imagePresets) await DB.put(DB.STORES.imagePresets, p);
 
       App.toast('Data imported!', 'success');
       App.refreshPage();
@@ -902,7 +901,7 @@ const SettingsPage = (() => {
   }
 
   async function confirmClear() {
-    const stores = [DB.STORES.characters, DB.STORES.worlds, DB.STORES.comics, DB.STORES.pages, DB.STORES.presets];
+    const stores = [DB.STORES.characters, DB.STORES.worlds, DB.STORES.comics, DB.STORES.pages, DB.STORES.presets, DB.STORES.imagePresets];
     for (const store of stores) {
       const items = await DB.getAll(store);
       for (const item of items) await DB.del(store, item.id);

@@ -13,7 +13,7 @@ const CharactersPage = (() => {
   let _pendingSlotIdx = -1;
 
   const IMAGE_TAGS = ['default', 'front-view', 'side-view', 'back-view', 'close-up', 'action-pose', 'alternate-outfit', 'expression', 'custom'];
-  const MAX_IMAGES = 6;
+  const MAX_IMAGES = 12;
 
   async function render(param) {
     if (param === 'new') {
