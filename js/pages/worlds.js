@@ -98,7 +98,10 @@ const WorldsPage = (() => {
               ${renderGallerySlots(editorImages, editorPrimaryIndex)}
             </div>
             <input type="file" id="world-img-input" accept="image/*" class="hidden" onchange="WorldsPage.handleImage(event)">
-            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
+            <div class="char-img-toolbar" id="world-img-toolbar">
+              ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
+              <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+            </div>
           </div>
 
           <div class="form-group">
@@ -135,15 +138,34 @@ const WorldsPage = (() => {
   }
 
   function renderGallerySlots(images, primaryIdx) {
-    return images.map((img, i) => `
+    const worldName = document.getElementById('world-name')?.value.trim() || '';
+    return images.map((img, i) => {
+      // Embedding status badge
+      let embBadge = '';
+      if (img.dataUrl) {
+        if (img.embedding && img.embeddingText) {
+          const enriched = (typeof buildImageEmbeddingText === 'function') ? buildImageEmbeddingText(img, worldName) : '';
+          if (enriched && img.embeddingText === enriched) {
+            embBadge = '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
+          } else {
+            embBadge = '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
+          }
+        } else if (img.description?.trim()) {
+          embBadge = '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
+        }
+      }
+      return `
       <div class="char-img-slot" data-idx="${i}">
         <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="WorldsPage.pickImageForSlot(${i})">
           ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
         </div>
         <div class="char-img-meta">
-          <select class="char-img-tag" data-idx="${i}" onchange="WorldsPage.updateTag(${i},this.value)">
-            ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
-          </select>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <select class="char-img-tag" data-idx="${i}" onchange="WorldsPage.updateTag(${i},this.value)" style="flex:1;">
+              ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+            ${embBadge}
+          </div>
           <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Neon-lit alley at night" oninput="WorldsPage.updateDesc(${i},this.value)">
           <div class="char-img-actions">
             <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="WorldsPage.setPrimary(${i})">&#11088;</button>
@@ -152,22 +174,25 @@ const WorldsPage = (() => {
           </div>
         </div>
       </div>
-    `).join('');
+    `;}).join('');
   }
 
   function refreshGallery() {
     const gallery = document.getElementById('world-img-gallery');
     if (!gallery) return;
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
-    let addBtn = gallery.nextElementSibling;
-    let steps = 0;
-    // Walk past the hidden file input to find the "+ Add Image" button (≤5 siblings)
-    while (addBtn && addBtn.tagName !== 'BUTTON' && steps < 5) {
-      addBtn = addBtn.nextElementSibling;
-      steps++;
-    }
-    if (addBtn && addBtn.tagName === 'BUTTON') {
-      addBtn.style.display = editorImages.length < MAX_IMAGES ? '' : 'none';
+    // Update toolbar button visibility
+    const toolbar = document.getElementById('world-img-toolbar');
+    if (toolbar) {
+      const hasImages = editorImages.some(img => img.dataUrl);
+      let btns = '';
+      if (editorImages.length < MAX_IMAGES) {
+        btns += '<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>';
+      }
+      if (hasImages) {
+        btns += '<button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()">&#128221; Caption All</button>';
+      }
+      toolbar.innerHTML = btns;
     }
   }
 
@@ -202,7 +227,16 @@ const WorldsPage = (() => {
 
   async function handleImage(event) {
     const file = event.target.files[0];
-    if (!file) return;
+    if (!file) {
+      // File picker was cancelled — remove the empty slot created by addImageSlot()
+      if (_pendingSlotIdx >= 0 && _pendingSlotIdx < editorImages.length && !editorImages[_pendingSlotIdx].dataUrl) {
+        editorImages.splice(_pendingSlotIdx, 1);
+        if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
+        refreshGallery();
+      }
+      _pendingSlotIdx = -1;
+      return;
+    }
     const dataUrl = await DB.fileToDataURL(file);
     const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
     if (idx >= editorImages.length) {
@@ -275,6 +309,51 @@ const WorldsPage = (() => {
       descInput.placeholder = 'e.g. Neon-lit alley at night';
     }
     if (captionBtn) captionBtn.disabled = false;
+  }
+
+  async function recaptionAll() {
+    const imagesWithData = editorImages.filter(img => img.dataUrl);
+    if (!imagesWithData.length) return App.toast('No images to caption', 'error');
+
+    const captionAllBtn = document.getElementById('world-caption-all-btn');
+    if (captionAllBtn) { captionAllBtn.disabled = true; captionAllBtn.textContent = 'Captioning\u2026'; }
+
+    const name = document.getElementById('world-name')?.value.trim() || '';
+    const era = document.getElementById('world-era')?.value.trim() || '';
+
+    let done = 0;
+    let failed = 0;
+    for (let i = 0; i < editorImages.length; i++) {
+      const img = editorImages[i];
+      if (!img.dataUrl) continue;
+      done++;
+      if (captionAllBtn) captionAllBtn.textContent = `Captioning ${done}/${imagesWithData.length}\u2026`;
+
+      const descInput = document.querySelector(`.char-img-desc[data-idx="${i}"]`);
+      if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+
+      const caption = await API.generateImageCaption(img.dataUrl, {
+        type: 'world', name, era, tag: img.tag,
+      }).catch(() => null);
+
+      if (caption && editorImages[i] === img) {
+        img.description = caption;
+        img.embedding = null;
+        img.embeddingText = null;
+        if (descInput) descInput.value = caption;
+      } else {
+        failed++;
+      }
+      if (descInput) { descInput.disabled = false; descInput.placeholder = 'e.g. Neon-lit alley at night'; }
+    }
+
+    if (captionAllBtn) { captionAllBtn.disabled = false; captionAllBtn.textContent = '\u{1F4DD} Caption All'; }
+    if (failed > 0) {
+      App.toast(`Captioned ${done - failed}/${done} images (${failed} failed)`, 'info');
+    } else {
+      App.toast(`Captioned ${done} image(s)`, 'success');
+    }
+    refreshGallery();
   }
 
   function updateTag(idx, value) {
@@ -404,7 +483,7 @@ const WorldsPage = (() => {
   return {
     render, newWorld, editWorld, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
-    updateTag, updateDesc, setPrimary, removeImage, recaptionImage,
+    updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
     saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();

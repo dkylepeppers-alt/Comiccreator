@@ -96,7 +96,10 @@ const CharactersPage = (() => {
               ${renderGallerySlots(editorImages, editorPrimaryIndex)}
             </div>
             <input type="file" id="char-img-input" accept="image/*" class="hidden" onchange="CharactersPage.handleImage(event)">
-            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="CharactersPage.addImageSlot()">+ Add Image</button>` : ''}
+            <div class="char-img-toolbar" id="char-img-toolbar">
+              ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>` : ''}
+              <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+            </div>
           </div>
 
           <div class="form-group">
@@ -142,15 +145,34 @@ const CharactersPage = (() => {
   }
 
   function renderGallerySlots(images, primaryIdx) {
-    return images.map((img, i) => `
+    const charName = document.getElementById('char-name')?.value.trim() || '';
+    return images.map((img, i) => {
+      // Embedding status badge
+      let embBadge = '';
+      if (img.dataUrl) {
+        if (img.embedding && img.embeddingText) {
+          const enriched = (typeof buildImageEmbeddingText === 'function') ? buildImageEmbeddingText(img, charName) : '';
+          if (enriched && img.embeddingText === enriched) {
+            embBadge = '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
+          } else {
+            embBadge = '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
+          }
+        } else if (img.description?.trim()) {
+          embBadge = '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
+        }
+      }
+      return `
       <div class="char-img-slot" data-idx="${i}">
         <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="CharactersPage.pickImageForSlot(${i})">
           ${img.dataUrl ? `<img src="${img.dataUrl}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
         </div>
         <div class="char-img-meta">
-          <select class="char-img-tag" data-idx="${i}" onchange="CharactersPage.updateTag(${i},this.value)">
-            ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
-          </select>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <select class="char-img-tag" data-idx="${i}" onchange="CharactersPage.updateTag(${i},this.value)" style="flex:1;">
+              ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+            ${embBadge}
+          </div>
           <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Battle armor with sword drawn" oninput="CharactersPage.updateDesc(${i},this.value)">
           <div class="char-img-actions">
             <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="CharactersPage.setPrimary(${i})">&#11088;</button>
@@ -159,22 +181,26 @@ const CharactersPage = (() => {
           </div>
         </div>
       </div>
-    `).join('');
+    `;}).join('');
   }
 
   function refreshGallery() {
     const gallery = document.getElementById('char-img-gallery');
     if (!gallery) return;
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
-    // Update "Add Image" button visibility (walk past hidden file input)
-    let addBtn = gallery.nextElementSibling;
-    let steps = 0;
-    while (addBtn && addBtn.tagName !== 'BUTTON' && steps < 5) {
-      addBtn = addBtn.nextElementSibling;
-      steps++;
-    }
-    if (addBtn && addBtn.tagName === 'BUTTON') {
-      addBtn.style.display = editorImages.length < MAX_IMAGES ? '' : 'none';
+    // Update toolbar button visibility
+    const toolbar = document.getElementById('char-img-toolbar');
+    if (toolbar) {
+      const hasImages = editorImages.some(img => img.dataUrl);
+      // Rebuild toolbar contents to reflect current state
+      let btns = '';
+      if (editorImages.length < MAX_IMAGES) {
+        btns += '<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>';
+      }
+      if (hasImages) {
+        btns += '<button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()">&#128221; Caption All</button>';
+      }
+      toolbar.innerHTML = btns;
     }
   }
 
@@ -210,7 +236,16 @@ const CharactersPage = (() => {
 
   async function handleImage(event) {
     const file = event.target.files[0];
-    if (!file) return;
+    if (!file) {
+      // File picker was cancelled — remove the empty slot created by addImageSlot()
+      if (_pendingSlotIdx >= 0 && _pendingSlotIdx < editorImages.length && !editorImages[_pendingSlotIdx].dataUrl) {
+        editorImages.splice(_pendingSlotIdx, 1);
+        if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
+        refreshGallery();
+      }
+      _pendingSlotIdx = -1;
+      return;
+    }
     const dataUrl = await DB.fileToDataURL(file);
     const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
     if (idx >= editorImages.length) {
@@ -288,6 +323,52 @@ const CharactersPage = (() => {
       descInput.placeholder = 'e.g. Battle armor with sword drawn';
     }
     if (captionBtn) captionBtn.disabled = false;
+  }
+
+  async function recaptionAll() {
+    const imagesWithData = editorImages.filter(img => img.dataUrl);
+    if (!imagesWithData.length) return App.toast('No images to caption', 'error');
+
+    const captionAllBtn = document.getElementById('char-caption-all-btn');
+    if (captionAllBtn) { captionAllBtn.disabled = true; captionAllBtn.textContent = 'Captioning\u2026'; }
+
+    const name = document.getElementById('char-name')?.value.trim() || '';
+    const role = document.getElementById('char-role')?.value || '';
+    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
+
+    let done = 0;
+    let failed = 0;
+    for (let i = 0; i < editorImages.length; i++) {
+      const img = editorImages[i];
+      if (!img.dataUrl) continue;
+      done++;
+      if (captionAllBtn) captionAllBtn.textContent = `Captioning ${done}/${imagesWithData.length}\u2026`;
+
+      const descInput = document.querySelector(`.char-img-desc[data-idx="${i}"]`);
+      if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+
+      const caption = await API.generateImageCaption(img.dataUrl, {
+        type: 'character', name, role, tag: img.tag, appearance,
+      }).catch(() => null);
+
+      if (caption && editorImages[i] === img) {
+        img.description = caption;
+        img.embedding = null;
+        img.embeddingText = null;
+        if (descInput) descInput.value = caption;
+      } else {
+        failed++;
+      }
+      if (descInput) { descInput.disabled = false; descInput.placeholder = 'e.g. Battle armor with sword drawn'; }
+    }
+
+    if (captionAllBtn) { captionAllBtn.disabled = false; captionAllBtn.textContent = '\u{1F4DD} Caption All'; }
+    if (failed > 0) {
+      App.toast(`Captioned ${done - failed}/${done} images (${failed} failed)`, 'info');
+    } else {
+      App.toast(`Captioned ${done} image(s)`, 'success');
+    }
+    refreshGallery();
   }
 
   function updateTag(idx, value) {
@@ -416,7 +497,7 @@ const CharactersPage = (() => {
     render,
     newCharacter, editCharacter, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
-    updateTag, updateDesc, setPrimary, removeImage, recaptionImage,
+    updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
     saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
   };
 })();
