@@ -42,4 +42,4 @@ jobs:
       - name: Commit and push version bump
         run: |
           git diff --staged --quiet || git commit -m "chore: bump version to v${{ steps.version.outputs.version }}"
-          git push
+          git push origin "HEAD:${{ github.ref_name }}"
