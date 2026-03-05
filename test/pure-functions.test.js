@@ -34,7 +34,30 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-// parseComicResponse — extracted from api.js
+// repairTruncatedJson + parseComicResponse — extracted from api.js
+function repairTruncatedJson(str) {
+  let s = str.trimEnd();
+  const stack = [];
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{') stack.push('}');
+    else if (c === '[') stack.push(']');
+    else if (c === '}' || c === ']') stack.pop();
+  }
+
+  if (inString) s += '"';
+  s = s.replace(/,\s*$/, '');
+  while (stack.length > 0) s += stack.pop();
+  return s;
+}
+
 function parseComicResponse(text) {
   let jsonStr = text.trim();
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -46,25 +69,31 @@ function parseComicResponse(text) {
   if (firstBrace !== -1 && lastBrace !== -1) {
     jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   }
+
+  const buildResult = parsed => ({
+    title: parsed.title || 'Untitled Page',
+    panels: (parsed.panels || []).map(p => ({
+      narration: p.narration || '',
+      imagePrompt: p.imagePrompt || p.image_prompt || '',
+      dialogue: (p.dialogue || []).map(d => ({
+        speaker: d.speaker || 'Unknown',
+        text: d.text || '',
+      })),
+    })),
+    choices: (parsed.choices || []).map(c => ({
+      text: c.text || c.description || '',
+      summary: c.summary || '',
+    })),
+  });
+
   try {
-    const parsed = JSON.parse(jsonStr);
-    return {
-      title: parsed.title || 'Untitled Page',
-      panels: (parsed.panels || []).map(p => ({
-        narration: p.narration || '',
-        imagePrompt: p.imagePrompt || p.image_prompt || '',
-        dialogue: (p.dialogue || []).map(d => ({
-          speaker: d.speaker || 'Unknown',
-          text: d.text || '',
-        })),
-      })),
-      choices: (parsed.choices || []).map(c => ({
-        text: c.text || c.description || '',
-        summary: c.summary || '',
-      })),
-    };
+    return buildResult(JSON.parse(jsonStr));
   } catch (e) {
-    return null;
+    try {
+      return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
+    } catch (_e2) {
+      return null;
+    }
   }
 }
 
@@ -212,6 +241,36 @@ describe('parseComicResponse', () => {
     const result = parseComicResponse(input);
     assert.ok(result);
     assert.deepEqual(result.panels[0].dialogue, []);
+  });
+
+  it('should recover from truncation after a complete panel object (trailing comma)', () => {
+    // Simulates LLM output cut off after a completed panel but before the array closes
+    const truncated =
+      '{"title":"Page 1","panels":[{"narration":"Scene one.","imagePrompt":"A city","dialogue":[]},';
+    const result = parseComicResponse(truncated);
+    assert.ok(result, 'should recover truncated JSON');
+    assert.equal(result.title, 'Page 1');
+    assert.equal(result.panels.length, 1);
+    assert.equal(result.panels[0].narration, 'Scene one.');
+  });
+
+  it('should recover from truncation mid-string inside a panel', () => {
+    // Simulates the exact error from the issue: cut off mid narration string
+    const truncated =
+      '{"title":"Anthony gets Fester","panels":[{"narration":"As Fester waddles off to the bathroom';
+    const result = parseComicResponse(truncated);
+    assert.ok(result, 'should recover truncated JSON mid-string');
+    assert.equal(result.title, 'Anthony gets Fester');
+    assert.equal(result.panels.length, 1);
+    assert.ok(result.panels[0].narration.startsWith('As Fester waddles off'));
+  });
+
+  it('should recover from truncation with missing outer closing brace', () => {
+    // Outer object is never closed
+    const truncated = '{"title":"Test","panels":[],"choices":[]';
+    const result = parseComicResponse(truncated);
+    assert.ok(result, 'should recover missing outer brace');
+    assert.equal(result.title, 'Test');
   });
 });
 
