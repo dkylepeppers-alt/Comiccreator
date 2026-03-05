@@ -652,7 +652,8 @@ const CreatePage = (() => {
         const imagePresetData = state.selectedImagePreset
           ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
           : null;
-        const imagePromptPrefix = imagePresetData?.promptPrefix || '';
+        // Use preset promptPrefix when available; fall back to legacy imagePromptPrefix setting for existing installs
+        const imagePromptPrefix = imagePresetData?.promptPrefix || await DB.getSetting('imagePromptPrefix', '');
         const charRefMode = await DB.getSetting('charRefMode', 'auto');
         const maxRefImages = await DB.getSetting('maxRefImages', 4);
 

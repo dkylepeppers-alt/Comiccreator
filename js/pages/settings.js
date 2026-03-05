@@ -843,6 +843,7 @@ const SettingsPage = (() => {
         return copy;
       }),
       presets: await DB.getAll(DB.STORES.presets),
+      imagePresets: await DB.getAll(DB.STORES.imagePresets),
       exportedAt: new Date().toISOString(),
     };
 
@@ -871,12 +872,14 @@ const SettingsPage = (() => {
       if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
       if (data.pages && !validArray(data.pages)) throw new Error('Invalid pages data');
       if (data.presets && !validArray(data.presets)) throw new Error('Invalid presets data');
+      if (data.imagePresets && !validArray(data.imagePresets)) throw new Error('Invalid imagePresets data');
 
       if (data.characters) for (const c of data.characters) await DB.put(DB.STORES.characters, c);
       if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, w);
       if (data.comics) for (const c of data.comics) await DB.put(DB.STORES.comics, c);
       if (data.pages) for (const p of data.pages) await DB.put(DB.STORES.pages, p);
       if (data.presets) for (const p of data.presets) await DB.put(DB.STORES.presets, p);
+      if (data.imagePresets) for (const p of data.imagePresets) await DB.put(DB.STORES.imagePresets, p);
 
       App.toast('Data imported!', 'success');
       App.refreshPage();
@@ -898,7 +901,7 @@ const SettingsPage = (() => {
   }
 
   async function confirmClear() {
-    const stores = [DB.STORES.characters, DB.STORES.worlds, DB.STORES.comics, DB.STORES.pages, DB.STORES.presets];
+    const stores = [DB.STORES.characters, DB.STORES.worlds, DB.STORES.comics, DB.STORES.pages, DB.STORES.presets, DB.STORES.imagePresets];
     for (const store of stores) {
       const items = await DB.getAll(store);
       for (const item of items) await DB.del(store, item.id);
