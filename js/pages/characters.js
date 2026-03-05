@@ -154,6 +154,7 @@ const CharactersPage = (() => {
           <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Battle armor with sword drawn" oninput="CharactersPage.updateDesc(${i},this.value)">
           <div class="char-img-actions">
             <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="CharactersPage.setPrimary(${i})">&#11088;</button>
+            ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="CharactersPage.recaptionImage(${i})">&#128221;</button>` : ''}
             <button class="char-img-delete" title="Remove" onclick="CharactersPage.removeImage(${i})">&#x2715;</button>
           </div>
         </div>
@@ -231,11 +232,13 @@ const CharactersPage = (() => {
       }
       const name = document.getElementById('char-name')?.value.trim() || '';
       const role = document.getElementById('char-role')?.value || '';
+      const appearance = document.getElementById('char-appearance')?.value.trim() || '';
       const caption = await API.generateImageCaption(dataUrl, {
         type: 'character',
         name,
         role,
         tag: img.tag,
+        appearance,
       }).catch(() => null);
       // Only apply if this slot wasn't replaced while we were waiting
       if (editorImages[idx] === img && !img.description?.trim() && caption) {
@@ -249,6 +252,42 @@ const CharactersPage = (() => {
         if (img.description) descInput.value = img.description;
       }
     }
+  }
+
+  async function recaptionImage(idx) {
+    const img = editorImages[idx];
+    if (!img || !img.dataUrl) return App.toast('No image to caption', 'error');
+
+    const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
+    const captionBtn = document.querySelector(`.char-img-caption[onclick*="recaptionImage(${idx})"]`);
+    if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+    if (captionBtn) captionBtn.disabled = true;
+
+    const name = document.getElementById('char-name')?.value.trim() || '';
+    const role = document.getElementById('char-role')?.value || '';
+    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
+    const caption = await API.generateImageCaption(img.dataUrl, {
+      type: 'character',
+      name,
+      role,
+      tag: img.tag,
+      appearance,
+    }).catch(() => null);
+
+    if (caption) {
+      img.description = caption;
+      img.embedding = null;
+      img.embeddingText = null;
+      if (descInput) descInput.value = caption;
+    } else {
+      App.toast('Caption generation failed or is unsupported by this model', 'error');
+    }
+
+    if (descInput) {
+      descInput.disabled = false;
+      descInput.placeholder = 'e.g. Battle armor with sword drawn';
+    }
+    if (captionBtn) captionBtn.disabled = false;
   }
 
   function updateTag(idx, value) {
@@ -377,7 +416,7 @@ const CharactersPage = (() => {
     render,
     newCharacter, editCharacter, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
-    updateTag, updateDesc, setPrimary, removeImage,
+    updateTag, updateDesc, setPrimary, removeImage, recaptionImage,
     saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
   };
 })();

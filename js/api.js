@@ -576,15 +576,25 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
       if (modelInfo && modelInfo.supports_vision === false) return null;
     } catch { /* ignore cache errors — attempt captioning anyway */ }
 
-    const { type = 'character', name = '', role = '', tag = '', era = '' } = contextHints;
+    const { type = 'character', name = '', role = '', tag = '', era = '', appearance = '' } = contextHints;
 
+    // Build targeted context and instruction lines for the vision prompt
     let contextLine = '';
+    let instructionLine = '';
     if (type === 'character') {
-      if (name) contextLine = `This reference image is for a character named "${name}"${role ? `, who is a ${role}` : ''}. `;
-      contextLine += `The image is tagged as "${tag || 'default'}".`;
+      contextLine = name
+        ? `This is a reference image for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} The image is tagged "${tag || 'default'}".`
+        : `This is a reference image for a comic book character. The image is tagged "${tag || 'default'}".`;
+      instructionLine = name
+        ? `Write 1-2 sentences describing what you see. Begin with "${name}" as the subject (e.g. "${name} wears…" or "${name} stands…"). Focus on visual details — outfit, pose, expression, notable features — that would help identify this character in a comic panel. Reply with only the description, no preamble.`
+        : 'Write 1-2 sentences describing visual details (outfit, pose, expression, notable features) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.';
     } else {
-      if (name) contextLine = `This reference image is for a world/location called "${name}"${era ? ` (${era})` : ''}. `;
-      contextLine += `The image is tagged as "${tag || 'establishing'}".`;
+      contextLine = name
+        ? `This is a reference image for a comic book location called "${name}"${era ? ` (${era})` : ''}. The image is tagged "${tag || 'establishing'}".`
+        : `This is a reference image for a comic book location. The image is tagged "${tag || 'establishing'}".`;
+      instructionLine = name
+        ? `Write 1-2 sentences describing what you see. Begin with "${name}" as the subject (e.g. "${name} features…" or "${name} shows…"). Focus on visual details — architecture, lighting, atmosphere, scale — that would help identify this location in a comic panel. Reply with only the description, no preamble.`
+        : 'Write 1-2 sentences describing visual details (architecture, lighting, atmosphere, scale) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.';
     }
 
     // Compress the image before sending to avoid 413 payloads on large camera photos.
@@ -592,12 +602,16 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
     const messages = [
       {
+        role: 'system',
+        content: 'You are a visual description assistant for a comic book creator. Describe reference images concisely to help match them to comic panel art prompts.',
+      },
+      {
         role: 'user',
         content: [
           { type: 'image_url', image_url: { url: compressedUrl } },
           {
             type: 'text',
-            text: `${contextLine} Describe what you see in 1-2 concise sentences, focusing on visual details (appearance, pose, outfit, setting, mood) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.`,
+            text: `${contextLine} ${instructionLine}`,
           },
         ],
       },

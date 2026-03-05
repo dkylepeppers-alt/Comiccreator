@@ -467,8 +467,12 @@ describe('API integration', () => {
       { type: 'world', name: 'Neo-Tokyo', era: '2099', tag: 'night' },
     );
     assert.equal(result, 'Neon skyline at dusk.');
-    // Vision message structure
-    const userMsg = requestBody.messages[0];
+    // System message is first to frame the comic context
+    const sysMsg = requestBody.messages[0];
+    assert.equal(sysMsg.role, 'system', 'first message should be a system message');
+    assert.ok(sysMsg.content.includes('comic book'), 'system message should mention comic book context');
+    // Vision user message is second
+    const userMsg = requestBody.messages[1];
     assert.equal(userMsg.role, 'user');
     assert.ok(Array.isArray(userMsg.content), 'content should be an array for vision');
     const imagePart = userMsg.content.find(c => c.type === 'image_url');
@@ -482,6 +486,25 @@ describe('API integration', () => {
     // Model params
     assert.equal(requestBody.max_tokens, 120);
     assert.equal(requestBody.temperature, 0.3);
+  });
+
+  it('generateImageCaption anchors description to character name when provided', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Iron Man stands in red and gold armor.' } }] }), { status: 200 });
+    };
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    await ctx.API.generateImageCaption(
+      'data:image/png;base64,aGVsbG8=',
+      { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose', appearance: 'red and gold armor' },
+    );
+    const userMsg = requestBody.messages[1];
+    const textPart = userMsg.content.find(c => c.type === 'text');
+    // Prompt must mention character name and request name-anchored description
+    assert.ok(textPart.text.includes('Iron Man'), 'prompt should include character name');
+    assert.ok(textPart.text.includes('red and gold armor'), 'prompt should include appearance hint');
+    assert.ok(textPart.text.includes('action-pose'), 'prompt should include tag');
   });
 
   it('generateImageCaption returns null on API error', async () => {

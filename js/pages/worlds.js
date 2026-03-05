@@ -147,6 +147,7 @@ const WorldsPage = (() => {
           <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Neon-lit alley at night" oninput="WorldsPage.updateDesc(${i},this.value)">
           <div class="char-img-actions">
             <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="WorldsPage.setPrimary(${i})">&#11088;</button>
+            ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="WorldsPage.recaptionImage(${i})">&#128221;</button>` : ''}
             <button class="char-img-delete" title="Remove" onclick="WorldsPage.removeImage(${i})">&#x2715;</button>
           </div>
         </div>
@@ -240,6 +241,40 @@ const WorldsPage = (() => {
         if (img.description) descInput.value = img.description;
       }
     }
+  }
+
+  async function recaptionImage(idx) {
+    const img = editorImages[idx];
+    if (!img || !img.dataUrl) return App.toast('No image to caption', 'error');
+
+    const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
+    const captionBtn = document.querySelector(`.char-img-caption[onclick*="recaptionImage(${idx})"]`);
+    if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+    if (captionBtn) captionBtn.disabled = true;
+
+    const name = document.getElementById('world-name')?.value.trim() || '';
+    const era = document.getElementById('world-era')?.value.trim() || '';
+    const caption = await API.generateImageCaption(img.dataUrl, {
+      type: 'world',
+      name,
+      era,
+      tag: img.tag,
+    }).catch(() => null);
+
+    if (caption) {
+      img.description = caption;
+      img.embedding = null;
+      img.embeddingText = null;
+      if (descInput) descInput.value = caption;
+    } else {
+      App.toast('Caption generation failed or is unsupported by this model', 'error');
+    }
+
+    if (descInput) {
+      descInput.disabled = false;
+      descInput.placeholder = 'e.g. Neon-lit alley at night';
+    }
+    if (captionBtn) captionBtn.disabled = false;
   }
 
   function updateTag(idx, value) {
@@ -369,7 +404,7 @@ const WorldsPage = (() => {
   return {
     render, newWorld, editWorld, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
-    updateTag, updateDesc, setPrimary, removeImage,
+    updateTag, updateDesc, setPrimary, removeImage, recaptionImage,
     saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();
