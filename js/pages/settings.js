@@ -9,6 +9,8 @@ const SettingsPage = (() => {
   // In-memory model lists populated on render
   let textModels = [];
   let imageModels = [];
+  // Vision-capable subset of textModels used for the caption model picker
+  let captionModels = [];
   let textModelsLoading = false;
   let imageModelsLoading = false;
 
@@ -28,6 +30,7 @@ const SettingsPage = (() => {
     const enableImages = await DB.getSetting('enableImages', true);
     const useRefImages = await DB.getSetting('useRefImages', true);
     const charRefMode = await DB.getSetting('charRefMode', 'auto');
+    const captionModel = await DB.getSetting('captionModel', '');
     const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
@@ -119,6 +122,28 @@ const SettingsPage = (() => {
               <option value="composite" ${charRefMode === 'composite' ? 'selected' : ''}>Composite (always build character sheet)</option>
             </select>
             <div class="form-hint">How to select the best reference image for each panel from a character's image gallery</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Auto-Caption Model</label>
+            <input type="hidden" id="set-captionmodel" value="${escHtml(captionModel)}">
+            <div class="model-picker" id="caption-model-picker">
+              <div class="model-picker-selected" onclick="SettingsPage.togglePicker('caption')">
+                <span id="caption-model-display">${captionModel ? escHtml(captionModel) : 'Auto (use text model)\u2026'}</span>
+                <span class="model-picker-arrow">&#9662;</span>
+              </div>
+              <div class="model-picker-dropdown hidden" id="caption-model-dropdown">
+                <div class="model-picker-search-wrap">
+                  <input type="text" class="model-picker-search" id="caption-model-search" placeholder="Search vision models..." oninput="SettingsPage.filterModels('caption', this.value)">
+                </div>
+                <div class="model-picker-status" id="caption-model-status">Loading models...</div>
+                <div class="model-picker-list" id="caption-model-list"></div>
+              </div>
+            </div>
+            <div class="form-hint">
+              <span id="caption-model-count">--</span> vision models available &middot;
+              <button class="btn-link" onclick="SettingsPage.clearCaptionModel()">Clear (use text model)</button>
+            </div>
           </div>
 
           <div class="form-group">
@@ -282,6 +307,7 @@ const SettingsPage = (() => {
   function handleOutsideClick(e) {
     if (!e.target.closest('#text-model-picker')) closePicker('text');
     if (!e.target.closest('#image-model-picker')) closePicker('image');
+    if (!e.target.closest('#caption-model-picker')) closePicker('caption');
   }
 
   // --- Model Picker Logic ---
@@ -298,6 +324,14 @@ const SettingsPage = (() => {
         textModelsLoading = true;
         textModels = await API.fetchTextModels(forceRefresh);
         textModelsLoading = false;
+        // Refresh caption models (vision-capable subset) whenever text models reload.
+        // supports_vision === false means explicitly no vision; undefined/true means attempt it.
+        captionModels = textModels.filter(m => m.supports_vision !== false);
+        const captionCountEl = document.getElementById('caption-model-count');
+        if (captionCountEl) captionCountEl.textContent = captionModels.length;
+        const captionStatusEl = document.getElementById('caption-model-status');
+        if (captionStatusEl) captionStatusEl.classList.add('hidden');
+        renderModelList('caption', captionModels);
       } else {
         imageModelsLoading = true;
         imageModels = await API.fetchImageModels(forceRefresh);
@@ -316,8 +350,18 @@ const SettingsPage = (() => {
         ? API.FALLBACK_TEXT_MODELS.map(id => ({ id, name: id, owned_by: '' }))
         : API.FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
 
-      if (type === 'text') textModels = fallback;
-      else imageModels = fallback;
+      if (type === 'text') {
+        textModels = fallback;
+        // Also update caption models from fallback (all fallback text models assumed vision-capable)
+        captionModels = fallback;
+        const captionCountEl = document.getElementById('caption-model-count');
+        if (captionCountEl) captionCountEl.textContent = captionModels.length;
+        const captionStatusEl = document.getElementById('caption-model-status');
+        if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+        renderModelList('caption', captionModels);
+      } else {
+        imageModels = fallback;
+      }
 
       if (countEl) countEl.textContent = fallback.length;
       renderModelList(type, fallback);
@@ -328,7 +372,8 @@ const SettingsPage = (() => {
     const listEl = document.getElementById(`${type}-model-list`);
     if (!listEl) return;
 
-    const currentValue = document.getElementById(type === 'text' ? 'set-model' : 'set-imgmodel')?.value || '';
+    const idMap = { text: 'set-model', image: 'set-imgmodel', caption: 'set-captionmodel' };
+    const currentValue = document.getElementById(idMap[type])?.value || '';
 
     // Group models by provider/owned_by
     const groups = {};
@@ -471,8 +516,11 @@ const SettingsPage = (() => {
   function togglePicker(type) {
     const dropdown = document.getElementById(`${type}-model-dropdown`);
     const isOpen = !dropdown.classList.contains('hidden');
-    // Close the other picker
-    closePicker(type === 'text' ? 'image' : 'text');
+    // Close all other pickers
+    const allTypes = ['text', 'image', 'caption'];
+    for (const t of allTypes) {
+      if (t !== type) closePicker(t);
+    }
     if (isOpen) {
       dropdown.classList.add('hidden');
     } else {
@@ -490,7 +538,7 @@ const SettingsPage = (() => {
   }
 
   function filterModels(type, query) {
-    const models = type === 'text' ? textModels : imageModels;
+    const models = type === 'text' ? textModels : type === 'caption' ? captionModels : imageModels;
     const q = query.toLowerCase().trim();
     if (!q) {
       renderModelList(type, models);
@@ -516,11 +564,14 @@ const SettingsPage = (() => {
     if (type === 'text') {
       document.getElementById('set-model').value = modelId;
       document.getElementById('text-model-display').textContent = modelId;
-    } else {
+    } else if (type === 'image') {
       document.getElementById('set-imgmodel').value = modelId;
       document.getElementById('image-model-display').textContent = modelId;
       // Dynamically update allowed sizes for the newly selected image model
       updateImageSizeOptions(modelId);
+    } else if (type === 'caption') {
+      document.getElementById('set-captionmodel').value = modelId;
+      document.getElementById('caption-model-display').textContent = modelId;
     }
     closePicker(type);
 
@@ -541,6 +592,17 @@ const SettingsPage = (() => {
       const currentImageModel = document.getElementById('set-imgmodel')?.value;
       if (currentImageModel) await updateImageSizeOptions(currentImageModel);
     }
+  }
+
+  /** Clear the caption model selection, reverting to "Auto (use text model)". */
+  function clearCaptionModel() {
+    const hiddenEl = document.getElementById('set-captionmodel');
+    const displayEl = document.getElementById('caption-model-display');
+    if (hiddenEl) hiddenEl.value = '';
+    if (displayEl) displayEl.textContent = 'Auto (use text model)\u2026';
+    const listEl = document.getElementById('caption-model-list');
+    if (listEl) listEl.querySelectorAll('.model-option').forEach(el => el.classList.remove('selected'));
+    closePicker('caption');
   }
 
   // --- API Connection Test ---
@@ -717,6 +779,7 @@ const SettingsPage = (() => {
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
     await DB.setSetting('charRefMode', document.getElementById('set-charrefmode').value);
+    await DB.setSetting('captionModel', document.getElementById('set-captionmodel').value);
 
     // Embedding model — invalidate stored character embeddings when the model changes
     const newEmbModel = document.getElementById('set-embmodel').value;
@@ -853,6 +916,7 @@ const SettingsPage = (() => {
     render, postRender, onMount, onUnmount,
     testConnection, save, exportData, importData, clearData, confirmClear,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
+    clearCaptionModel,
     updateImageSizeOptions, checkForUpdate, reloadForUpdate, clearAppCache,
   };
 })();
