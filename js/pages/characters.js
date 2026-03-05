@@ -179,7 +179,7 @@ const CharactersPage = (() => {
 
   function addImageSlot() {
     if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
-    editorImages.push({ dataUrl: '', tag: 'default', description: '', embedding: null });
+    editorImages.push({ dataUrl: '', tag: 'default', description: '', embedding: null, embeddingText: null });
     refreshGallery();
     // Immediately open file picker for the new slot
     pickImageForSlot(editorImages.length - 1);
@@ -213,23 +213,57 @@ const CharactersPage = (() => {
     const dataUrl = await DB.fileToDataURL(file);
     const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
     if (idx >= editorImages.length) {
-      editorImages.push({ dataUrl, tag: 'default', description: '', embedding: null });
+      editorImages.push({ dataUrl, tag: 'default', description: '', embedding: null, embeddingText: null });
     } else {
-      editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl, embedding: null });
+      editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl, embedding: null, embeddingText: null });
     }
     refreshGallery();
     // Reset file input so same file can be re-picked
     event.target.value = '';
+
+    // Auto-caption: if the slot has no description, generate one via vision model
+    const img = editorImages[idx];
+    if (img && !img.description) {
+      const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
+      if (descInput) {
+        descInput.disabled = true;
+        descInput.placeholder = 'Generating caption\u2026';
+      }
+      const name = document.getElementById('char-name')?.value.trim() || '';
+      const role = document.getElementById('char-role')?.value || '';
+      const caption = await API.generateImageCaption(dataUrl, {
+        type: 'character',
+        name,
+        role,
+        tag: img.tag,
+      }).catch(() => null);
+      // Only apply if this slot wasn't replaced while we were waiting
+      if (editorImages[idx] === img && !img.description && caption) {
+        img.description = caption;
+        img.embedding = null;
+        img.embeddingText = null;
+      }
+      if (descInput) {
+        descInput.disabled = false;
+        descInput.placeholder = 'e.g. Battle armor with sword drawn';
+        if (img.description) descInput.value = img.description;
+      }
+    }
   }
 
   function updateTag(idx, value) {
-    if (editorImages[idx]) editorImages[idx].tag = value;
+    if (editorImages[idx]) {
+      editorImages[idx].tag = value;
+      editorImages[idx].embedding = null; // tag is part of enriched embedding text
+      editorImages[idx].embeddingText = null;
+    }
   }
 
   function updateDesc(idx, value) {
     if (editorImages[idx]) {
       editorImages[idx].description = value;
       editorImages[idx].embedding = null; // invalidate stale embedding
+      editorImages[idx].embeddingText = null;
     }
   }
 
@@ -258,15 +292,24 @@ const CharactersPage = (() => {
     let primaryIdx = editorPrimaryIndex;
     if (primaryIdx >= validImages.length) primaryIdx = 0;
 
-    // Generate embeddings for images that have descriptions but no embedding
-    const needsEmbedding = validImages.filter(img => img.description && !img.embedding);
+    // Generate (or re-generate) embeddings for images whose enriched text has changed
+    const needsEmbedding = validImages.filter(img => {
+      if (!img.description) return false;
+      const enriched = buildImageEmbeddingText(img, name);
+      // Re-embed if text changed (new description, tag change, name change, or first-time)
+      return img.embeddingText !== enriched || !img.embedding;
+    });
     if (needsEmbedding.length > 0) {
       const saveBtn = document.getElementById('char-save-btn');
       if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
       await Promise.all(needsEmbedding.map(async (img) => {
+        const enriched = buildImageEmbeddingText(img, name);
         try {
-          const emb = await API.generateEmbedding(img.description);
-          if (emb) img.embedding = emb;
+          const emb = await API.generateEmbedding(enriched);
+          if (emb) {
+            img.embedding = emb;
+            img.embeddingText = enriched;
+          }
         } catch { /* skip on error */ }
       }));
       if (saveBtn) saveBtn.textContent = editingId ? 'Update Character' : 'Create Character';

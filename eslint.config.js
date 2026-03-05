@@ -50,6 +50,7 @@ export default [
         dedupeByNameLatest: 'readonly',
         cosineSimilarity: 'readonly',
         sanitizeImagePrompt: 'readonly',
+        buildImageEmbeddingText: 'readonly',
       },
     },
     rules: {
