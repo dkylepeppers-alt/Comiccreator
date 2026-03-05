@@ -27,14 +27,14 @@ const STATIC_ASSETS = [
   '/icons/icon-512.png',
 ];
 
-// Install: cache all static assets
+// Install: cache all static assets, then skip waiting so the new SW
+// activates immediately rather than waiting for all tabs to close.
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS.map((asset) => BASE_PATH + asset));
-    })
+    }).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 // Activate: clean old caches
