@@ -751,16 +751,17 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
   /**
    * Reference variation definitions for AI-generated reference images.
    * Each entry defines the tag, prompt template, and description for a variation.
-   * Character templates use {name} and {appearance} placeholders.
+   * Character templates use {name} as an identifier but are reference-image-centric —
+   * the model should derive appearance from the visual reference, not from text.
    * World templates use {name} and {description} placeholders.
    */
   const CHARACTER_REF_VARIATIONS = [
-    { tag: 'front-view', prompt: 'Full front view of {name}, {appearance}, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
-    { tag: 'side-view', prompt: 'Side profile view of {name}, {appearance}, standing facing right, full body visible, clean background', desc: 'Side profile reference' },
-    { tag: 'back-view', prompt: 'Back view of {name}, {appearance}, standing facing away from the viewer, full body visible, clean background', desc: 'Rear view reference' },
-    { tag: 'close-up', prompt: 'Close-up portrait of {name}, {appearance}, detailed face and expression, head and shoulders, clean background', desc: 'Close-up face/portrait reference' },
-    { tag: 'action-pose', prompt: '{name} in a dynamic action pose, {appearance}, mid-motion, energetic composition, clean background', desc: 'Dynamic action pose reference' },
-    { tag: 'expression', prompt: 'Expressive portrait of {name}, {appearance}, showing strong emotion, detailed facial features, clean background', desc: 'Emotional expression reference' },
+    { tag: 'front-view', prompt: 'Generate a full front view of the character in the reference image, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
+    { tag: 'side-view', prompt: 'Generate a side profile view of the character in the reference image, standing facing right, full body visible, clean background', desc: 'Side profile reference' },
+    { tag: 'back-view', prompt: 'Generate a back view of the character in the reference image, standing facing away from the viewer, full body visible, clean background', desc: 'Rear view reference' },
+    { tag: 'close-up', prompt: 'Generate a close-up portrait of the character in the reference image, detailed face and expression, head and shoulders, clean background', desc: 'Close-up face/portrait reference' },
+    { tag: 'action-pose', prompt: 'Generate the character from the reference image in a dynamic action pose, mid-motion, energetic composition, clean background', desc: 'Dynamic action pose reference' },
+    { tag: 'expression', prompt: 'Generate an expressive portrait of the character in the reference image, showing strong emotion, detailed facial features, clean background', desc: 'Emotional expression reference' },
   ];
 
   const WORLD_REF_VARIATIONS = [
