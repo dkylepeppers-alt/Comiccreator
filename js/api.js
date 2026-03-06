@@ -319,12 +319,14 @@ const API = (() => {
    * @param {string|null} customSystemPrompt
    * @param {Object} [options]
    * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
+   * @param {boolean} [options.includeAppearanceText] - whether to include character appearance text (default: true)
    */
   function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
     const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
 
     const imageSizes = options?.imageSizes;
     const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
+    const includeAppearance = options?.includeAppearanceText !== false;
 
     // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
     // Use the first available size as a placeholder; the IMAGE SIZES section instructs the AI to vary them
@@ -361,14 +363,18 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene in detail (for AI art generation). Include each character's physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.
+- A vivid imagePrompt describing the visual scene in detail (for AI art generation).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 
 CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
-who appears in that panel and include their full physical appearance description
+who appears in that panel.${includeAppearance
+  ? ` Include their full physical appearance description
 inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
-black armor, glowing blue eyes)". This is essential for visual consistency.
+black armor, glowing blue eyes)". This is essential for visual consistency.`
+  : ` Describe their actions, poses, and the scene composition.
+Reference images will be provided for visual consistency, so you do not need
+to repeat full appearance descriptions — but always use character names.`}
 If a panel has NO characters (e.g., establishing shot), say "No characters present."
 
 Provide 2-3 meaningful choices at the end that affect the story direction.`;
@@ -388,14 +394,20 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       for (const c of characters) {
         prompt += `- ${c.name}: ${c.description}`;
         if (c.role) prompt += ` (Role: ${c.role})`;
-        if (c.appearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
+        if (c.appearance && includeAppearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
         if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
         prompt += '\n';
       }
-      prompt += `\nVISUAL CONSISTENCY RULES:
+      if (includeAppearance) {
+        prompt += `\nVISUAL CONSISTENCY RULES:
 - EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
 - Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
+      } else {
+        prompt += `\nVISUAL CONSISTENCY RULES:
+- In each panel's "imagePrompt", name every visible character and describe their actions, poses, and the scene. Reference images will be provided to the image generator for visual consistency.
+- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
+      }
     }
 
     if (world) {
@@ -751,16 +763,17 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
   /**
    * Reference variation definitions for AI-generated reference images.
    * Each entry defines the tag, prompt template, and description for a variation.
-   * Character templates use {name} and {appearance} placeholders.
+   * Character templates are reference-image-centric — the model should derive
+   * appearance from the visual reference, not from text.
    * World templates use {name} and {description} placeholders.
    */
   const CHARACTER_REF_VARIATIONS = [
-    { tag: 'front-view', prompt: 'Full front view of {name}, {appearance}, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
-    { tag: 'side-view', prompt: 'Side profile view of {name}, {appearance}, standing facing right, full body visible, clean background', desc: 'Side profile reference' },
-    { tag: 'back-view', prompt: 'Back view of {name}, {appearance}, standing facing away from the viewer, full body visible, clean background', desc: 'Rear view reference' },
-    { tag: 'close-up', prompt: 'Close-up portrait of {name}, {appearance}, detailed face and expression, head and shoulders, clean background', desc: 'Close-up face/portrait reference' },
-    { tag: 'action-pose', prompt: '{name} in a dynamic action pose, {appearance}, mid-motion, energetic composition, clean background', desc: 'Dynamic action pose reference' },
-    { tag: 'expression', prompt: 'Expressive portrait of {name}, {appearance}, showing strong emotion, detailed facial features, clean background', desc: 'Emotional expression reference' },
+    { tag: 'front-view', prompt: 'Generate a full front view of the character in the reference image, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
+    { tag: 'side-view', prompt: 'Generate a side profile view of the character in the reference image, standing facing right, full body visible, clean background', desc: 'Side profile reference' },
+    { tag: 'back-view', prompt: 'Generate a back view of the character in the reference image, standing facing away from the viewer, full body visible, clean background', desc: 'Rear view reference' },
+    { tag: 'close-up', prompt: 'Generate a close-up portrait of the character in the reference image, detailed face and expression, head and shoulders, clean background', desc: 'Close-up face/portrait reference' },
+    { tag: 'action-pose', prompt: 'Generate the character from the reference image in a dynamic action pose, mid-motion, energetic composition, clean background', desc: 'Dynamic action pose reference' },
+    { tag: 'expression', prompt: 'Generate an expressive portrait of the character in the reference image, showing strong emotion, detailed facial features, clean background', desc: 'Emotional expression reference' },
   ];
 
   const WORLD_REF_VARIATIONS = [

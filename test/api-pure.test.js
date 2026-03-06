@@ -107,6 +107,7 @@ function buildSystemPrompt(genre, characters, world, customSystemPrompt, options
   const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
   const imageSizes = options?.imageSizes;
   const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
+  const includeAppearance = options?.includeAppearanceText !== false;
   let prompt = `${base}
 
 IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
@@ -126,14 +127,20 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     for (const c of characters) {
       prompt += `- ${c.name}: ${c.description}`;
       if (c.role) prompt += ` (Role: ${c.role})`;
-      if (c.appearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
+      if (c.appearance && includeAppearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
       if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
       prompt += '\n';
     }
-    prompt += `\nVISUAL CONSISTENCY RULES:
+    if (includeAppearance) {
+      prompt += `\nVISUAL CONSISTENCY RULES:
 - EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
 - Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
+    } else {
+      prompt += `\nVISUAL CONSISTENCY RULES:
+- In each panel's "imagePrompt", name every visible character and describe their actions, poses, and the scene. Reference images will be provided to the image generator for visual consistency.
+- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
+    }
   }
   if (world) {
     prompt += `\nWORLD SETTING:\nName: ${world.name}\nDescription: ${world.description}\n`;
@@ -293,6 +300,30 @@ describe('api pure parsing and prompt helpers', () => {
     // Single-entry array (no benefit to picking)
     const singleArr = buildSystemPrompt('action', [], null, null, { imageSizes: ['1024x1024'] });
     assert.ok(!singleArr.includes('IMAGE SIZES:'));
+  });
+
+  it('buildSystemPrompt omits APPEARANCE when includeAppearanceText is false', () => {
+    const chars = [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }];
+    const prompt = buildSystemPrompt('action', chars, null, null, { includeAppearanceText: false });
+    assert.ok(prompt.includes('CHARACTERS:'), 'should still include characters section');
+    assert.ok(!prompt.includes('APPEARANCE: Silver hair, black armor'), 'should not include appearance text');
+    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section');
+    assert.ok(prompt.includes('Reference images will be provided'), 'should use reference-image-centric rules');
+    assert.ok(!prompt.includes('repeat each visible character'), 'should not instruct appearance repetition');
+    assert.ok(prompt.includes('name every visible character'), 'should still require character naming for embedding matching');
+  });
+
+  it('buildSystemPrompt includes APPEARANCE by default when includeAppearanceText is not specified', () => {
+    const chars = [{ name: 'Nova', description: 'A hero', appearance: 'Silver hair' }];
+    const prompt = buildSystemPrompt('action', chars, null, null);
+    assert.ok(prompt.includes('APPEARANCE: Silver hair'), 'should include appearance by default');
+    assert.ok(prompt.includes('repeat each visible character'), 'should use standard consistency rules by default');
+  });
+
+  it('buildSystemPrompt includes APPEARANCE when includeAppearanceText is true', () => {
+    const chars = [{ name: 'Nova', description: 'A hero', appearance: 'Silver hair' }];
+    const prompt = buildSystemPrompt('action', chars, null, null, { includeAppearanceText: true });
+    assert.ok(prompt.includes('APPEARANCE: Silver hair'), 'should include appearance when explicitly enabled');
   });
 });
 
