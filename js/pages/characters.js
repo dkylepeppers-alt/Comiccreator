@@ -531,10 +531,11 @@ const CharactersPage = (() => {
   }
 
   function setPrimary(idx) {
-    editorPrimaryIndex = idx;
+    // Toggle: clicking the already-active star deselects it
+    editorPrimaryIndex = (idx === editorPrimaryIndex) ? -1 : idx;
     // Update star button states in place
     document.querySelectorAll('.char-img-primary').forEach((btn, i) => {
-      btn.classList.toggle('active', i === idx);
+      btn.classList.toggle('active', i === editorPrimaryIndex);
     });
   }
 
@@ -553,7 +554,8 @@ const CharactersPage = (() => {
     // Filter out empty slots (no dataUrl)
     const validImages = editorImages.filter(img => img.dataUrl);
     let primaryIdx = editorPrimaryIndex;
-    if (primaryIdx >= validImages.length) primaryIdx = 0;
+    if (primaryIdx < 0) primaryIdx = -1; // preserve deselected state
+    else if (primaryIdx >= validImages.length) primaryIdx = 0;
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
     const needsEmbedding = validImages.filter(img => {

@@ -518,9 +518,10 @@ const WorldsPage = (() => {
   }
 
   function setPrimary(idx) {
-    editorPrimaryIndex = idx;
+    // Toggle: clicking the already-active star deselects it
+    editorPrimaryIndex = (idx === editorPrimaryIndex) ? -1 : idx;
     document.querySelectorAll('#world-img-gallery .char-img-primary').forEach((btn, i) => {
-      btn.classList.toggle('active', i === idx);
+      btn.classList.toggle('active', i === editorPrimaryIndex);
     });
   }
 
@@ -538,13 +539,13 @@ const WorldsPage = (() => {
 
     // Filter out empty slots (no dataUrl), remapping primary index to the filtered list
     const validImages = [];
-    let primaryIdx = 0;
+    let primaryIdx = editorPrimaryIndex < 0 ? -1 : 0;
     editorImages.forEach((img, idx) => {
       if (!img || !img.dataUrl) return;
       if (idx === editorPrimaryIndex) primaryIdx = validImages.length;
       validImages.push(img);
     });
-    if (validImages.length > 0 && primaryIdx >= validImages.length) primaryIdx = 0;
+    if (primaryIdx >= validImages.length) primaryIdx = validImages.length > 0 ? 0 : -1;
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
     const needsEmbedding = validImages.filter(img => {
