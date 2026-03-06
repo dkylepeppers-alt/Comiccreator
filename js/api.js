@@ -333,7 +333,7 @@ const API = (() => {
     const panelExample = hasDynamicSizes
       ? `{
       "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "imagePrompt": "Technical art-direction brief: shot type (e.g., low-angle medium shot), subjects with poses/expressions, lighting (e.g., dramatic rim lighting), color palette, rendering style (e.g., gritty ink-wash)",
       "imageSize": "one of the supported sizes listed below",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
@@ -341,7 +341,7 @@ const API = (() => {
     }`
       : `{
       "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "imagePrompt": "Technical art-direction brief: shot type (e.g., low-angle medium shot), subjects with poses/expressions, lighting (e.g., dramatic rim lighting), color palette, rendering style (e.g., gritty ink-wash)",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
       ]
@@ -363,21 +363,31 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene in detail (for AI art generation).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
+- A technical imagePrompt written as an art-direction brief (see IMAGE PROMPT CRAFT below).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 
 CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
 who appears in that panel.${includeAppearance
   ? ` Include their full physical appearance description
-inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
-black armor, glowing blue eyes)". This is essential for visual consistency.`
-  : ` Describe their actions, poses, and the scene composition.
-Reference images will be provided for visual consistency, so you do not need
+inline with pose and expression. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
+black armor, glowing blue eyes) in a heroic three-quarter stance, determined expression". This is essential for visual consistency.`
+  : ` Describe their actions, poses, expressions, and scene composition using cinematographic terms
+(e.g., "low-angle medium shot, standing triumphant, arms raised"). Reference images will be provided
+for visual consistency, so you do not need
 to repeat full appearance descriptions — but always use character names.`}
 If a panel has NO characters (e.g., establishing shot), say "No characters present."
 
-Provide 2-3 meaningful choices at the end that affect the story direction.`;
+Provide 2-3 meaningful choices at the end that affect the story direction.
+
+IMAGE PROMPT CRAFT:
+Compose each imagePrompt as a technical art-direction brief using these building blocks:
+- Shot type & angle: establishing wide shot, medium shot, close-up (CU), extreme close-up (ECU), low-angle, bird's-eye, Dutch angle, over-the-shoulder (OTS)
+- Subjects & action: named characters, their poses/expressions, and key interactions
+- Lighting: dramatic side lighting, soft diffused light, rim/back lighting, chiaroscuro, golden-hour glow, neon wash, harsh overhead
+- Color & mood: warm/cool palette, high contrast, desaturated, cinematic color grading (e.g., teal-and-orange)
+- Rendering style: gritty ink-wash, vibrant cel-shaded, painterly brushwork, manga cross-hatching, photorealistic
+- Environment: key set pieces, depth layers (foreground/midground/background), atmospheric effects (fog, rain, dust motes)`;
 
     if (hasDynamicSizes) {
       prompt += `\n\nIMAGE SIZES:
