@@ -126,13 +126,19 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     for (const c of characters) {
       prompt += `- ${c.name}: ${c.description}`;
       if (c.role) prompt += ` (Role: ${c.role})`;
-      if (c.appearance) prompt += ` | Appearance: ${c.appearance}`;
+      if (c.appearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
+      if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
       prompt += '\n';
     }
+    prompt += `\nVISUAL CONSISTENCY RULES:
+- EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
+- Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
+- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
   }
   if (world) {
     prompt += `\nWORLD SETTING:\nName: ${world.name}\nDescription: ${world.description}\n`;
     if (world.details) prompt += `Details: ${world.details}\n`;
+    if (world.atmosphere) prompt += `Atmosphere: ${world.atmosphere}\n`;
   }
   return prompt;
 }
@@ -236,6 +242,18 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(withAll.includes('CHARACTERS:'));
     assert.ok(withAll.includes('WORLD SETTING:'));
     assert.ok(withAll.includes('Details: Fog'));
+  });
+
+  it('buildSystemPrompt includes VISUAL CONSISTENCY RULES when characters have appearance', () => {
+    const prompt = buildSystemPrompt('action', [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }], null);
+    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section');
+    assert.ok(prompt.includes('APPEARANCE: Silver hair, black armor'), 'should include appearance details');
+    assert.ok(prompt.includes('identical across all panels'), 'should instruct consistency across panels');
+  });
+
+  it('buildSystemPrompt includes world atmosphere when provided', () => {
+    const prompt = buildSystemPrompt('action', [], { name: 'Gotham', description: 'A dark city', atmosphere: 'Gritty noir' });
+    assert.ok(prompt.includes('Atmosphere: Gritty noir'), 'should include world atmosphere');
   });
 
   it('buildSystemPrompt includes IMAGE SIZES section when imageSizes option has multiple entries', () => {

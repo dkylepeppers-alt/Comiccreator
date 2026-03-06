@@ -503,6 +503,18 @@ img { max-width: 100%; display: block; }
 }
 .char-img-caption:hover { color: var(--accent); border-color: var(--accent); }
 .char-img-caption:disabled { opacity: 0.5; cursor: default; }
+.char-img-regen {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: color 0.15s, border-color 0.15s;
+}
+.char-img-regen:hover { color: var(--accent); border-color: var(--accent); }
+.char-img-regen:disabled { opacity: 0.5; cursor: default; }
 /* Embedding status badge — tiny inline indicator next to tag dropdown */
 .char-img-emb-badge {
   display: inline-flex;
