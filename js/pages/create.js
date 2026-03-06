@@ -791,7 +791,7 @@ const CreatePage = (() => {
         // Build per-panel image options using hybrid cascading strategy
         async function buildPanelImageOpts(panel) {
           // Use AI-picked size when dynamic sizing is enabled and the AI provided one
-          const resolution = (panel.imageSize && dynamicSizesEnabled) ? panel.imageSize : imageResolution;
+          const resolution = (dynamicSizesEnabled && panel.imageSize) ? panel.imageSize : imageResolution;
           const opts = { resolution };
           const charNamesInPanel = Object.keys(state.characterImagesByName)
             .filter(name => nameInPrompt(name, panel.imagePrompt));

@@ -327,11 +327,12 @@ const API = (() => {
     const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
 
     // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
+    // Use the first available size as a placeholder; the IMAGE SIZES section instructs the AI to vary them
     const panelExample = hasDynamicSizes
       ? `{
       "narration": "Scene-setting narration text (optional)",
       "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
-      "imageSize": "${imageSizes[0]}",
+      "imageSize": "one of the supported sizes listed below",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
       ]
