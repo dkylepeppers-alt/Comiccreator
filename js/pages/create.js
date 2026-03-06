@@ -40,6 +40,7 @@ const CreatePage = (() => {
     'action-pose':      ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
     'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
     'expression':       ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
+    'character-sheet':  ['character sheet', 'turnaround', 'model sheet', 'reference sheet', 'multiple angles', 'multiple poses', 'multi-angle', 'multi-pose', 'full rotation', '360', 'orthographic'],
   };
 
   async function render(param) {

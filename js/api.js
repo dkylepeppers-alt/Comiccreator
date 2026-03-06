@@ -618,12 +618,22 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     let contextLine = '';
     let instructionLine = '';
     if (type === 'character') {
-      contextLine = name
-        ? `This is a reference image for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} The image is tagged "${tag || 'default'}".`
-        : `This is a reference image for a comic book character. The image is tagged "${tag || 'default'}".`;
-      instructionLine = name
-        ? `Write 1-2 sentences describing what you see. Begin with "${name}" as the subject (e.g. "${name} wears…" or "${name} stands…"). Focus on visual details — outfit, pose, expression, notable features — that would help identify this character in a comic panel. Reply with only the description, no preamble.`
-        : 'Write 1-2 sentences describing visual details (outfit, pose, expression, notable features) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.';
+      if (tag === 'character-sheet') {
+        // Character sheet: multi-angle / multi-pose reference image
+        contextLine = name
+          ? `This is a character sheet (model/reference sheet) for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} It shows the same character from multiple angles, poses, or views.`
+          : 'This is a character sheet (model/reference sheet) for a comic book character showing the same character from multiple angles, poses, or views.';
+        instructionLine = name
+          ? `This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character's consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. Begin with "${name}" as the subject. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.`
+          : 'This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character\'s consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.';
+      } else {
+        contextLine = name
+          ? `This is a reference image for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} The image is tagged "${tag || 'default'}".`
+          : `This is a reference image for a comic book character. The image is tagged "${tag || 'default'}".`;
+        instructionLine = name
+          ? `Write 1-2 sentences describing what you see. Begin with "${name}" as the subject (e.g. "${name} wears…" or "${name} stands…"). Focus on visual details — outfit, pose, expression, notable features — that would help identify this character in a comic panel. Reply with only the description, no preamble.`
+          : 'Write 1-2 sentences describing visual details (outfit, pose, expression, notable features) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.';
+      }
     } else {
       contextLine = name
         ? `This is a reference image for a comic book location called "${name}"${era ? ` (${era})` : ''}. The image is tagged "${tag || 'establishing'}".`
@@ -656,7 +666,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     try {
       const caption = await chatCompletion(messages, {
         model,
-        maxTokens: 120,
+        maxTokens: tag === 'character-sheet' ? 200 : 120,
         temperature: 0.3,
       });
       return caption?.trim() || null;
