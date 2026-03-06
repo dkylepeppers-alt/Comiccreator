@@ -554,8 +554,7 @@ const CharactersPage = (() => {
     // Filter out empty slots (no dataUrl)
     const validImages = editorImages.filter(img => img.dataUrl);
     let primaryIdx = editorPrimaryIndex;
-    if (primaryIdx < 0) primaryIdx = -1; // preserve deselected state
-    else if (primaryIdx >= validImages.length) primaryIdx = 0;
+    if (primaryIdx >= validImages.length) primaryIdx = validImages.length > 0 ? 0 : -1;
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
     const needsEmbedding = validImages.filter(img => {

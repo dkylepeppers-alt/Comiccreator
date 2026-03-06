@@ -539,7 +539,7 @@ const WorldsPage = (() => {
 
     // Filter out empty slots (no dataUrl), remapping primary index to the filtered list
     const validImages = [];
-    let primaryIdx = editorPrimaryIndex < 0 ? -1 : 0;
+    let primaryIdx = -1;
     editorImages.forEach((img, idx) => {
       if (!img || !img.dataUrl) return;
       if (idx === editorPrimaryIndex) primaryIdx = validImages.length;
