@@ -513,4 +513,25 @@ describe('API integration', () => {
     const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', {});
     assert.equal(result, null);
   });
+
+  it('generateImageCaption uses character-sheet prompt with higher token limit', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova shown from front, side, and back views wearing silver armor.' } }] }), { status: 200 });
+    };
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    const result = await ctx.API.generateImageCaption(
+      'data:image/png;base64,aGVsbG8=',
+      { type: 'character', name: 'Nova', role: 'hero', tag: 'character-sheet', appearance: 'silver armor, blue cape' },
+    );
+    assert.equal(result, 'Nova shown from front, side, and back views wearing silver armor.');
+    const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
+    assert.ok(textPart.text.includes('character sheet'), 'prompt should mention character sheet');
+    assert.ok(textPart.text.includes('multiple'), 'prompt should mention multiple views/angles');
+    assert.ok(textPart.text.includes('Nova'), 'prompt should include character name');
+    assert.ok(textPart.text.includes('silver armor, blue cape'), 'prompt should include appearance');
+    // Character sheets get a higher token limit for more detailed captions
+    assert.equal(requestBody.max_tokens, 200, 'character-sheet should get 200 max_tokens');
+  });
 });

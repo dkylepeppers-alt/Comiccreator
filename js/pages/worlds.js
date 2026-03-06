@@ -103,6 +103,7 @@ const WorldsPage = (() => {
             <div class="char-img-toolbar" id="world-img-toolbar">
               ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
               <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+              <button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
             </div>
           </div>
 
@@ -172,6 +173,7 @@ const WorldsPage = (() => {
           <div class="char-img-actions">
             <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="WorldsPage.setPrimary(${i})">&#11088;</button>
             ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="WorldsPage.recaptionImage(${i})">&#128221;</button>` : ''}
+            ${img.dataUrl && img.aiGenerated ? `<button class="char-img-regen" title="Regenerate this reference" onclick="WorldsPage.regenerateImage(${i})">&#128260;</button>` : ''}
             <button class="char-img-delete" title="Remove" onclick="WorldsPage.removeImage(${i})">&#x2715;</button>
           </div>
         </div>
@@ -196,6 +198,7 @@ const WorldsPage = (() => {
       }
       if (hasImages) {
         btns += '<button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()">&#128221; Caption All</button>';
+        btns += '<button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
       }
       toolbar.innerHTML = btns;
     }
@@ -361,6 +364,143 @@ const WorldsPage = (() => {
     refreshGallery();
   }
 
+  /**
+   * Generate reference image variations from the primary uploaded image.
+   * Uses the image API with the primary image as a reference to create
+   * tagged variations (aerial, interior, night, detail).
+   */
+  async function generateReferences() {
+    // Use the user-selected primary image as the source for all variations
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl); // fallback if primary has no data
+    if (!primaryImg) return App.toast('Upload at least one image first', 'error');
+
+    const name = document.getElementById('world-name')?.value.trim() || 'the location';
+    const description = document.getElementById('world-desc')?.value.trim() || '';
+
+    const variations = API.WORLD_REF_VARIATIONS;
+    // Skip variations for tags that already have an image
+    const existingTags = new Set(editorImages.filter(img => img.dataUrl).map(img => img.tag));
+    const toGenerate = variations.filter(v => !existingTags.has(v.tag));
+
+    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const batch = toGenerate.slice(0, slotsAvailable);
+
+    if (batch.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
+
+    const genBtn = document.getElementById('world-gen-refs-btn');
+    if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
+
+    let done = 0;
+    let failed = 0;
+    for (const variation of batch) {
+      done++;
+      if (genBtn) genBtn.textContent = `Generating ${done}/${batch.length}\u2026`;
+
+      const prompt = variation.prompt
+        .replace(/\{name\}/g, name)
+        .replace(/\{description\}/g, description || 'as shown in the reference image');
+
+      const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
+
+      if (dataUrl) {
+        const newImg = {
+          dataUrl,
+          tag: variation.tag,
+          description: '',
+          embedding: null,
+          embeddingText: null,
+          aiGenerated: true,
+          generationPrompt: prompt,
+        };
+        editorImages.push(newImg);
+        refreshGallery();
+
+        // Auto-caption the generated image
+        const era = document.getElementById('world-era')?.value.trim() || '';
+        const caption = await API.generateImageCaption(dataUrl, {
+          type: 'world', name, era, tag: variation.tag,
+        }).catch(() => null);
+        if (caption) {
+          newImg.description = caption;
+          newImg.embedding = null;
+          newImg.embeddingText = null;
+          refreshGallery();
+        }
+      } else {
+        failed++;
+      }
+    }
+
+    if (genBtn) { genBtn.disabled = false; genBtn.textContent = '\u{1F3A8} Generate References'; }
+    if (failed > 0) {
+      App.toast(`Generated ${done - failed}/${done} references (${failed} failed)`, 'info');
+    } else {
+      App.toast(`Generated ${done} reference image(s)`, 'success');
+    }
+  }
+
+  /**
+   * Regenerate a single AI-generated reference image.
+   * Uses the primary uploaded image as the source and the stored generation prompt.
+   */
+  async function regenerateImage(idx) {
+    const img = editorImages[idx];
+    if (!img || !img.aiGenerated) return App.toast('This image was not AI-generated', 'error');
+
+    const primaryImg = editorImages.find(src => src.dataUrl && !src.aiGenerated);
+    if (!primaryImg) return App.toast('No source image found for regeneration', 'error');
+
+    const name = document.getElementById('world-name')?.value.trim() || 'the location';
+    const description = document.getElementById('world-desc')?.value.trim() || '';
+
+    // Re-derive the prompt from the tag variation or use stored prompt
+    let prompt = img.generationPrompt;
+    if (!prompt) {
+      const variation = API.WORLD_REF_VARIATIONS.find(v => v.tag === img.tag);
+      if (variation) {
+        prompt = variation.prompt
+          .replace(/\{name\}/g, name)
+          .replace(/\{description\}/g, description || 'as shown in the reference image');
+      } else {
+        prompt = `${img.tag} view of ${name}, ${description || 'as shown in the reference'}`;
+      }
+    }
+
+    const preview = document.querySelector(`.char-img-slot[data-idx="${idx}"] .char-img-slot-preview`);
+    if (preview) preview.style.opacity = '0.5';
+    const regenBtn = document.querySelector(`.char-img-slot[data-idx="${idx}"] .char-img-regen`);
+    if (regenBtn) regenBtn.disabled = true;
+
+    const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
+
+    if (dataUrl) {
+      img.dataUrl = dataUrl;
+      img.embedding = null;
+      img.embeddingText = null;
+      img.generationPrompt = prompt;
+
+      // Re-caption
+      const era = document.getElementById('world-era')?.value.trim() || '';
+      const caption = await API.generateImageCaption(dataUrl, {
+        type: 'world', name, era, tag: img.tag,
+      }).catch(() => null);
+      if (caption) {
+        img.description = caption;
+        img.embedding = null;
+        img.embeddingText = null;
+      }
+      refreshGallery();
+      App.toast('Reference image regenerated', 'success');
+    } else {
+      if (preview) preview.style.opacity = '1';
+      if (regenBtn) regenBtn.disabled = false;
+      App.toast('Regeneration failed', 'error');
+    }
+  }
+
   function updateTag(idx, value) {
     if (editorImages[idx]) {
       editorImages[idx].tag = value;
@@ -378,9 +518,10 @@ const WorldsPage = (() => {
   }
 
   function setPrimary(idx) {
-    editorPrimaryIndex = idx;
+    // Toggle: clicking the already-active star deselects it
+    editorPrimaryIndex = (idx === editorPrimaryIndex) ? -1 : idx;
     document.querySelectorAll('#world-img-gallery .char-img-primary').forEach((btn, i) => {
-      btn.classList.toggle('active', i === idx);
+      btn.classList.toggle('active', i === editorPrimaryIndex);
     });
   }
 
@@ -398,13 +539,13 @@ const WorldsPage = (() => {
 
     // Filter out empty slots (no dataUrl), remapping primary index to the filtered list
     const validImages = [];
-    let primaryIdx = 0;
+    let primaryIdx = -1;
     editorImages.forEach((img, idx) => {
       if (!img || !img.dataUrl) return;
       if (idx === editorPrimaryIndex) primaryIdx = validImages.length;
       validImages.push(img);
     });
-    if (validImages.length > 0 && primaryIdx >= validImages.length) primaryIdx = 0;
+    if (primaryIdx >= validImages.length) primaryIdx = validImages.length > 0 ? 0 : -1;
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
     const needsEmbedding = validImages.filter(img => {
@@ -489,6 +630,7 @@ const WorldsPage = (() => {
     render, newWorld, editWorld, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
+    generateReferences, regenerateImage,
     saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();

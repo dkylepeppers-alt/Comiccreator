@@ -75,14 +75,18 @@ function parseComicResponse(text) {
   if (firstBrace !== -1 && lastBrace !== -1) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   const buildResult = parsed => ({
     title: parsed.title || 'Untitled Page',
-    panels: (parsed.panels || []).map(p => ({
-      narration: p.narration || '',
-      imagePrompt: p.imagePrompt || p.image_prompt || '',
-      dialogue: (p.dialogue || []).map(d => ({
-        speaker: d.speaker || 'Unknown',
-        text: d.text || '',
-      })),
-    })),
+    panels: (parsed.panels || []).map(p => {
+      const panel = {
+        narration: p.narration || '',
+        imagePrompt: p.imagePrompt || p.image_prompt || '',
+        dialogue: (p.dialogue || []).map(d => ({
+          speaker: d.speaker || 'Unknown',
+          text: d.text || '',
+        })),
+      };
+      if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
+      return panel;
+    }),
     choices: (parsed.choices || []).map(c => ({
       text: c.text || c.description || '',
       summary: c.summary || '',
@@ -99,25 +103,42 @@ function parseComicResponse(text) {
   }
 }
 
-function buildSystemPrompt(genre, characters, world, customSystemPrompt) {
+function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
   const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
+  const imageSizes = options?.imageSizes;
+  const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
   let prompt = `${base}
 
 IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
 
 Your response must be a JSON object with this exact structure:`;
+  if (hasDynamicSizes) {
+    prompt += `\n\nIMAGE SIZES:
+For each panel, choose the most appropriate image size from these supported values: ${imageSizes.join(', ')}
+Set the "imageSize" field in each panel object. Pick sizes that best match the composition:
+- Use landscape/wide sizes for panoramic scenes, establishing shots, or action sequences
+- Use portrait/tall sizes for character close-ups, vertical compositions, or tall structures
+- Use square sizes for balanced scenes, dialogue-focused panels, or group shots
+Vary the sizes across panels to create a visually dynamic comic layout.`;
+  }
   if (characters && characters.length > 0) {
     prompt += '\n\nCHARACTERS:\n';
     for (const c of characters) {
       prompt += `- ${c.name}: ${c.description}`;
       if (c.role) prompt += ` (Role: ${c.role})`;
-      if (c.appearance) prompt += ` | Appearance: ${c.appearance}`;
+      if (c.appearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
+      if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
       prompt += '\n';
     }
+    prompt += `\nVISUAL CONSISTENCY RULES:
+- EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
+- Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
+- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
   }
   if (world) {
     prompt += `\nWORLD SETTING:\nName: ${world.name}\nDescription: ${world.description}\n`;
     if (world.details) prompt += `Details: ${world.details}\n`;
+    if (world.atmosphere) prompt += `Atmosphere: ${world.atmosphere}\n`;
   }
   return prompt;
 }
@@ -197,6 +218,19 @@ describe('api pure parsing and prompt helpers', () => {
     assert.deepEqual(parseComicResponse('{"panels":[{}]}').panels[0].dialogue, []);
   });
 
+  it('parseComicResponse extracts imageSize from panels when present', () => {
+    const withSize = parseComicResponse('{"panels":[{"imagePrompt":"scene","imageSize":"1024x1536"}],"choices":[]}');
+    assert.equal(withSize.panels[0].imageSize, '1024x1536');
+
+    // Also accepts image_size (snake_case alternative)
+    const snakeCase = parseComicResponse('{"panels":[{"imagePrompt":"scene","image_size":"1536x1024"}],"choices":[]}');
+    assert.equal(snakeCase.panels[0].imageSize, '1536x1024');
+
+    // imageSize is omitted when not present in source
+    const noSize = parseComicResponse('{"panels":[{"imagePrompt":"scene"}],"choices":[]}');
+    assert.equal(noSize.panels[0].imageSize, undefined);
+  });
+
   it('buildSystemPrompt includes expected sections', () => {
     const p = buildSystemPrompt('superhero', [], null, '');
     assert.ok(p.includes('superhero'));
@@ -208,6 +242,57 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(withAll.includes('CHARACTERS:'));
     assert.ok(withAll.includes('WORLD SETTING:'));
     assert.ok(withAll.includes('Details: Fog'));
+  });
+
+  it('buildSystemPrompt includes VISUAL CONSISTENCY RULES when characters have appearance', () => {
+    const prompt = buildSystemPrompt('action', [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }], null);
+    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section');
+    assert.ok(prompt.includes('APPEARANCE: Silver hair, black armor'), 'should include appearance details');
+    assert.ok(prompt.includes('identical across all panels'), 'should instruct consistency across panels');
+  });
+
+  it('buildSystemPrompt includes VISUAL CONSISTENCY RULES even for characters without appearance', () => {
+    const prompt = buildSystemPrompt('action', [{ name: 'Bob', description: 'A sidekick' }], null);
+    assert.ok(prompt.includes('CHARACTERS:'), 'should include characters section');
+    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section even without appearance');
+    assert.ok(!prompt.includes('APPEARANCE:'), 'should not include APPEARANCE line when field is missing');
+  });
+
+  it('buildSystemPrompt omits VISUAL CONSISTENCY RULES when no characters provided', () => {
+    const noChars = buildSystemPrompt('action', [], null);
+    assert.ok(!noChars.includes('VISUAL CONSISTENCY RULES:'), 'should not include visual consistency section without characters');
+    assert.ok(!noChars.includes('CHARACTERS:'), 'should not include characters section');
+  });
+
+  it('buildSystemPrompt includes world atmosphere when provided', () => {
+    const prompt = buildSystemPrompt('action', [], { name: 'Gotham', description: 'A dark city', atmosphere: 'Gritty noir' });
+    assert.ok(prompt.includes('Atmosphere: Gritty noir'), 'should include world atmosphere');
+  });
+
+  it('buildSystemPrompt includes IMAGE SIZES section when imageSizes option has multiple entries', () => {
+    const sizes = ['1024x1024', '1536x1024', '1024x1536'];
+    const prompt = buildSystemPrompt('action', [], null, null, { imageSizes: sizes });
+    assert.ok(prompt.includes('IMAGE SIZES:'));
+    assert.ok(prompt.includes('1024x1024'));
+    assert.ok(prompt.includes('1536x1024'));
+    assert.ok(prompt.includes('1024x1536'));
+    assert.ok(prompt.includes('"imageSize"'));
+    assert.ok(prompt.includes('landscape'));
+    assert.ok(prompt.includes('portrait'));
+  });
+
+  it('buildSystemPrompt omits IMAGE SIZES when imageSizes is missing, empty, or single-entry', () => {
+    // No options
+    const noOpts = buildSystemPrompt('action', [], null, null);
+    assert.ok(!noOpts.includes('IMAGE SIZES:'));
+
+    // Empty array
+    const emptyArr = buildSystemPrompt('action', [], null, null, { imageSizes: [] });
+    assert.ok(!emptyArr.includes('IMAGE SIZES:'));
+
+    // Single-entry array (no benefit to picking)
+    const singleArr = buildSystemPrompt('action', [], null, null, { imageSizes: ['1024x1024'] });
+    assert.ok(!singleArr.includes('IMAGE SIZES:'));
   });
 });
 

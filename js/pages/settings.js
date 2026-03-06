@@ -33,6 +33,7 @@ const SettingsPage = (() => {
     const captionModel = await DB.getSetting('captionModel', '');
     const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
+    const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
@@ -173,6 +174,14 @@ const SettingsPage = (() => {
               </select>
             </div>
             <div class="form-hint" id="imgsize-hint">Image size for generated images. If options are available, they update automatically for the selected model.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="set-dynamicsizes" ${dynamicImageSizes ? 'checked' : ''} style="width:auto;">
+              AI-Picked Panel Sizes
+            </label>
+            <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes.</div>
           </div>
 
           <div class="form-group">
@@ -799,6 +808,7 @@ const SettingsPage = (() => {
     }
 
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
+    await DB.setSetting('dynamicImageSizes', document.getElementById('set-dynamicsizes').checked);
     const sizeEl = document.getElementById('set-imgsize');
     const imageSizeVal = sizeEl.value.trim();
     if (!imageSizeVal) {

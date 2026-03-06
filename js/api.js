@@ -259,10 +259,10 @@ const API = (() => {
           let instruction;
           switch (ref.type) {
             case 'character':
-              instruction = "Replicate this character's exact appearance.";
+              instruction = "Replicate this character's exact appearance, proportions, outfit, and distinguishing features precisely as shown.";
               break;
             case 'world':
-              instruction = 'Use this as an environment and style reference for the setting.';
+              instruction = 'Use this as an environment and style reference — match the architecture, lighting, and atmosphere.';
               break;
             default:
               instruction = 'Use this as a visual reference.';
@@ -312,10 +312,38 @@ const API = (() => {
   }
 
   /**
-   * Build system prompt for comic generation
+   * Build system prompt for comic generation.
+   * @param {string} genre
+   * @param {Array} characters
+   * @param {Object} world
+   * @param {string|null} customSystemPrompt
+   * @param {Object} [options]
+   * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
    */
-  function buildSystemPrompt(genre, characters, world, customSystemPrompt) {
+  function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
     const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
+
+    const imageSizes = options?.imageSizes;
+    const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
+
+    // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
+    // Use the first available size as a placeholder; the IMAGE SIZES section instructs the AI to vary them
+    const panelExample = hasDynamicSizes
+      ? `{
+      "narration": "Scene-setting narration text (optional)",
+      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "imageSize": "one of the supported sizes listed below",
+      "dialogue": [
+        { "speaker": "Character Name", "text": "What they say" }
+      ]
+    }`
+      : `{
+      "narration": "Scene-setting narration text (optional)",
+      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "dialogue": [
+        { "speaker": "Character Name", "text": "What they say" }
+      ]
+    }`;
 
     let prompt = `${base}
 
@@ -325,13 +353,7 @@ Your response must be a JSON object with this exact structure:
 {
   "title": "Page title",
   "panels": [
-    {
-      "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
-      "dialogue": [
-        { "speaker": "Character Name", "text": "What they say" }
-      ]
-    }
+    ${panelExample}
   ],
   "choices": [
     { "text": "Choice description for the reader", "summary": "Brief consequence summary" }
@@ -351,19 +373,35 @@ If a panel has NO characters (e.g., establishing shot), say "No characters prese
 
 Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
+    if (hasDynamicSizes) {
+      prompt += `\n\nIMAGE SIZES:
+For each panel, choose the most appropriate image size from these supported values: ${imageSizes.join(', ')}
+Set the "imageSize" field in each panel object. Pick sizes that best match the composition:
+- Use landscape/wide sizes for panoramic scenes, establishing shots, or action sequences
+- Use portrait/tall sizes for character close-ups, vertical compositions, or tall structures
+- Use square sizes for balanced scenes, dialogue-focused panels, or group shots
+Vary the sizes across panels to create a visually dynamic comic layout.`;
+    }
+
     if (characters && characters.length > 0) {
       prompt += '\n\nCHARACTERS:\n';
       for (const c of characters) {
         prompt += `- ${c.name}: ${c.description}`;
         if (c.role) prompt += ` (Role: ${c.role})`;
-        if (c.appearance) prompt += ` | Appearance: ${c.appearance}`;
+        if (c.appearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
+        if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
         prompt += '\n';
       }
+      prompt += `\nVISUAL CONSISTENCY RULES:
+- EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
+- Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
+- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
     }
 
     if (world) {
       prompt += `\nWORLD SETTING:\nName: ${world.name}\nDescription: ${world.description}\n`;
       if (world.details) prompt += `Details: ${world.details}\n`;
+      if (world.atmosphere) prompt += `Atmosphere: ${world.atmosphere}\n`;
     }
 
     return prompt;
@@ -428,14 +466,18 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
     const buildResult = parsed => ({
       title: parsed.title || 'Untitled Page',
-      panels: (parsed.panels || []).map(p => ({
-        narration: p.narration || '',
-        imagePrompt: p.imagePrompt || p.image_prompt || '',
-        dialogue: (p.dialogue || []).map(d => ({
-          speaker: d.speaker || 'Unknown',
-          text: d.text || '',
-        })),
-      })),
+      panels: (parsed.panels || []).map(p => {
+        const panel = {
+          narration: p.narration || '',
+          imagePrompt: p.imagePrompt || p.image_prompt || '',
+          dialogue: (p.dialogue || []).map(d => ({
+            speaker: d.speaker || 'Unknown',
+            text: d.text || '',
+          })),
+        };
+        if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
+        return panel;
+      }),
       choices: (parsed.choices || []).map(c => ({
         text: c.text || c.description || '',
         summary: c.summary || '',
@@ -582,12 +624,22 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     let contextLine = '';
     let instructionLine = '';
     if (type === 'character') {
-      contextLine = name
-        ? `This is a reference image for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} The image is tagged "${tag || 'default'}".`
-        : `This is a reference image for a comic book character. The image is tagged "${tag || 'default'}".`;
-      instructionLine = name
-        ? `Write 1-2 sentences describing what you see. Begin with "${name}" as the subject (e.g. "${name} wears…" or "${name} stands…"). Focus on visual details — outfit, pose, expression, notable features — that would help identify this character in a comic panel. Reply with only the description, no preamble.`
-        : 'Write 1-2 sentences describing visual details (outfit, pose, expression, notable features) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.';
+      if (tag === 'character-sheet') {
+        // Character sheet: multi-angle / multi-pose reference image
+        contextLine = name
+          ? `This is a character sheet (model/reference sheet) for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} It shows the same character from multiple angles, poses, or views.`
+          : 'This is a character sheet (model/reference sheet) for a comic book character showing the same character from multiple angles, poses, or views.';
+        instructionLine = name
+          ? `This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character's consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. Begin with "${name}" as the subject. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.`
+          : 'This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character\'s consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.';
+      } else {
+        contextLine = name
+          ? `This is a reference image for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} The image is tagged "${tag || 'default'}".`
+          : `This is a reference image for a comic book character. The image is tagged "${tag || 'default'}".`;
+        instructionLine = name
+          ? `Write 1-2 sentences describing what you see. Begin with "${name}" as the subject (e.g. "${name} wears…" or "${name} stands…"). Focus on visual details — outfit, pose, expression, notable features — that would help identify this character in a comic panel. Reply with only the description, no preamble.`
+          : 'Write 1-2 sentences describing visual details (outfit, pose, expression, notable features) that would help match this image to comic panel descriptions. Reply with only the description, no preamble.';
+      }
     } else {
       contextLine = name
         ? `This is a reference image for a comic book location called "${name}"${era ? ` (${era})` : ''}. The image is tagged "${tag || 'establishing'}".`
@@ -620,7 +672,7 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     try {
       const caption = await chatCompletion(messages, {
         model,
-        maxTokens: 120,
+        maxTokens: tag === 'character-sheet' ? 200 : 120,
         temperature: 0.3,
       });
       return caption?.trim() || null;
@@ -696,6 +748,70 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     'qwen-image', 'hunyuan-image-3',
   ];
 
+  /**
+   * Reference variation definitions for AI-generated reference images.
+   * Each entry defines the tag, prompt template, and description for a variation.
+   * Character templates use {name} and {appearance} placeholders.
+   * World templates use {name} and {description} placeholders.
+   */
+  const CHARACTER_REF_VARIATIONS = [
+    { tag: 'front-view', prompt: 'Full front view of {name}, {appearance}, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
+    { tag: 'side-view', prompt: 'Side profile view of {name}, {appearance}, standing facing right, full body visible, clean background', desc: 'Side profile reference' },
+    { tag: 'back-view', prompt: 'Back view of {name}, {appearance}, standing facing away from the viewer, full body visible, clean background', desc: 'Rear view reference' },
+    { tag: 'close-up', prompt: 'Close-up portrait of {name}, {appearance}, detailed face and expression, head and shoulders, clean background', desc: 'Close-up face/portrait reference' },
+    { tag: 'action-pose', prompt: '{name} in a dynamic action pose, {appearance}, mid-motion, energetic composition, clean background', desc: 'Dynamic action pose reference' },
+    { tag: 'expression', prompt: 'Expressive portrait of {name}, {appearance}, showing strong emotion, detailed facial features, clean background', desc: 'Emotional expression reference' },
+  ];
+
+  const WORLD_REF_VARIATIONS = [
+    { tag: 'aerial', prompt: 'Aerial bird\'s-eye view of {name}, {description}, wide panoramic perspective showing the full landscape', desc: 'Aerial panoramic view' },
+    { tag: 'interior', prompt: 'Interior view of a key location inside {name}, {description}, detailed architecture and furnishings', desc: 'Interior environment detail' },
+    { tag: 'night', prompt: 'Night scene of {name}, {description}, dark atmosphere with dramatic lighting and shadows', desc: 'Night atmosphere reference' },
+    { tag: 'detail', prompt: 'Close-up architectural or environmental detail of {name}, {description}, texture and material focus', desc: 'Close-up environment detail' },
+  ];
+
+  /**
+   * Generate a single reference image variation using the image API.
+   * @param {string} sourceDataUrl - The source reference image to base the variation on
+   * @param {string} prompt - The specific prompt for this variation
+   * @param {Object} [options] - Optional overrides (model, resolution)
+   * @returns {Promise<string|null>} - The generated image as a data URL, or null on failure
+   */
+  async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
+    try {
+      // Use the user's configured image size rather than a hardcoded default
+      const resolution = options.resolution || await DB.getSetting('imageSize', '1024x1024');
+      const result = await generateImage(prompt, {
+        imageDataUrl: sourceDataUrl,
+        resolution,
+        model: options.model,
+      });
+      if (!result) return null;
+      // Convert URL results to data URLs for local storage
+      if (result.startsWith('http')) {
+        try {
+          const resp = await fetch(result);
+          const blob = await resp.blob();
+          return await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        } catch {
+          return null;
+        }
+      }
+      if (result.startsWith('data:')) return result;
+      return `data:image/png;base64,${result}`;
+    } catch (err) {
+      if (typeof App !== 'undefined') {
+        App.logError('generateRefVariation', err, `Failed to generate variation: ${prompt.slice(0, 80)}`);
+      }
+      return null;
+    }
+  }
+
   return {
     chatCompletion,
     chatCompletionStream,
@@ -710,6 +826,9 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
     fetchTextModels,
     fetchImageModels,
     getModelSizes,
+    generateRefVariation,
+    CHARACTER_REF_VARIATIONS,
+    WORLD_REF_VARIATIONS,
     FALLBACK_TEXT_MODELS,
     FALLBACK_IMAGE_MODELS,
     KNOWN_IMAGE_SIZES,

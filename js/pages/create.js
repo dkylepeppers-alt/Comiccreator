@@ -40,6 +40,7 @@ const CreatePage = (() => {
     'action-pose':      ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
     'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
     'expression':       ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
+    'character-sheet':  ['character sheet', 'turnaround', 'model sheet', 'reference sheet', 'multiple angles', 'multiple poses', 'multi-angle', 'multi-pose', 'full rotation', '360', 'orthographic'],
   };
 
   async function render(param) {
@@ -533,11 +534,21 @@ const CreatePage = (() => {
     const genreName = state.genre === 'custom' ? (state.customGenre || 'Custom') :
       GENRES.find(g => g.id === state.genre)?.name || state.genre;
 
+    // Fetch available image sizes for dynamic per-panel sizing
+    const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
+    let imageSizesOpt;
+    if (dynamicImageSizes) {
+      const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+      const sizes = await API.getModelSizes(imageModel);
+      if (sizes && sizes.length > 1) imageSizesOpt = { imageSizes: sizes };
+    }
+
     const systemPrompt = API.buildSystemPrompt(
       genreName,
       characters,
       world,
-      presetData?.systemPrompt || null
+      presetData?.systemPrompt || null,
+      imageSizesOpt
     );
 
     const userMessage = state.storyPrompt ?
@@ -649,6 +660,7 @@ const CreatePage = (() => {
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
         const imageResolution = await DB.getSetting('imageSize', '1024x1024');
+        const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
         const imagePresetData = state.selectedImagePreset
           ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
           : null;
@@ -779,7 +791,15 @@ const CreatePage = (() => {
 
         // Build per-panel image options using hybrid cascading strategy
         async function buildPanelImageOpts(panel) {
-          const opts = { resolution: imageResolution };
+          // Use AI-picked size when dynamic sizing is enabled and the AI provided a valid WxH value
+          let resolution = imageResolution;
+          if (dynamicSizesEnabled && panel.imageSize) {
+            const trimmed = panel.imageSize.trim();
+            if (/^\d+x\d+$/i.test(trimmed)) {
+              resolution = trimmed.toLowerCase();
+            }
+          }
+          const opts = { resolution };
           const charNamesInPanel = Object.keys(state.characterImagesByName)
             .filter(name => nameInPrompt(name, panel.imagePrompt));
 
