@@ -536,11 +536,12 @@ const CreatePage = (() => {
 
     // Fetch available image sizes for dynamic per-panel sizing
     const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
-    let imageSizesOpt;
+    const includeAppearanceText = await DB.getSetting('includeAppearanceText', true);
+    let systemPromptOpts = { includeAppearanceText };
     if (dynamicImageSizes) {
       const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
       const sizes = await API.getModelSizes(imageModel);
-      if (sizes && sizes.length > 1) imageSizesOpt = { imageSizes: sizes };
+      if (sizes && sizes.length > 1) systemPromptOpts.imageSizes = sizes;
     }
 
     const systemPrompt = API.buildSystemPrompt(
@@ -548,7 +549,7 @@ const CreatePage = (() => {
       characters,
       world,
       presetData?.systemPrompt || null,
-      imageSizesOpt
+      systemPromptOpts
     );
 
     const userMessage = state.storyPrompt ?
@@ -661,6 +662,7 @@ const CreatePage = (() => {
         }
         const imageResolution = await DB.getSetting('imageSize', '1024x1024');
         const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
+        const includeAppearance = await DB.getSetting('includeAppearanceText', true);
         const imagePresetData = state.selectedImagePreset
           ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
           : null;
@@ -847,15 +849,17 @@ const CreatePage = (() => {
           return opts;
         }
 
-        // Build enhanced image prompt: sanitize narrative noise, then append appearance details
+        // Build enhanced image prompt: sanitize narrative noise, then optionally append appearance details
         function buildEnhancedImagePrompt(panel) {
           let prompt = sanitizeImagePrompt(panel.imagePrompt);
           if (imagePromptPrefix) prompt = `${imagePromptPrefix}, ${prompt}`;
-          const panelAppearances = state.characters
-            .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
-            .map(c => `${c.name}: ${c.appearance.trim()}`)
-            .join('; ');
-          if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
+          if (includeAppearance) {
+            const panelAppearances = state.characters
+              .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
+              .map(c => `${c.name}: ${c.appearance.trim()}`)
+              .join('; ');
+            if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
+          }
           return prompt;
         }
 

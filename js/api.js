@@ -319,12 +319,14 @@ const API = (() => {
    * @param {string|null} customSystemPrompt
    * @param {Object} [options]
    * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
+   * @param {boolean} [options.includeAppearanceText] - whether to include character appearance text (default: true)
    */
   function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
     const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
 
     const imageSizes = options?.imageSizes;
     const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
+    const includeAppearance = options?.includeAppearanceText !== false;
 
     // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
     // Use the first available size as a placeholder; the IMAGE SIZES section instructs the AI to vary them
@@ -388,14 +390,20 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       for (const c of characters) {
         prompt += `- ${c.name}: ${c.description}`;
         if (c.role) prompt += ` (Role: ${c.role})`;
-        if (c.appearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
+        if (c.appearance && includeAppearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
         if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
         prompt += '\n';
       }
-      prompt += `\nVISUAL CONSISTENCY RULES:
+      if (includeAppearance) {
+        prompt += `\nVISUAL CONSISTENCY RULES:
 - EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
 - Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
+      } else {
+        prompt += `\nVISUAL CONSISTENCY RULES:
+- Reference images will be provided to the image generator for visual consistency. Focus your "imagePrompt" on scene composition, action, and camera angle rather than repeating character appearance details.
+- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
+      }
     }
 
     if (world) {
@@ -751,8 +759,8 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
   /**
    * Reference variation definitions for AI-generated reference images.
    * Each entry defines the tag, prompt template, and description for a variation.
-   * Character templates use {name} as an identifier but are reference-image-centric —
-   * the model should derive appearance from the visual reference, not from text.
+   * Character templates are reference-image-centric — the model should derive
+   * appearance from the visual reference, not from text.
    * World templates use {name} and {description} placeholders.
    */
   const CHARACTER_REF_VARIATIONS = [

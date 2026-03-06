@@ -414,8 +414,7 @@ const CharactersPage = (() => {
       done++;
       if (genBtn) genBtn.textContent = `Generating ${done}/${batch.length}\u2026`;
 
-      const prompt = variation.prompt
-        .replace(/\{name\}/g, name);
+      const prompt = variation.prompt;
 
       const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
 
@@ -474,8 +473,7 @@ const CharactersPage = (() => {
     if (!prompt) {
       const variation = API.CHARACTER_REF_VARIATIONS.find(v => v.tag === img.tag);
       if (variation) {
-        prompt = variation.prompt
-          .replace(/\{name\}/g, name);
+        prompt = variation.prompt;
       } else {
         prompt = `Generate a ${img.tag.replace(/-/g, ' ')} of the character in the reference image, clean background`;
       }

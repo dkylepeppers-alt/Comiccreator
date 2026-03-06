@@ -33,6 +33,7 @@ const SettingsPage = (() => {
     const captionModel = await DB.getSetting('captionModel', '');
     const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
     const showExplicitContent = await DB.getSetting('showExplicitContent', false);
+    const includeAppearanceText = await DB.getSetting('includeAppearanceText', true);
     const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
@@ -111,6 +112,14 @@ const SettingsPage = (() => {
               Use Reference Images
             </label>
             <div class="form-hint">Send character/world images as style references for consistent visuals (uses more credits)</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="set-includeappearance" ${includeAppearanceText ? 'checked' : ''} style="width:auto;">
+              Include Appearance Text in Prompts
+            </label>
+            <div class="form-hint">When enabled, character appearance descriptions are included in comic generation prompts. Disable to rely solely on reference images for visual consistency (reduces drift).</div>
           </div>
 
           <div class="form-group">
@@ -784,6 +793,7 @@ const SettingsPage = (() => {
     await DB.setSetting('imageModel', document.getElementById('set-imgmodel').value);
     await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
     await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
+    await DB.setSetting('includeAppearanceText', document.getElementById('set-includeappearance').checked);
     await DB.setSetting('charRefMode', document.getElementById('set-charrefmode').value);
     await DB.setSetting('captionModel', document.getElementById('set-captionmodel').value);
 
