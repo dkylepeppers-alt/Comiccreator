@@ -363,14 +363,18 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene in detail (for AI art generation). Include each character's physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.
+- A vivid imagePrompt describing the visual scene in detail (for AI art generation).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 
 CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
-who appears in that panel and include their full physical appearance description
+who appears in that panel.${includeAppearance
+  ? ` Include their full physical appearance description
 inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
-black armor, glowing blue eyes)". This is essential for visual consistency.
+black armor, glowing blue eyes)". This is essential for visual consistency.`
+  : ` Describe their actions, poses, and the scene composition.
+Reference images will be provided for visual consistency, so you do not need
+to repeat full appearance descriptions — but always use character names.`}
 If a panel has NO characters (e.g., establishing shot), say "No characters present."
 
 Provide 2-3 meaningful choices at the end that affect the story direction.`;
@@ -401,7 +405,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
       } else {
         prompt += `\nVISUAL CONSISTENCY RULES:
-- Reference images will be provided to the image generator for visual consistency. Focus your "imagePrompt" on scene composition, action, and camera angle rather than repeating character appearance details.
+- In each panel's "imagePrompt", name every visible character and describe their actions, poses, and the scene. Reference images will be provided to the image generator for visual consistency.
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
       }
     }

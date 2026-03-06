@@ -138,7 +138,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
     } else {
       prompt += `\nVISUAL CONSISTENCY RULES:
-- Reference images will be provided to the image generator for visual consistency. Focus your "imagePrompt" on scene composition, action, and camera angle rather than repeating character appearance details.
+- In each panel's "imagePrompt", name every visible character and describe their actions, poses, and the scene. Reference images will be provided to the image generator for visual consistency.
 - Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
     }
   }
@@ -310,6 +310,7 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section');
     assert.ok(prompt.includes('Reference images will be provided'), 'should use reference-image-centric rules');
     assert.ok(!prompt.includes('repeat each visible character'), 'should not instruct appearance repetition');
+    assert.ok(prompt.includes('name every visible character'), 'should still require character naming for embedding matching');
   });
 
   it('buildSystemPrompt includes APPEARANCE by default when includeAppearanceText is not specified', () => {
