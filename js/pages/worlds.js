@@ -370,7 +370,11 @@ const WorldsPage = (() => {
    * tagged variations (aerial, interior, night, detail).
    */
   async function generateReferences() {
-    const primaryImg = editorImages.find(img => img.dataUrl);
+    // Use the user-selected primary image as the source for all variations
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl); // fallback if primary has no data
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
     const name = document.getElementById('world-name')?.value.trim() || 'the location';

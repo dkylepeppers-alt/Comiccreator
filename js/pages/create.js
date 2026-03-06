@@ -791,8 +791,14 @@ const CreatePage = (() => {
 
         // Build per-panel image options using hybrid cascading strategy
         async function buildPanelImageOpts(panel) {
-          // Use AI-picked size when dynamic sizing is enabled and the AI provided one
-          const resolution = (dynamicSizesEnabled && panel.imageSize) ? panel.imageSize : imageResolution;
+          // Use AI-picked size when dynamic sizing is enabled and the AI provided a valid WxH value
+          let resolution = imageResolution;
+          if (dynamicSizesEnabled && panel.imageSize) {
+            const trimmed = panel.imageSize.trim();
+            if (/^\d+x\d+$/i.test(trimmed)) {
+              resolution = trimmed.toLowerCase();
+            }
+          }
           const opts = { resolution };
           const charNamesInPanel = Object.keys(state.characterImagesByName)
             .filter(name => nameInPrompt(name, panel.imagePrompt));

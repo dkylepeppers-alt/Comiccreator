@@ -751,7 +751,8 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
   /**
    * Reference variation definitions for AI-generated reference images.
    * Each entry defines the tag, prompt template, and description for a variation.
-   * Templates use {name} and {appearance} placeholders.
+   * Character templates use {name} and {appearance} placeholders.
+   * World templates use {name} and {description} placeholders.
    */
   const CHARACTER_REF_VARIATIONS = [
     { tag: 'front-view', prompt: 'Full front view of {name}, {appearance}, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
@@ -778,9 +779,11 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
    */
   async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
     try {
+      // Use the user's configured image size rather than a hardcoded default
+      const resolution = options.resolution || await DB.getSetting('imageSize', '1024x1024');
       const result = await generateImage(prompt, {
         imageDataUrl: sourceDataUrl,
-        resolution: options.resolution || '1024x1024',
+        resolution,
         model: options.model,
       });
       if (!result) return null;
