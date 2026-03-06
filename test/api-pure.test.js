@@ -251,6 +251,19 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(prompt.includes('identical across all panels'), 'should instruct consistency across panels');
   });
 
+  it('buildSystemPrompt includes VISUAL CONSISTENCY RULES even for characters without appearance', () => {
+    const prompt = buildSystemPrompt('action', [{ name: 'Bob', description: 'A sidekick' }], null);
+    assert.ok(prompt.includes('CHARACTERS:'), 'should include characters section');
+    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section even without appearance');
+    assert.ok(!prompt.includes('APPEARANCE:'), 'should not include APPEARANCE line when field is missing');
+  });
+
+  it('buildSystemPrompt omits VISUAL CONSISTENCY RULES when no characters provided', () => {
+    const noChars = buildSystemPrompt('action', [], null);
+    assert.ok(!noChars.includes('VISUAL CONSISTENCY RULES:'), 'should not include visual consistency section without characters');
+    assert.ok(!noChars.includes('CHARACTERS:'), 'should not include characters section');
+  });
+
   it('buildSystemPrompt includes world atmosphere when provided', () => {
     const prompt = buildSystemPrompt('action', [], { name: 'Gotham', description: 'A dark city', atmosphere: 'Gritty noir' });
     assert.ok(prompt.includes('Atmosphere: Gritty noir'), 'should include world atmosphere');
