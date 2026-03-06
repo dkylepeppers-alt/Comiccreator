@@ -75,14 +75,18 @@ function parseComicResponse(text) {
   if (firstBrace !== -1 && lastBrace !== -1) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   const buildResult = parsed => ({
     title: parsed.title || 'Untitled Page',
-    panels: (parsed.panels || []).map(p => ({
-      narration: p.narration || '',
-      imagePrompt: p.imagePrompt || p.image_prompt || '',
-      dialogue: (p.dialogue || []).map(d => ({
-        speaker: d.speaker || 'Unknown',
-        text: d.text || '',
-      })),
-    })),
+    panels: (parsed.panels || []).map(p => {
+      const panel = {
+        narration: p.narration || '',
+        imagePrompt: p.imagePrompt || p.image_prompt || '',
+        dialogue: (p.dialogue || []).map(d => ({
+          speaker: d.speaker || 'Unknown',
+          text: d.text || '',
+        })),
+      };
+      if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
+      return panel;
+    }),
     choices: (parsed.choices || []).map(c => ({
       text: c.text || c.description || '',
       summary: c.summary || '',
@@ -99,13 +103,24 @@ function parseComicResponse(text) {
   }
 }
 
-function buildSystemPrompt(genre, characters, world, customSystemPrompt) {
+function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
   const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
+  const imageSizes = options?.imageSizes;
+  const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
   let prompt = `${base}
 
 IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
 
 Your response must be a JSON object with this exact structure:`;
+  if (hasDynamicSizes) {
+    prompt += `\n\nIMAGE SIZES:
+For each panel, choose the most appropriate image size from these supported values: ${imageSizes.join(', ')}
+Set the "imageSize" field in each panel object. Pick sizes that best match the composition:
+- Use landscape/wide sizes for panoramic scenes, establishing shots, or action sequences
+- Use portrait/tall sizes for character close-ups, vertical compositions, or tall structures
+- Use square sizes for balanced scenes, dialogue-focused panels, or group shots
+Vary the sizes across panels to create a visually dynamic comic layout.`;
+  }
   if (characters && characters.length > 0) {
     prompt += '\n\nCHARACTERS:\n';
     for (const c of characters) {
@@ -197,6 +212,19 @@ describe('api pure parsing and prompt helpers', () => {
     assert.deepEqual(parseComicResponse('{"panels":[{}]}').panels[0].dialogue, []);
   });
 
+  it('parseComicResponse extracts imageSize from panels when present', () => {
+    const withSize = parseComicResponse('{"panels":[{"imagePrompt":"scene","imageSize":"1024x1536"}],"choices":[]}');
+    assert.equal(withSize.panels[0].imageSize, '1024x1536');
+
+    // Also accepts image_size (snake_case alternative)
+    const snakeCase = parseComicResponse('{"panels":[{"imagePrompt":"scene","image_size":"1536x1024"}],"choices":[]}');
+    assert.equal(snakeCase.panels[0].imageSize, '1536x1024');
+
+    // imageSize is omitted when not present in source
+    const noSize = parseComicResponse('{"panels":[{"imagePrompt":"scene"}],"choices":[]}');
+    assert.equal(noSize.panels[0].imageSize, undefined);
+  });
+
   it('buildSystemPrompt includes expected sections', () => {
     const p = buildSystemPrompt('superhero', [], null, '');
     assert.ok(p.includes('superhero'));
@@ -208,6 +236,32 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(withAll.includes('CHARACTERS:'));
     assert.ok(withAll.includes('WORLD SETTING:'));
     assert.ok(withAll.includes('Details: Fog'));
+  });
+
+  it('buildSystemPrompt includes IMAGE SIZES section when imageSizes option has multiple entries', () => {
+    const sizes = ['1024x1024', '1536x1024', '1024x1536'];
+    const prompt = buildSystemPrompt('action', [], null, null, { imageSizes: sizes });
+    assert.ok(prompt.includes('IMAGE SIZES:'));
+    assert.ok(prompt.includes('1024x1024'));
+    assert.ok(prompt.includes('1536x1024'));
+    assert.ok(prompt.includes('1024x1536'));
+    assert.ok(prompt.includes('"imageSize"'));
+    assert.ok(prompt.includes('landscape'));
+    assert.ok(prompt.includes('portrait'));
+  });
+
+  it('buildSystemPrompt omits IMAGE SIZES when imageSizes is missing, empty, or single-entry', () => {
+    // No options
+    const noOpts = buildSystemPrompt('action', [], null, null);
+    assert.ok(!noOpts.includes('IMAGE SIZES:'));
+
+    // Empty array
+    const emptyArr = buildSystemPrompt('action', [], null, null, { imageSizes: [] });
+    assert.ok(!emptyArr.includes('IMAGE SIZES:'));
+
+    // Single-entry array (no benefit to picking)
+    const singleArr = buildSystemPrompt('action', [], null, null, { imageSizes: ['1024x1024'] });
+    assert.ok(!singleArr.includes('IMAGE SIZES:'));
   });
 });
 

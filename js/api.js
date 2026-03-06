@@ -312,10 +312,37 @@ const API = (() => {
   }
 
   /**
-   * Build system prompt for comic generation
+   * Build system prompt for comic generation.
+   * @param {string} genre
+   * @param {Array} characters
+   * @param {Object} world
+   * @param {string|null} customSystemPrompt
+   * @param {Object} [options]
+   * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
    */
-  function buildSystemPrompt(genre, characters, world, customSystemPrompt) {
+  function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
     const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
+
+    const imageSizes = options?.imageSizes;
+    const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
+
+    // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
+    const panelExample = hasDynamicSizes
+      ? `{
+      "narration": "Scene-setting narration text (optional)",
+      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "imageSize": "${imageSizes[0]}",
+      "dialogue": [
+        { "speaker": "Character Name", "text": "What they say" }
+      ]
+    }`
+      : `{
+      "narration": "Scene-setting narration text (optional)",
+      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "dialogue": [
+        { "speaker": "Character Name", "text": "What they say" }
+      ]
+    }`;
 
     let prompt = `${base}
 
@@ -325,13 +352,7 @@ Your response must be a JSON object with this exact structure:
 {
   "title": "Page title",
   "panels": [
-    {
-      "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
-      "dialogue": [
-        { "speaker": "Character Name", "text": "What they say" }
-      ]
-    }
+    ${panelExample}
   ],
   "choices": [
     { "text": "Choice description for the reader", "summary": "Brief consequence summary" }
@@ -350,6 +371,16 @@ black armor, glowing blue eyes)". This is essential for visual consistency.
 If a panel has NO characters (e.g., establishing shot), say "No characters present."
 
 Provide 2-3 meaningful choices at the end that affect the story direction.`;
+
+    if (hasDynamicSizes) {
+      prompt += `\n\nIMAGE SIZES:
+For each panel, choose the most appropriate image size from these supported values: ${imageSizes.join(', ')}
+Set the "imageSize" field in each panel object. Pick sizes that best match the composition:
+- Use landscape/wide sizes for panoramic scenes, establishing shots, or action sequences
+- Use portrait/tall sizes for character close-ups, vertical compositions, or tall structures
+- Use square sizes for balanced scenes, dialogue-focused panels, or group shots
+Vary the sizes across panels to create a visually dynamic comic layout.`;
+    }
 
     if (characters && characters.length > 0) {
       prompt += '\n\nCHARACTERS:\n';
@@ -428,14 +459,18 @@ Provide 2-3 meaningful choices at the end that affect the story direction.`;
 
     const buildResult = parsed => ({
       title: parsed.title || 'Untitled Page',
-      panels: (parsed.panels || []).map(p => ({
-        narration: p.narration || '',
-        imagePrompt: p.imagePrompt || p.image_prompt || '',
-        dialogue: (p.dialogue || []).map(d => ({
-          speaker: d.speaker || 'Unknown',
-          text: d.text || '',
-        })),
-      })),
+      panels: (parsed.panels || []).map(p => {
+        const panel = {
+          narration: p.narration || '',
+          imagePrompt: p.imagePrompt || p.image_prompt || '',
+          dialogue: (p.dialogue || []).map(d => ({
+            speaker: d.speaker || 'Unknown',
+            text: d.text || '',
+          })),
+        };
+        if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
+        return panel;
+      }),
       choices: (parsed.choices || []).map(c => ({
         text: c.text || c.description || '',
         summary: c.summary || '',

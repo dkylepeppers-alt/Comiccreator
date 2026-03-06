@@ -533,11 +533,21 @@ const CreatePage = (() => {
     const genreName = state.genre === 'custom' ? (state.customGenre || 'Custom') :
       GENRES.find(g => g.id === state.genre)?.name || state.genre;
 
+    // Fetch available image sizes for dynamic per-panel sizing
+    const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
+    let imageSizesOpt;
+    if (dynamicImageSizes) {
+      const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
+      const sizes = await API.getModelSizes(imageModel);
+      if (sizes && sizes.length > 1) imageSizesOpt = { imageSizes: sizes };
+    }
+
     const systemPrompt = API.buildSystemPrompt(
       genreName,
       characters,
       world,
-      presetData?.systemPrompt || null
+      presetData?.systemPrompt || null,
+      imageSizesOpt
     );
 
     const userMessage = state.storyPrompt ?
@@ -649,6 +659,7 @@ const CreatePage = (() => {
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
         const imageResolution = await DB.getSetting('imageSize', '1024x1024');
+        const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
         const imagePresetData = state.selectedImagePreset
           ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
           : null;
@@ -779,7 +790,9 @@ const CreatePage = (() => {
 
         // Build per-panel image options using hybrid cascading strategy
         async function buildPanelImageOpts(panel) {
-          const opts = { resolution: imageResolution };
+          // Use AI-picked size when dynamic sizing is enabled and the AI provided one
+          const resolution = (panel.imageSize && dynamicSizesEnabled) ? panel.imageSize : imageResolution;
+          const opts = { resolution };
           const charNamesInPanel = Object.keys(state.characterImagesByName)
             .filter(name => nameInPrompt(name, panel.imagePrompt));
 
