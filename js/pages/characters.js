@@ -385,7 +385,18 @@ const CharactersPage = (() => {
    * tagged variations (front-view, side-view, back-view, close-up, action-pose, expression).
    */
   async function generateReferences() {
-    const primaryImg = editorImages.find(img => img.dataUrl);
+    // Prefer the user-selected primary image, and avoid AI-generated images when possible
+    let primaryImg = null;
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    if (primaryCandidate && primaryCandidate.dataUrl && !primaryCandidate.aiGenerated) {
+      primaryImg = primaryCandidate;
+    }
+    if (!primaryImg) {
+      // Fallback: first non-AI-generated image with dataUrl
+      primaryImg = editorImages.find(img => img.dataUrl && !img.aiGenerated) ||
+        // Last resort: any image with dataUrl
+        editorImages.find(img => img.dataUrl);
+    }
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
     const name = document.getElementById('char-name')?.value.trim() || 'the character';
