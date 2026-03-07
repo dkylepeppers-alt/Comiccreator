@@ -320,7 +320,7 @@ const API = (() => {
    * @param {Object} [options]
    * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
    * @param {boolean} [options.includeAppearanceText] - whether to include character appearance text (default: true)
-   * @param {string} [options.imageStylePreset] - image style prompt prefix from the selected image preset (e.g. "watercolor painting, soft edges")
+   * @param {string} [options.imageStylePreset] - image style prompt prefix from the selected image preset (e.g. "watercolor painting, soft edges").
    */
   function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
     const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;

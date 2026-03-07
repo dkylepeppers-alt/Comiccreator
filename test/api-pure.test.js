@@ -382,7 +382,7 @@ describe('api pure parsing and prompt helpers', () => {
     const preset = 'watercolor painting, soft edges, gentle color washes, artistic';
     const prompt = buildSystemPrompt('action', [], null, null, { imageStylePreset: preset });
     assert.ok(prompt.includes(preset), 'should include the image style preset text');
-    assert.ok(!prompt.includes('comic book illustration'), 'should NOT include hardcoded comic book illustration when preset is set');
+    assert.ok(!prompt.toLowerCase().includes('comic book illustration'), 'should NOT include hardcoded comic book illustration when preset is set');
     assert.ok(prompt.includes(`art style (use: ${preset})`), 'should use preset in art style instruction');
     assert.ok(prompt.includes(`MUST begin with "${preset}"`), 'should instruct LLM to prefix imagePrompt with preset');
   });
@@ -401,7 +401,7 @@ describe('api pure parsing and prompt helpers', () => {
     assert.ok(prompt.includes(preset), 'should include preset with dynamic sizes');
     assert.ok(prompt.includes('IMAGE SIZES:'), 'should include image sizes section');
     assert.ok(prompt.includes('"imageSize"'), 'should include imageSize field in example');
-    assert.ok(!prompt.includes('Comic book illustration'), 'should not hardcode comic book illustration in example');
+    assert.ok(!prompt.toLowerCase().includes('comic book illustration'), 'should not hardcode comic book illustration in example');
   });
 });
 
