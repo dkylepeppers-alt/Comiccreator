@@ -546,6 +546,15 @@ const CreatePage = (() => {
       if (sizes && sizes.length > 1) systemPromptOpts.imageSizes = sizes;
     }
 
+    // Pass the selected image style preset to the system prompt so the LLM
+    // uses the correct art style in imagePrompt fields instead of a hardcoded default.
+    if (state.selectedImagePreset) {
+      const imagePresetData = await DB.get(DB.STORES.imagePresets, state.selectedImagePreset);
+      if (imagePresetData?.promptPrefix) {
+        systemPromptOpts.imageStylePreset = imagePresetData.promptPrefix;
+      }
+    }
+
     const systemPrompt = API.buildSystemPrompt(
       genreName,
       characters,
