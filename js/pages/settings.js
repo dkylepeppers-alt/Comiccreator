@@ -6,6 +6,22 @@ const SettingsPage = (() => {
   const APP_VERSION = '1.6.22';
   const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
+  // Settings keys included in cloud backup/restore (excludes caches and device-specific keys)
+  const CLOUD_SYNC_KEYS = [
+    'apiKey', 'model', 'imageModel', 'temperature', 'topP', 'maxTokens',
+    'contextExchanges', 'enableImages', 'useRefImages', 'includeAppearanceText',
+    'charRefMode', 'captionModel', 'embeddingModel', 'showExplicitContent',
+    'dynamicImageSizes', 'imageSize',
+  ];
+
+  const CLOUD_SYNC_DEFAULTS = {
+    apiKey: '', model: 'gpt-4o-mini', imageModel: '', temperature: 0.7,
+    topP: 0.9, maxTokens: 2048, contextExchanges: 6, enableImages: true,
+    useRefImages: true, includeAppearanceText: true, charRefMode: 'auto',
+    captionModel: '', embeddingModel: 'text-embedding-3-small',
+    showExplicitContent: false, dynamicImageSizes: false, imageSize: '1024x1024',
+  };
+
   // In-memory model lists populated on render
   let textModels = [];
   let imageModels = [];
@@ -37,6 +53,8 @@ const SettingsPage = (() => {
     const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
+    const cloudSyncToken = await DB.getSetting('cloudSyncToken', '');
+    const cloudSyncGistId = await DB.getSetting('cloudSyncGistId', '');
 
     return `
       <div class="slide-up">
@@ -251,6 +269,26 @@ const SettingsPage = (() => {
             <input type="file" id="import-input" accept=".json" class="hidden" onchange="SettingsPage.importData(event)">
             <button class="btn btn-secondary btn-block" onclick="SettingsPage.clearAppCache()">Clear App Cache</button>
             <button class="btn btn-danger btn-block" onclick="SettingsPage.clearData()">Clear All Data</button>
+          </div>
+        </div>
+
+        <!-- Cloud Sync -->
+        <div class="card mt-md">
+          <h3 class="card-title mb-sm">Cloud Sync</h3>
+          <p class="text-sm text-muted mb-sm">Back up your app settings to a private GitHub Gist and restore them on any device. Requires a GitHub Personal Access Token with the <strong>gist</strong> scope.</p>
+          <div class="form-group">
+            <label class="form-label">GitHub Personal Access Token</label>
+            <input type="password" id="set-cloud-token" value="${escHtml(cloudSyncToken)}" placeholder="ghp_… or github_pat_…">
+            <div class="form-hint">Create one at <a href="https://github.com/settings/tokens/new?scopes=gist" target="_blank">github.com/settings/tokens</a> with <strong>gist</strong> scope selected. Stored locally in your browser.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gist ID <span class="text-muted" style="font-weight:normal;">(auto-filled after first backup)</span></label>
+            <input type="text" id="set-cloud-gist-id" value="${escHtml(cloudSyncGistId)}" placeholder="Leave empty to create a new backup Gist">
+            ${cloudSyncGistId ? `<div class="form-hint"><a href="https://gist.github.com/${escHtml(cloudSyncGistId)}" target="_blank">View backup Gist on GitHub ↗</a></div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="btn btn-secondary btn-block" id="cloud-backup-btn" onclick="SettingsPage.backupToCloud()">☁ Backup Settings to Cloud</button>
+            <button class="btn btn-secondary btn-block" id="cloud-restore-btn" onclick="SettingsPage.restoreFromCloud()">⬇ Restore Settings from Cloud</button>
           </div>
         </div>
 
@@ -931,9 +969,125 @@ const SettingsPage = (() => {
     App.refreshPage();
   }
 
+  // --- Cloud Sync (GitHub Gist) ---
+
+  async function backupToCloud() {
+    const token = document.getElementById('set-cloud-token').value.trim();
+    if (!token) return App.toast('Enter a GitHub Personal Access Token first', 'error');
+
+    const btn = document.getElementById('cloud-backup-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Backing up\u2026'; }
+
+    try {
+      const settings = {};
+      for (const key of CLOUD_SYNC_KEYS) {
+        settings[key] = await DB.getSetting(key, CLOUD_SYNC_DEFAULTS[key] !== undefined ? CLOUD_SYNC_DEFAULTS[key] : null);
+      }
+
+      const content = JSON.stringify({ settings, backedUpAt: new Date().toISOString() }, null, 2);
+      const gistPayload = {
+        description: 'AI Comic Creator \u2013 Settings Backup',
+        public: false,
+        files: { 'comic-creator-settings.json': { content } },
+      };
+
+      const existingGistId = document.getElementById('set-cloud-gist-id').value.trim();
+      const url = existingGistId
+        ? `https://api.github.com/gists/${existingGistId}`
+        : 'https://api.github.com/gists';
+      const method = existingGistId ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+        },
+        body: JSON.stringify(gistPayload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `GitHub API error ${res.status}`);
+      }
+
+      const data = await res.json();
+      const gistId = data.id;
+
+      await DB.setSetting('cloudSyncToken', token);
+      await DB.setSetting('cloudSyncGistId', gistId);
+
+      const gistIdEl = document.getElementById('set-cloud-gist-id');
+      if (gistIdEl) gistIdEl.value = gistId;
+
+      App.toast(`Settings backed up! Gist ID: ${gistId}`, 'success');
+    } catch (e) {
+      logError('backupToCloud()', e);
+      App.toast(`Backup failed: ${e.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '\u2601 Backup Settings to Cloud'; }
+    }
+  }
+
+  async function restoreFromCloud() {
+    const token = document.getElementById('set-cloud-token').value.trim();
+    const gistId = document.getElementById('set-cloud-gist-id').value.trim();
+    if (!token) return App.toast('Enter a GitHub Personal Access Token first', 'error');
+    if (!gistId) return App.toast('Enter a Gist ID to restore from', 'error');
+
+    const btn = document.getElementById('cloud-restore-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Restoring\u2026'; }
+
+    try {
+      const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `GitHub API error ${res.status}`);
+      }
+
+      const data = await res.json();
+      const fileContent = data.files && data.files['comic-creator-settings.json']
+        ? data.files['comic-creator-settings.json'].content
+        : null;
+      if (!fileContent) throw new Error('No settings file found in this Gist');
+
+      const parsed = JSON.parse(fileContent);
+      const restoredSettings = parsed.settings;
+      if (!restoredSettings || typeof restoredSettings !== 'object') {
+        throw new Error('Invalid settings format in Gist');
+      }
+
+      for (const key of CLOUD_SYNC_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(restoredSettings, key)) {
+          await DB.setSetting(key, restoredSettings[key]);
+        }
+      }
+
+      await DB.setSetting('cloudSyncToken', token);
+      await DB.setSetting('cloudSyncGistId', gistId);
+
+      App.toast('Settings restored! Reloading page\u2026', 'success');
+      // Short delay so the success toast is visible before the page reloads
+      setTimeout(() => App.navigate('settings'), 900);
+    } catch (e) {
+      logError('restoreFromCloud()', e);
+      App.toast(`Restore failed: ${e.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '\u2b07 Restore Settings from Cloud'; }
+    }
+  }
+
   return {
     render, postRender, onMount, onUnmount,
     testConnection, save, exportData, importData, clearData, confirmClear,
+    backupToCloud, restoreFromCloud,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
     clearCaptionModel,
     updateImageSizeOptions, checkForUpdate, reloadForUpdate, clearAppCache,
