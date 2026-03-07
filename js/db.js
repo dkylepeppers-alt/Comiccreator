@@ -69,6 +69,7 @@ const DB = (() => {
   }
 
   async function get(storeName, id) {
+    if (id == null || id === '') return undefined;
     await open();
     return promisify(tx(storeName).get(id));
   }
@@ -84,6 +85,7 @@ const DB = (() => {
   }
 
   async function del(storeName, id) {
+    if (id == null || id === '') return;
     await open();
     const result = await promisify(tx(storeName, 'readwrite').delete(id));
     if (typeof CloudSync !== 'undefined' && CloudSync.notifyWrite) {
