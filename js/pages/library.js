@@ -278,11 +278,14 @@ const LibraryPage = (() => {
     printWindow.document.write(printContent);
     printWindow.document.close();
 
-    // Trigger print after images load
+    // Trigger print after images and fonts are fully loaded
     printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
+      const doPrint = () => printWindow.print();
+      if (printWindow.document?.fonts?.ready) {
+        printWindow.document.fonts.ready.then(doPrint).catch(doPrint);
+      } else {
+        setTimeout(doPrint, 500);
+      }
     };
   }
 
@@ -292,23 +295,26 @@ const LibraryPage = (() => {
 <head>
 <meta charset="UTF-8">
 <title>${escHtml(comic.title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   @page { margin: 0.5in; size: letter; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Comic Sans MS', 'Segoe UI', sans-serif; background: #fff; color: #000; }
+  body { font-family: 'Comic Neue', 'Comic Sans MS', 'Segoe UI', sans-serif; background: #fff; color: #000; }
   .cover { text-align: center; padding: 40vh 20px 0; page-break-after: always; }
-  .cover h1 { font-size: 2.5rem; margin-bottom: 12px; }
-  .cover .genre { font-size: 1.2rem; color: #666; }
+  .cover h1 { font-size: 3rem; margin-bottom: 12px; font-family: 'Bangers', 'Comic Sans MS', cursive; letter-spacing: 0.06em; text-shadow: 3px 3px 0 #ddd; }
+  .cover .genre { font-size: 1.3rem; color: #555; font-style: italic; }
   .page-container { page-break-after: always; padding: 20px 0; }
-  .page-title { font-size: 1.2rem; font-weight: bold; margin-bottom: 16px; text-align: center; }
-  .panel { border: 3px solid #000; border-radius: 8px; margin-bottom: 16px; overflow: hidden; background: #fafafa; }
+  .page-title { font-size: 1.3rem; font-weight: bold; margin-bottom: 16px; text-align: center; font-family: 'Bangers', 'Comic Sans MS', cursive; letter-spacing: 0.05em; }
+  .panel { border: 3px solid #111; border-radius: 8px; margin-bottom: 18px; overflow: hidden; background: #fafafa; box-shadow: 3px 3px 0 #bbb; }
   .panel img { width: 100%; display: block; }
-  .narration { background: #fffde7; border: 1px solid #e6d85e; padding: 10px 14px; margin: 10px; border-radius: 4px; font-style: italic; font-size: 0.95rem; }
-  .dialogue-bubble { background: #fff; border: 2px solid #000; border-radius: 18px; padding: 10px 16px; margin: 10px; position: relative; }
-  .dialogue-bubble::after { content:''; position:absolute; bottom:-10px; left:24px; width:0; height:0; border-left:10px solid transparent; border-right:10px solid transparent; border-top:10px solid #000; }
-  .speaker { font-weight: bold; font-size: 0.8rem; color: #555; margin-bottom: 4px; }
+  .narration { background: #fffde7; border: 2px solid #c8a800; padding: 10px 16px; margin: 10px; border-radius: 4px; font-style: italic; font-size: 1rem; color: #222; font-family: 'Comic Neue', 'Comic Sans MS', cursive; box-shadow: 2px 2px 0 #c8a800; }
+  .dialogue-bubble { background: #fff; border: 2.5px solid #111; border-radius: 20px; padding: 10px 16px 12px 16px; margin: 10px 10px 18px 10px; position: relative; box-shadow: 2px 2px 0 #111; font-family: 'Comic Neue', 'Comic Sans MS', cursive; font-size: 1.05rem; color: #111; line-height: 1.45; }
+  .dialogue-bubble::after { content:''; position:absolute; bottom:-14px; left:22px; width:0; height:0; border-left:9px solid transparent; border-right:5px solid transparent; border-top:14px solid #111; }
+  .dialogue-bubble::before { content:''; position:absolute; bottom:-11px; left:23px; width:0; height:0; border-left:8px solid transparent; border-right:4px solid transparent; border-top:12px solid #fff; z-index:1; }
+  .speaker { display:inline-block; font-weight: 900; font-size: 0.75rem; color: #fff; background: #111; border-radius: 6px 6px 0 0; padding: 2px 8px; margin-bottom: 5px; letter-spacing: 0.08em; text-transform: uppercase; font-family: 'Bangers', 'Comic Sans MS', cursive; }
   .img-placeholder { background: #eee; padding: 30px; text-align: center; color: #999; font-style: italic; min-height: 200px; display: flex; align-items: center; justify-content: center; }
-  .panels-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .panels-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .panels-grid .panel:first-child { grid-column: 1 / -1; }
   .panels-grid .panel:last-child:nth-child(even) { grid-column: 1 / -1; }
 </style>
@@ -317,7 +323,7 @@ const LibraryPage = (() => {
   <div class="cover">
     <h1>${escHtml(comic.title)}</h1>
     <div class="genre">${escHtml(comic.genreName || comic.genre)}</div>
-    <div style="margin-top:20px;color:#999;">Generated with AI Comic Creator</div>
+    <div style="margin-top:20px;color:#999;font-size:0.9rem;">Generated with AI Comic Creator</div>
   </div>
 
   ${pages.map((p, i) => `

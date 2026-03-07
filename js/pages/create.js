@@ -191,6 +191,7 @@ const CreatePage = (() => {
     const contextMsg =
       state.generatingContext === 'reroll'   ? 'Re-rolling page...' :
       state.generatingContext === 'continue' ? 'Continuing story...' :
+      state.generatingContext === 'reimage'  ? 'Regenerating images...' :
       'Generating your comic page...';
     return `
       <div class="slide-up">
@@ -223,6 +224,7 @@ const CreatePage = (() => {
           <div style="display:flex;align-items:center;gap:6px;">
             <span class="text-sm text-muted">Page ${pages.length}</span>
             <button class="btn btn-sm btn-secondary" onclick="CreatePage.rerollPage()" ${state.isGenerating ? 'disabled' : ''} title="Regenerate this page with different content">&#x1F3B2; Re-roll</button>
+            <button class="btn btn-sm btn-secondary" onclick="CreatePage.rerollImages()" ${state.isGenerating ? 'disabled' : ''} title="Regenerate images only — keep the story text">&#x1F5BC; Re-images</button>
             ${canUndo ? `<button class="btn btn-sm btn-secondary" onclick="CreatePage.undoChoice()" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}
           </div>
         </div>
@@ -601,6 +603,252 @@ const CreatePage = (() => {
     state.conversationHistory = [system, firstUser, ...recent];
   }
 
+  /**
+   * Generate images for all panels in pageData that have an imagePrompt.
+   * Reads settings and state internally; updates panel.imageUrl in place.
+   * @param {Object} pageData - page object with panels array
+   * @param {HTMLElement|null} uiMsg   - optional element for status message updates
+   */
+  async function generatePanelImages(pageData, uiMsg) {
+    const imageResolution = await DB.getSetting('imageSize', '1024x1024');
+    const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
+    const includeAppearance = await DB.getSetting('includeAppearanceText', true);
+    const imagePresetData = state.selectedImagePreset
+      ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
+      : null;
+    const imagePromptPrefix = imagePresetData?.promptPrefix || await DB.getSetting('imagePromptPrefix', '');
+    const charRefMode = await DB.getSetting('charRefMode', 'auto');
+    const maxRefImages = await DB.getSetting('maxRefImages', 4);
+
+    // Normalize world refs (plain strings and labeled objects)
+    const worldRefs = state.referenceImages
+      .map(item => typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item)
+      .filter(r => r.type === 'world');
+
+    // Cache panel prompt embeddings within this page generation
+    const promptEmbeddingCache = new Map();
+
+    async function getPromptEmbedding(promptText) {
+      if (!promptText) return null;
+      if (promptEmbeddingCache.has(promptText)) return promptEmbeddingCache.get(promptText);
+      const emb = await API.generateEmbedding(promptText).catch(() => null);
+      promptEmbeddingCache.set(promptText, emb);
+      return emb;
+    }
+
+    // Check if a character name appears in a panel prompt using word-boundary matching
+    function nameInPrompt(name, text) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(?<![a-zA-Z0-9])${escaped}(?![a-zA-Z0-9])`, 'i').test(text);
+    }
+
+    // Select the best image from a character's images[] using hybrid cascading strategy
+    async function selectBestImage(charImages, panelPromptText, charName, primaryImageIndex) {
+      const valid = (charImages || []).filter(img => img && img.dataUrl);
+      if (!valid.length) return null;
+      if (valid.length === 1) return valid[0];
+
+      const panelLower = panelPromptText.toLowerCase();
+      const promptSnippet = panelPromptText.slice(0, 80);
+
+      // 1. Embedding-based selection (unless mode is 'keyword')
+      if (charRefMode !== 'keyword') {
+        const withEmb = valid.filter(img => img.embedding?.length);
+        if (withEmb.length > 0) {
+          const panelEmb = await getPromptEmbedding(panelPromptText);
+          if (panelEmb) {
+            let best = withEmb[0];
+            let bestScore = cosineSimilarity(panelEmb, withEmb[0].embedding);
+            for (let i = 1; i < withEmb.length; i++) {
+              const score = cosineSimilarity(panelEmb, withEmb[i].embedding);
+              if (score > bestScore) { bestScore = score; best = withEmb[i]; }
+            }
+            return best;
+          }
+          // Embedding fetch failed — fall through to keyword
+          App.logError('selectBestImage', new Error('Embedding fallback'), `Embedding unavailable for panel prompt, falling back to keyword matching. Character: ${charName}, prompt: "${promptSnippet}..."`);
+        } else {
+          // No stored embeddings — fall through to keyword
+          App.logError('selectBestImage', new Error('Embedding fallback'), `No stored embeddings for character "${charName}", falling back to keyword matching. Prompt: "${promptSnippet}..."`);
+        }
+      }
+
+      // 2. Keyword tag matching (unless mode is 'semantic')
+      if (charRefMode !== 'semantic') {
+        let bestScore = 0, bestImg = null;
+        for (const img of valid) {
+          const keywords = TAG_KEYWORDS[img.tag] || [];
+          const score = keywords.filter(kw => panelLower.includes(kw)).length;
+          if (score > bestScore) { bestScore = score; bestImg = img; }
+        }
+        if (bestScore > 0 && bestImg) return bestImg;
+        // No keyword match — fall through to primary
+        App.logError('selectBestImage', new Error('Keyword fallback'), `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`);
+      }
+
+      // 3. Fall back to primary image using configured primaryImageIndex
+      const primaryIdx = typeof primaryImageIndex === 'number' ? primaryImageIndex : 0;
+      const primary = (charImages || [])[primaryIdx];
+      return (primary && primary.dataUrl) ? primary : valid[0];
+    }
+
+    // Build a composite character sheet canvas when multiple chars share budget
+    async function buildCompositeSheet(charMatches) {
+      const n = charMatches.length;
+      if (n === 0) return null;
+
+      const cellSize = 256;
+      const cols = Math.min(n, 2);
+      const rows = Math.ceil(n / cols);
+      const canvas = document.createElement('canvas');
+      canvas.width = cols * cellSize;
+      canvas.height = rows * cellSize;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      await Promise.all(charMatches.map(({ name, img }, i) => new Promise(resolve => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * cellSize;
+        const y = row * cellSize;
+        const drawLabel = () => {
+          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          ctx.fillRect(x, y + cellSize - 22, cellSize, 22);
+          ctx.fillStyle = '#fff';
+          ctx.font = '12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(name, x + cellSize / 2, y + cellSize - 7);
+        };
+        const image = new Image();
+        image.onload = () => {
+          ctx.drawImage(image, x, y, cellSize, cellSize - 22);
+          drawLabel();
+          resolve();
+        };
+        image.onerror = () => { drawLabel(); resolve(); };
+        image.src = img.dataUrl;
+      })));
+
+      const posLabels = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+      const legendParts = charMatches.map(({ name, img }, i) => {
+        const pos = posLabels[i] || `section ${i + 1}`;
+        const detail = img.description || (img.tag && img.tag !== 'default' ? img.tag : '');
+        return `${pos}: ${name}${detail ? ` (${detail})` : ''}`;
+      });
+      const legend = `Character sheet grid. ${legendParts.join('. ')}. Match each character's appearance exactly as shown in their labeled section.`;
+      return { dataUrl: canvas.toDataURL('image/jpeg', 0.9), legend, isComposite: true };
+    }
+
+    // Build per-panel image options using hybrid cascading strategy
+    async function buildPanelImageOpts(panel) {
+      // Use AI-picked size when dynamic sizing is enabled and the AI provided a valid WxH value
+      let resolution = imageResolution;
+      if (dynamicSizesEnabled && panel.imageSize) {
+        const trimmed = panel.imageSize.trim();
+        if (/^\d+x\d+$/i.test(trimmed)) {
+          resolution = trimmed.toLowerCase();
+        }
+      }
+      const opts = { resolution };
+      const charNamesInPanel = Object.keys(state.characterImagesByName)
+        .filter(name => nameInPrompt(name, panel.imagePrompt));
+
+      // Select best image per character in this panel
+      const charMatches = [];
+      for (const name of charNamesInPanel) {
+        const charData = state.characterImagesByName[name] || {};
+        const img = await selectBestImage(charData.images, panel.imagePrompt, name, charData.primaryImageIndex);
+        if (img) charMatches.push({ name, img });
+      }
+
+      const totalRefs = charMatches.length + worldRefs.length;
+
+      // Use composite sheet when mode is 'composite' or multiple chars exceed budget
+      if (charMatches.length > 1 && (charRefMode === 'composite' || totalRefs > maxRefImages)) {
+        const sheet = await buildCompositeSheet(charMatches);
+        if (sheet) {
+          const panelRefs = [
+            { dataUrl: sheet.dataUrl, label: 'Composite character sheet', tag: '', description: sheet.legend, type: 'character' },
+            ...worldRefs,
+          ];
+          opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
+          opts.labeledRefs = panelRefs;
+          return opts;
+        }
+      }
+
+      // Build individual labeled refs
+      const labeledCharRefs = charMatches.map(({ name, img }) => ({
+        dataUrl: img.dataUrl,
+        label: name,
+        tag: img.tag || '',
+        description: img.description || '',
+        type: 'character',
+      }));
+      const panelRefs = [...labeledCharRefs, ...worldRefs];
+
+      if (panelRefs.length === 1) {
+        opts.imageDataUrl = panelRefs[0].dataUrl;
+        opts.labeledRefs = panelRefs;
+      } else if (panelRefs.length > 1) {
+        opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
+        opts.labeledRefs = panelRefs;
+      }
+      return opts;
+    }
+
+    // Build enhanced image prompt: sanitize narrative noise, then optionally append appearance details
+    function buildEnhancedImagePrompt(panel) {
+      let prompt = sanitizeImagePrompt(panel.imagePrompt);
+      if (imagePromptPrefix) prompt = `${imagePromptPrefix}, ${prompt}`;
+      if (includeAppearance) {
+        const panelAppearances = state.characters
+          .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
+          .map(c => `${c.name}: ${c.appearance.trim()}`)
+          .join('; ');
+        if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
+      }
+      return prompt;
+    }
+
+    const panelsWithImages = pageData.panels.filter(p => p.imagePrompt).length;
+    let doneCount = 0;
+    await Promise.all(pageData.panels.map(async (panel) => {
+      if (!panel.imagePrompt) return;
+      try {
+        const panelOpts = await buildPanelImageOpts(panel);
+        const enhancedPrompt = buildEnhancedImagePrompt(panel);
+        const imageData = await API.generateImage(enhancedPrompt, panelOpts);
+        if (imageData) {
+          if (imageData.startsWith('http')) {
+            // URL response — try to fetch for offline storage
+            try {
+              const resp = await fetch(imageData);
+              const blob = await resp.blob();
+              panel.imageUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+              });
+            } catch {
+              panel.imageUrl = imageData; // fallback to direct URL
+            }
+          } else if (imageData.startsWith('data:')) {
+            panel.imageUrl = imageData;
+          } else {
+            panel.imageUrl = `data:image/png;base64,${imageData}`;
+          }
+        }
+      } catch (imgErr) {
+        App.logError('Image generation (panel)', imgErr);
+        App.toast(`Panel image failed: ${imgErr.message}`, 'error');
+      }
+      doneCount++;
+      if (uiMsg) uiMsg.textContent = `Generating images (${doneCount} / ${panelsWithImages})...`;
+    }));
+  }
+
   async function generatePage(presetData) {
     try {
       const contextExchanges = await DB.getSetting('contextExchanges', 6);
@@ -660,243 +908,7 @@ const CreatePage = (() => {
           if (streamTitle) streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
-        const imageResolution = await DB.getSetting('imageSize', '1024x1024');
-        const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
-        const includeAppearance = await DB.getSetting('includeAppearanceText', true);
-        const imagePresetData = state.selectedImagePreset
-          ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
-          : null;
-        // Use preset promptPrefix when available; fall back to legacy imagePromptPrefix setting for existing installs
-        const imagePromptPrefix = imagePresetData?.promptPrefix || await DB.getSetting('imagePromptPrefix', '');
-        const charRefMode = await DB.getSetting('charRefMode', 'auto');
-        const maxRefImages = await DB.getSetting('maxRefImages', 4);
-
-        // Normalize world refs (plain strings and labeled objects)
-        const worldRefs = state.referenceImages
-          .map(item => typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item)
-          .filter(r => r.type === 'world');
-
-        // Cache panel prompt embeddings within this page generation
-        const promptEmbeddingCache = new Map();
-
-        async function getPromptEmbedding(promptText) {
-          if (!promptText) return null;
-          if (promptEmbeddingCache.has(promptText)) return promptEmbeddingCache.get(promptText);
-          const emb = await API.generateEmbedding(promptText).catch(() => null);
-          promptEmbeddingCache.set(promptText, emb);
-          return emb;
-        }
-
-        // Check if a character name appears in a panel prompt using word-boundary matching
-        function nameInPrompt(name, text) {
-          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          return new RegExp(`(?<![a-zA-Z0-9])${escaped}(?![a-zA-Z0-9])`, 'i').test(text);
-        }
-
-        // Select the best image from a character's images[] using hybrid cascading strategy
-        async function selectBestImage(charImages, panelPromptText, charName, primaryImageIndex) {
-          const valid = (charImages || []).filter(img => img && img.dataUrl);
-          if (!valid.length) return null;
-          if (valid.length === 1) return valid[0];
-
-          const panelLower = panelPromptText.toLowerCase();
-          const promptSnippet = panelPromptText.slice(0, 80);
-
-          // 1. Embedding-based selection (unless mode is 'keyword')
-          if (charRefMode !== 'keyword') {
-            const withEmb = valid.filter(img => img.embedding?.length);
-            if (withEmb.length > 0) {
-              const panelEmb = await getPromptEmbedding(panelPromptText);
-              if (panelEmb) {
-                let best = withEmb[0];
-                let bestScore = cosineSimilarity(panelEmb, withEmb[0].embedding);
-                for (let i = 1; i < withEmb.length; i++) {
-                  const score = cosineSimilarity(panelEmb, withEmb[i].embedding);
-                  if (score > bestScore) { bestScore = score; best = withEmb[i]; }
-                }
-                return best;
-              }
-              // Embedding fetch failed — fall through to keyword
-              App.logError('selectBestImage', new Error('Embedding fallback'), `Embedding unavailable for panel prompt, falling back to keyword matching. Character: ${charName}, prompt: "${promptSnippet}..."`);
-            } else {
-              // No stored embeddings — fall through to keyword
-              App.logError('selectBestImage', new Error('Embedding fallback'), `No stored embeddings for character "${charName}", falling back to keyword matching. Prompt: "${promptSnippet}..."`);
-            }
-          }
-
-          // 2. Keyword tag matching (unless mode is 'semantic')
-          if (charRefMode !== 'semantic') {
-            let bestScore = 0, bestImg = null;
-            for (const img of valid) {
-              const keywords = TAG_KEYWORDS[img.tag] || [];
-              const score = keywords.filter(kw => panelLower.includes(kw)).length;
-              if (score > bestScore) { bestScore = score; bestImg = img; }
-            }
-            if (bestScore > 0 && bestImg) return bestImg;
-            // No keyword match — fall through to primary
-            App.logError('selectBestImage', new Error('Keyword fallback'), `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`);
-          }
-
-          // 3. Fall back to primary image using configured primaryImageIndex
-          const primaryIdx = typeof primaryImageIndex === 'number' ? primaryImageIndex : 0;
-          const primary = (charImages || [])[primaryIdx];
-          return (primary && primary.dataUrl) ? primary : valid[0];
-        }
-
-        // Build a composite character sheet canvas when multiple chars share budget
-        async function buildCompositeSheet(charMatches) {
-          const n = charMatches.length;
-          if (n === 0) return null;
-
-          const cellSize = 256;
-          const cols = Math.min(n, 2);
-          const rows = Math.ceil(n / cols);
-          const canvas = document.createElement('canvas');
-          canvas.width = cols * cellSize;
-          canvas.height = rows * cellSize;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#1a1a2e';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          await Promise.all(charMatches.map(({ name, img }, i) => new Promise(resolve => {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const x = col * cellSize;
-            const y = row * cellSize;
-            const drawLabel = () => {
-              ctx.fillStyle = 'rgba(0,0,0,0.75)';
-              ctx.fillRect(x, y + cellSize - 22, cellSize, 22);
-              ctx.fillStyle = '#fff';
-              ctx.font = '12px sans-serif';
-              ctx.textAlign = 'center';
-              ctx.fillText(name, x + cellSize / 2, y + cellSize - 7);
-            };
-            const image = new Image();
-            image.onload = () => {
-              ctx.drawImage(image, x, y, cellSize, cellSize - 22);
-              drawLabel();
-              resolve();
-            };
-            image.onerror = () => { drawLabel(); resolve(); };
-            image.src = img.dataUrl;
-          })));
-
-          const posLabels = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-          const legendParts = charMatches.map(({ name, img }, i) => {
-            const pos = posLabels[i] || `section ${i + 1}`;
-            const detail = img.description || (img.tag && img.tag !== 'default' ? img.tag : '');
-            return `${pos}: ${name}${detail ? ` (${detail})` : ''}`;
-          });
-          const legend = `Character sheet grid. ${legendParts.join('. ')}. Match each character's appearance exactly as shown in their labeled section.`;
-          return { dataUrl: canvas.toDataURL('image/jpeg', 0.9), legend, isComposite: true };
-        }
-
-        // Build per-panel image options using hybrid cascading strategy
-        async function buildPanelImageOpts(panel) {
-          // Use AI-picked size when dynamic sizing is enabled and the AI provided a valid WxH value
-          let resolution = imageResolution;
-          if (dynamicSizesEnabled && panel.imageSize) {
-            const trimmed = panel.imageSize.trim();
-            if (/^\d+x\d+$/i.test(trimmed)) {
-              resolution = trimmed.toLowerCase();
-            }
-          }
-          const opts = { resolution };
-          const charNamesInPanel = Object.keys(state.characterImagesByName)
-            .filter(name => nameInPrompt(name, panel.imagePrompt));
-
-          // Select best image per character in this panel
-          const charMatches = [];
-          for (const name of charNamesInPanel) {
-            const charData = state.characterImagesByName[name] || {};
-            const img = await selectBestImage(charData.images, panel.imagePrompt, name, charData.primaryImageIndex);
-            if (img) charMatches.push({ name, img });
-          }
-
-          const totalRefs = charMatches.length + worldRefs.length;
-
-          // Use composite sheet when mode is 'composite' or multiple chars exceed budget
-          if (charMatches.length > 1 && (charRefMode === 'composite' || totalRefs > maxRefImages)) {
-            const sheet = await buildCompositeSheet(charMatches);
-            if (sheet) {
-              const panelRefs = [
-                { dataUrl: sheet.dataUrl, label: 'Composite character sheet', tag: '', description: sheet.legend, type: 'character' },
-                ...worldRefs,
-              ];
-              opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
-              opts.labeledRefs = panelRefs;
-              return opts;
-            }
-          }
-
-          // Build individual labeled refs
-          const labeledCharRefs = charMatches.map(({ name, img }) => ({
-            dataUrl: img.dataUrl,
-            label: name,
-            tag: img.tag || '',
-            description: img.description || '',
-            type: 'character',
-          }));
-          const panelRefs = [...labeledCharRefs, ...worldRefs];
-
-          if (panelRefs.length === 1) {
-            opts.imageDataUrl = panelRefs[0].dataUrl;
-            opts.labeledRefs = panelRefs;
-          } else if (panelRefs.length > 1) {
-            opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
-            opts.labeledRefs = panelRefs;
-          }
-          return opts;
-        }
-
-        // Build enhanced image prompt: sanitize narrative noise, then optionally append appearance details
-        function buildEnhancedImagePrompt(panel) {
-          let prompt = sanitizeImagePrompt(panel.imagePrompt);
-          if (imagePromptPrefix) prompt = `${imagePromptPrefix}, ${prompt}`;
-          if (includeAppearance) {
-            const panelAppearances = state.characters
-              .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
-              .map(c => `${c.name}: ${c.appearance.trim()}`)
-              .join('; ');
-            if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
-          }
-          return prompt;
-        }
-
-        let doneCount = 0;
-        await Promise.all(pageData.panels.map(async (panel) => {
-          if (!panel.imagePrompt) return;
-          try {
-            const panelOpts = await buildPanelImageOpts(panel);
-            const enhancedPrompt = buildEnhancedImagePrompt(panel);
-            const imageData = await API.generateImage(enhancedPrompt, panelOpts);
-            if (imageData) {
-              if (imageData.startsWith('http')) {
-                // URL response — try to fetch for offline storage
-                try {
-                  const resp = await fetch(imageData);
-                  const blob = await resp.blob();
-                  panel.imageUrl = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.readAsDataURL(blob);
-                  });
-                } catch {
-                  panel.imageUrl = imageData; // fallback to direct URL
-                }
-              } else if (imageData.startsWith('data:')) {
-                panel.imageUrl = imageData;
-              } else {
-                panel.imageUrl = `data:image/png;base64,${imageData}`;
-              }
-            }
-          } catch (imgErr) {
-            App.logError('Image generation (panel)', imgErr);
-            App.toast(`Panel image failed: ${imgErr.message}`, 'error');
-          }
-          doneCount++;
-          if (statusMsg) statusMsg.textContent = `Generating images (${doneCount} / ${panelsWithImages})...`;
-        }));
+        await generatePanelImages(pageData, statusMsg);
       }
 
       // Save page — generate id first so we can track it for re-roll/undo
@@ -1051,6 +1063,9 @@ const CreatePage = (() => {
     if (state.generatingContext === 'reroll' && _rerollBackup) {
       restoreRerollBackup();
       App.toast('Re-roll cancelled — previous page restored', 'info');
+    } else if (state.generatingContext === 'reimage') {
+      // Image backup and state reset are handled inside rerollImages() via AbortError catch
+      App.toast('Image regeneration cancelled', 'info');
     } else {
       App.toast('Generation cancelled', 'info');
     }
@@ -1155,6 +1170,89 @@ const CreatePage = (() => {
   }
 
   /**
+   * Regenerate only the images for the current page, keeping the existing story text.
+   * Does not modify conversation history or choices — only replaces imageUrl on each panel.
+   * Respects the enableImages setting; backs up and restores prior image URLs on failure/cancel.
+   */
+  async function rerollImages() {
+    if (state.isGenerating || state.pages.length === 0) return;
+
+    const enableImages = await DB.getSetting('enableImages', true);
+    if (!enableImages) {
+      App.toast('Image generation is disabled in Settings', 'info');
+      return;
+    }
+
+    const currentPageIdx = state.pages.length - 1;
+    const currentPageId = state.pageIds[currentPageIdx];
+    const currentPage = state.pages[currentPageIdx];
+
+    // Back up prior image URLs so they can be restored on failure or cancel
+    const priorImageUrls = currentPage.panels.map(p => p.imageUrl || '');
+
+    // Clear existing image URLs so the user sees progress
+    currentPage.panels.forEach(p => { p.imageUrl = ''; });
+
+    // Set up abort controller for cancellation
+    abortController = new AbortController();
+
+    state.isGenerating = true;
+    state.step = 'generating';
+    state.generatingContext = 'reimage';
+    await App.refreshPage();
+
+    try {
+      const statusMsg = document.getElementById('gen-status-msg');
+      const panelsWithImages = currentPage.panels.filter(p => p.imagePrompt).length;
+      if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
+
+      await generatePanelImages(currentPage, statusMsg);
+
+      // If aborted during generatePanelImages, restore backup and return
+      if (abortController?.signal.aborted) {
+        currentPage.panels.forEach((p, i) => { p.imageUrl = priorImageUrls[i]; });
+        abortController = null;
+        return;
+      }
+      abortController = null;
+
+      // Persist updated page
+      const existingRecord = await DB.get(DB.STORES.pages, currentPageId).catch(() => null);
+      await DB.put(DB.STORES.pages, {
+        id: currentPageId,
+        comicId: state.comicId,
+        pageNum: existingRecord?.pageNum ?? (currentPageIdx + 1),
+        data: currentPage,
+        createdAt: existingRecord?.createdAt ?? Date.now(),
+      });
+
+      // Bump parent comic's updatedAt so the library reflects the change
+      if (state.comicId) {
+        const comic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
+        if (comic) {
+          await DB.put(DB.STORES.comics, { ...comic, updatedAt: Date.now() }).catch(() => {});
+        }
+      }
+
+      state.isGenerating = false;
+      state.step = 'reading';
+      App.toast('Images regenerated!', 'success');
+      await App.refreshPage();
+    } catch (err) {
+      // Restore prior images on any failure
+      currentPage.panels.forEach((p, i) => { p.imageUrl = priorImageUrls[i]; });
+      abortController = null;
+      App.logError('Image regeneration', err);
+      state.isGenerating = false;
+      state.step = 'reading';
+      if (err.name !== 'AbortError') {
+        App.toast('Image regeneration failed: ' + (err.message || 'Please try again.'), 'error');
+      }
+      await App.refreshPage();
+    }
+  }
+
+  /**
    * Open a full-size panel image in a modal lightbox.
    * Uses the panel index to look up from the current page in state (avoids
    * embedding data URLs in onclick attributes).
@@ -1220,7 +1318,7 @@ const CreatePage = (() => {
   return {
     render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset, selectImagePreset,
     toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration,
-    rerollPage, undoChoice, zoomPanel, resetState,
+    rerollPage, rerollImages, undoChoice, zoomPanel, resetState,
     setTitle, setStoryPrompt, resetSetup,
   };
 })();
