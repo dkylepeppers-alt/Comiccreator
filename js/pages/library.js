@@ -278,11 +278,14 @@ const LibraryPage = (() => {
     printWindow.document.write(printContent);
     printWindow.document.close();
 
-    // Trigger print after images load
+    // Trigger print after images and fonts are fully loaded
     printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
+      const doPrint = () => printWindow.print();
+      if (printWindow.document?.fonts?.ready) {
+        printWindow.document.fonts.ready.then(doPrint).catch(doPrint);
+      } else {
+        setTimeout(doPrint, 500);
+      }
     };
   }
 

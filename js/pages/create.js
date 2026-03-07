@@ -1063,6 +1063,9 @@ const CreatePage = (() => {
     if (state.generatingContext === 'reroll' && _rerollBackup) {
       restoreRerollBackup();
       App.toast('Re-roll cancelled — previous page restored', 'info');
+    } else if (state.generatingContext === 'reimage') {
+      // Image backup and state reset are handled inside rerollImages() via AbortError catch
+      App.toast('Image regeneration cancelled', 'info');
     } else {
       App.toast('Generation cancelled', 'info');
     }
@@ -1169,16 +1172,29 @@ const CreatePage = (() => {
   /**
    * Regenerate only the images for the current page, keeping the existing story text.
    * Does not modify conversation history or choices — only replaces imageUrl on each panel.
+   * Respects the enableImages setting; backs up and restores prior image URLs on failure/cancel.
    */
   async function rerollImages() {
     if (state.isGenerating || state.pages.length === 0) return;
+
+    const enableImages = await DB.getSetting('enableImages', true);
+    if (!enableImages) {
+      App.toast('Image generation is disabled in Settings', 'info');
+      return;
+    }
 
     const currentPageIdx = state.pages.length - 1;
     const currentPageId = state.pageIds[currentPageIdx];
     const currentPage = state.pages[currentPageIdx];
 
+    // Back up prior image URLs so they can be restored on failure or cancel
+    const priorImageUrls = currentPage.panels.map(p => p.imageUrl || '');
+
     // Clear existing image URLs so the user sees progress
     currentPage.panels.forEach(p => { p.imageUrl = ''; });
+
+    // Set up abort controller for cancellation
+    abortController = new AbortController();
 
     state.isGenerating = true;
     state.step = 'generating';
@@ -1192,6 +1208,14 @@ const CreatePage = (() => {
 
       await generatePanelImages(currentPage, statusMsg);
 
+      // If aborted during generatePanelImages, restore backup and return
+      if (abortController?.signal.aborted) {
+        currentPage.panels.forEach((p, i) => { p.imageUrl = priorImageUrls[i]; });
+        abortController = null;
+        return;
+      }
+      abortController = null;
+
       // Persist updated page
       const existingRecord = await DB.get(DB.STORES.pages, currentPageId).catch(() => null);
       await DB.put(DB.STORES.pages, {
@@ -1202,15 +1226,28 @@ const CreatePage = (() => {
         createdAt: existingRecord?.createdAt ?? Date.now(),
       });
 
+      // Bump parent comic's updatedAt so the library reflects the change
+      if (state.comicId) {
+        const comic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
+        if (comic) {
+          await DB.put(DB.STORES.comics, { ...comic, updatedAt: Date.now() }).catch(() => {});
+        }
+      }
+
       state.isGenerating = false;
       state.step = 'reading';
       App.toast('Images regenerated!', 'success');
       await App.refreshPage();
     } catch (err) {
+      // Restore prior images on any failure
+      currentPage.panels.forEach((p, i) => { p.imageUrl = priorImageUrls[i]; });
+      abortController = null;
       App.logError('Image regeneration', err);
       state.isGenerating = false;
       state.step = 'reading';
-      App.toast('Image regeneration failed: ' + (err.message || 'Please try again.'), 'error');
+      if (err.name !== 'AbortError') {
+        App.toast('Image regeneration failed: ' + (err.message || 'Please try again.'), 'error');
+      }
       await App.refreshPage();
     }
   }
