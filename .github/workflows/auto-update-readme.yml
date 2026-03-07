@@ -1,0 +1,132 @@
+name: Auto-update README
+
+# Triggers when source files that affect the README change on the main branches.
+# Skips bot commits to prevent infinite loops.
+on:
+  push:
+    branches:
+      - master
+      - Main
+    paths:
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'sw.js'
+      - 'manifest.json'
+      - 'package.json'
+  workflow_dispatch:
+
+concurrency:
+  group: readme-update-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    # Avoid triggering on commits already made by the bot.
+    if: github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+      models: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # Collect the list of changed source files and a truncated diff for context.
+      - name: Collect changed files and diff
+        id: ctx
+        run: |
+          FILES=$(git diff --name-only HEAD~1 HEAD \
+            -- js/ css/ index.html sw.js manifest.json package.json \
+            | tr '\n' ' ')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+          # Cap the diff at 400 lines to stay within model token limits.
+          git diff HEAD~1 HEAD \
+            -- js/ css/ index.html sw.js manifest.json package.json \
+            | head -n 400 > /tmp/code_diff.txt
+
+      # Write the user prompt to a file so we don't have to escape it inline.
+      - name: Build user prompt
+        run: |
+          {
+            echo "Changed source files: ${{ steps.ctx.outputs.files }}"
+            echo ""
+            echo "=== Code diff (first 400 lines) ==="
+            cat /tmp/code_diff.txt
+            echo ""
+            echo "=== Current README.md ==="
+            cat README.md
+          } > /tmp/user_prompt.txt
+
+      # Build the JSON payload for the GitHub Models REST API.
+      # The system prompt is stored in an env var to avoid YAML/shell quoting issues.
+      - name: Build API payload
+        env:
+          SYSTEM_PROMPT: >-
+            You are a technical documentation specialist for an AI Comic Creator PWA.
+            Update the README.md when significant code changes are made.
+            Rules:
+            (1) Only update sections directly affected by the changes shown.
+            (2) Preserve all existing headings, formatting, links, and code blocks.
+            (3) Never add references to Termux or any platform-specific tooling.
+            (4) If the changes are minor (e.g., bug fixes or refactors with no user-visible
+            effect), return the README unchanged.
+            (5) Return ONLY the complete updated README.md content with no preamble,
+            explanation, or markdown fences.
+        run: |
+          printf '%s' "$SYSTEM_PROMPT" > /tmp/system_prompt.txt
+          jq -n \
+            --rawfile sys /tmp/system_prompt.txt \
+            --rawfile usr /tmp/user_prompt.txt \
+            '{
+              model: "gpt-4o-mini",
+              messages: [
+                {"role": "system", "content": $sys},
+                {"role": "user",   "content": $usr}
+              ],
+              max_tokens: 8000,
+              temperature: 0.2
+            }' > /tmp/payload.json
+
+      # Call the GitHub Models API (no extra secrets required — GITHUB_TOKEN suffices).
+      - name: Call GitHub Models API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HTTP_STATUS=$(curl -sSw '%{http_code}' -o /tmp/api_response.json \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/payload.json \
+            https://models.inference.ai.azure.com/chat/completions)
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "GitHub Models API returned HTTP $HTTP_STATUS:"
+            cat /tmp/api_response.json
+            exit 1
+          fi
+
+          jq -r '.choices[0].message.content' /tmp/api_response.json > README.md
+
+      # Open a PR only when the README actually changed.
+      - name: Open pull request with README update
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: auto/readme-update
+          delete-branch: true
+          title: "docs: auto-update README"
+          body: |
+            Automated README update triggered by changes to:
+            `${{ steps.ctx.outputs.files }}`
+
+            Review the diff below and merge if the changes look correct.
+            To skip the update, simply close this PR without merging.
+          commit-message: "docs: auto-update README based on code changes"
+          labels: documentation
+          add-paths: README.md
