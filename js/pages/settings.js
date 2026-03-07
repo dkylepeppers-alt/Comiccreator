@@ -54,7 +54,7 @@ const SettingsPage = (() => {
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
     const cloudSyncToken = await DB.getSetting('cloudSyncToken', '');
-    const cloudSyncGistId = await DB.getSetting('cloudSyncGistId', '');
+    const cloudSyncRepo = await DB.getSetting('cloudSyncRepo', '');
 
     return `
       <div class="slide-up">
@@ -275,20 +275,20 @@ const SettingsPage = (() => {
         <!-- Cloud Sync -->
         <div class="card mt-md">
           <h3 class="card-title mb-sm">Cloud Sync</h3>
-          <p class="text-sm text-muted mb-sm">Back up your app settings to a private GitHub Gist and restore them on any device. Requires a GitHub Personal Access Token with the <strong>gist</strong> scope.</p>
+          <p class="text-sm text-muted mb-sm">Back up your characters, worlds, comics, settings, and presets to a private GitHub repository. Data can be restored on any device. Requires a GitHub Personal Access Token with <strong>repo</strong> scope.</p>
           <div class="form-group">
             <label class="form-label">GitHub Personal Access Token</label>
             <input type="password" id="set-cloud-token" value="${escHtml(cloudSyncToken)}" placeholder="ghp_… or github_pat_…">
-            <div class="form-hint">Create one at <a href="https://github.com/settings/tokens/new?scopes=gist" target="_blank">github.com/settings/tokens</a> with <strong>gist</strong> scope selected. Stored locally in your browser.</div>
+            <div class="form-hint">Create one at <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank">github.com/settings/tokens</a> with <strong>repo</strong> scope. Stored locally in your browser.</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Gist ID <span class="text-muted" style="font-weight:normal;">(auto-filled after first backup)</span></label>
-            <input type="text" id="set-cloud-gist-id" value="${escHtml(cloudSyncGistId)}" placeholder="Leave empty to create a new backup Gist">
-            ${cloudSyncGistId ? `<div class="form-hint"><a href="https://gist.github.com/${escHtml(cloudSyncGistId)}" target="_blank">View backup Gist on GitHub ↗</a></div>` : ''}
+            <label class="form-label">GitHub Repository</label>
+            <input type="text" id="set-cloud-repo" value="${escHtml(cloudSyncRepo)}" placeholder="username/comic-creator-backup">
+            <div class="form-hint">A private GitHub repository to store your backup. <a href="https://github.com/new" target="_blank">Create one at github.com/new ↗</a>${cloudSyncRepo ? ` &middot; <a href="https://github.com/${escHtml(cloudSyncRepo)}" target="_blank">View on GitHub ↗</a>` : ''}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;">
-            <button class="btn btn-secondary btn-block" id="cloud-backup-btn" onclick="SettingsPage.backupToCloud()">☁ Backup Settings to Cloud</button>
-            <button class="btn btn-secondary btn-block" id="cloud-restore-btn" onclick="SettingsPage.restoreFromCloud()">⬇ Restore Settings from Cloud</button>
+            <button class="btn btn-secondary btn-block" id="cloud-backup-btn" onclick="SettingsPage.backupToCloud()">&#x2601; Back Up All Data</button>
+            <button class="btn btn-secondary btn-block" id="cloud-restore-btn" onclick="SettingsPage.restoreFromCloud()">&#x2B07; Restore All Data</button>
           </div>
         </div>
 
@@ -969,125 +969,240 @@ const SettingsPage = (() => {
     App.refreshPage();
   }
 
-  // --- Cloud Sync (GitHub Gist) ---
+  // --- Cloud Sync (GitHub Repository Contents API) ---
+
+  // UTF-8-safe base64 encoding (handles non-ASCII characters in names/descriptions)
+  function utf8ToBase64(str) {
+    return btoa(
+      encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+        String.fromCharCode(parseInt(p1, 16))
+      )
+    );
+  }
+
+  // Write (create or update) a file in the repository.
+  // Automatically fetches the current SHA so updates don't conflict.
+  async function putRepoFile(token, owner, repo, path, content, commitMsg) {
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github.v3+json',
+    };
+
+    // GET existing file to obtain SHA (required when updating)
+    const getRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+      { headers }
+    );
+    let sha = null;
+    if (getRes.ok) {
+      const existing = await getRes.json();
+      sha = existing.sha;
+    } else if (getRes.status !== 404) {
+      const err = await getRes.json().catch(() => ({}));
+      throw new Error(err.message || `Could not check ${path}: ${getRes.status}`);
+    }
+
+    const body = { message: commitMsg, content: utf8ToBase64(content) };
+    if (sha) body.sha = sha;
+
+    const putRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+      {
+        method: 'PUT',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+        body: JSON.stringify(body),
+      }
+    );
+    if (!putRes.ok) {
+      const err = await putRes.json().catch(() => ({}));
+      throw new Error(err.message || `Failed to write ${path}: ${putRes.status}`);
+    }
+  }
 
   async function backupToCloud() {
     const token = document.getElementById('set-cloud-token').value.trim();
+    const repoInput = document.getElementById('set-cloud-repo').value.trim();
     if (!token) return App.toast('Enter a GitHub Personal Access Token first', 'error');
+    if (!repoInput) return App.toast('Enter a GitHub repository (owner/repo) first', 'error');
+
+    const parts = repoInput.split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      return App.toast('Repository must be in owner/repo format (e.g. username/comic-creator-backup)', 'error');
+    }
+    const [owner, repo] = parts;
 
     const btn = document.getElementById('cloud-backup-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Backing up\u2026'; }
 
     try {
+      // Collect all data stores
+      const characters = await DB.getAll(DB.STORES.characters);
+      const worlds = await DB.getAll(DB.STORES.worlds);
+      const comics = await DB.getAll(DB.STORES.comics);
+      const rawPages = await DB.getAll(DB.STORES.pages);
+      // Strip panel imageUrls — AI-generated images are large and can be regenerated
+      const pages = rawPages.map(p => {
+        const copy = Object.assign({}, p);
+        if (copy.data && Array.isArray(copy.data.panels)) {
+          copy.data = Object.assign({}, copy.data, {
+            panels: copy.data.panels.map(panel => {
+              const panelCopy = Object.assign({}, panel);
+              delete panelCopy.imageUrl;
+              return panelCopy;
+            }),
+          });
+        }
+        return copy;
+      });
+      const presets = await DB.getAll(DB.STORES.presets);
+      const imagePresets = await DB.getAll(DB.STORES.imagePresets);
+
       const settings = {};
       for (const key of CLOUD_SYNC_KEYS) {
-        settings[key] = await DB.getSetting(key, CLOUD_SYNC_DEFAULTS[key] !== undefined ? CLOUD_SYNC_DEFAULTS[key] : null);
+        settings[key] = await DB.getSetting(
+          key,
+          CLOUD_SYNC_DEFAULTS[key] !== undefined ? CLOUD_SYNC_DEFAULTS[key] : null
+        );
       }
 
-      const content = JSON.stringify({ settings, backedUpAt: new Date().toISOString() }, null, 2);
-      const gistPayload = {
-        description: 'AI Comic Creator \u2013 Settings Backup',
-        public: false,
-        files: { 'comic-creator-settings.json': { content } },
-      };
+      const backedUpAt = new Date().toISOString();
+      const commitMsg = `AI Comic Creator backup ${backedUpAt.slice(0, 10)}`;
+      const fileMap = [
+        ['data/settings.json',      JSON.stringify({ settings, backedUpAt })],
+        ['data/characters.json',    JSON.stringify({ characters, backedUpAt })],
+        ['data/worlds.json',        JSON.stringify({ worlds, backedUpAt })],
+        ['data/comics.json',        JSON.stringify({ comics, backedUpAt })],
+        ['data/pages.json',         JSON.stringify({ pages, backedUpAt })],
+        ['data/presets.json',       JSON.stringify({ presets, backedUpAt })],
+        ['data/image-presets.json', JSON.stringify({ imagePresets, backedUpAt })],
+      ];
 
-      const existingGistId = document.getElementById('set-cloud-gist-id').value.trim();
-      const url = existingGistId
-        ? `https://api.github.com/gists/${existingGistId}`
-        : 'https://api.github.com/gists';
-      const method = existingGistId ? 'PATCH' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/vnd.github.v3+json',
-        },
-        body: JSON.stringify(gistPayload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `GitHub API error ${res.status}`);
-      }
-
-      const data = await res.json();
-      const gistId = data.id;
+      // Upload all files in parallel — each file is independent so no ordering needed
+      await Promise.all(
+        fileMap.map(([path, content]) =>
+          putRepoFile(token, owner, repo, path, content, commitMsg)
+        )
+      );
 
       await DB.setSetting('cloudSyncToken', token);
-      await DB.setSetting('cloudSyncGistId', gistId);
+      await DB.setSetting('cloudSyncRepo', repoInput);
 
-      const gistIdEl = document.getElementById('set-cloud-gist-id');
-      if (gistIdEl) gistIdEl.value = gistId;
-
-      App.toast(`Settings backed up! Gist ID: ${gistId}`, 'success');
+      App.toast(
+        `Backed up ${characters.length} character(s), ${worlds.length} world(s), ${comics.length} comic(s)!`,
+        'success'
+      );
     } catch (e) {
       logError('backupToCloud()', e);
       App.toast(`Backup failed: ${e.message}`, 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '\u2601 Backup Settings to Cloud'; }
+      if (btn) { btn.disabled = false; btn.textContent = '\u2601 Back Up All Data'; }
     }
   }
 
-  async function restoreFromCloud() {
+  function restoreFromCloud() {
     const token = document.getElementById('set-cloud-token').value.trim();
-    const gistId = document.getElementById('set-cloud-gist-id').value.trim();
+    const repoInput = document.getElementById('set-cloud-repo').value.trim();
     if (!token) return App.toast('Enter a GitHub Personal Access Token first', 'error');
-    if (!gistId) return App.toast('Enter a Gist ID to restore from', 'error');
+    if (!repoInput) return App.toast('Enter a GitHub repository (owner/repo) first', 'error');
+
+    App.showModal(`
+      <div class="modal-title">Restore from Cloud</div>
+      <p>This will merge all characters, worlds, comics, pages, presets, and settings from your cloud backup into the current device. Existing items with the same IDs will be overwritten.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="SettingsPage.confirmRestoreFromCloud()">Restore</button>
+      </div>
+    `);
+  }
+
+  async function confirmRestoreFromCloud() {
+    App.hideModal();
+    const token = document.getElementById('set-cloud-token').value.trim();
+    const repoInput = document.getElementById('set-cloud-repo').value.trim();
+    const [owner, repo] = repoInput.split('/');
 
     const btn = document.getElementById('cloud-restore-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Restoring\u2026'; }
 
     try {
-      const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-      });
+      // Fetch raw file content from the repo (handles files up to 100 MB)
+      const getContent = async (path) => {
+        const res = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/vnd.github.raw',
+            },
+          }
+        );
+        if (res.status === 404) return null;
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `Failed to read ${path}: ${res.status}`);
+        }
+        return await res.text();
+      };
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `GitHub API error ${res.status}`);
-      }
+      const validArray = (arr) =>
+        Array.isArray(arr) && arr.every(item => item && typeof item === 'object' && item.id);
 
-      const data = await res.json();
-      const fileContent = data.files && data.files['comic-creator-settings.json']
-        ? data.files['comic-creator-settings.json'].content
-        : null;
-      if (!fileContent) throw new Error('No settings file found in this Gist');
-
-      const parsed = JSON.parse(fileContent);
-      const restoredSettings = parsed.settings;
-      if (!restoredSettings || typeof restoredSettings !== 'object') {
-        throw new Error('Invalid settings format in Gist');
-      }
-
-      for (const key of CLOUD_SYNC_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(restoredSettings, key)) {
-          await DB.setSetting(key, restoredSettings[key]);
+      // Restore settings (backward compatible with older backups)
+      const settingsRaw = await getContent('data/settings.json');
+      if (settingsRaw) {
+        const { settings: saved } = JSON.parse(settingsRaw);
+        if (saved && typeof saved === 'object') {
+          for (const key of CLOUD_SYNC_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(saved, key)) {
+              await DB.setSetting(key, saved[key]);
+            }
+          }
         }
       }
 
-      await DB.setSetting('cloudSyncToken', token);
-      await DB.setSetting('cloudSyncGistId', gistId);
+      // Restore each data store
+      const storeMap = [
+        ['data/characters.json',    'characters',   DB.STORES.characters],
+        ['data/worlds.json',        'worlds',        DB.STORES.worlds],
+        ['data/comics.json',        'comics',        DB.STORES.comics],
+        ['data/pages.json',         'pages',         DB.STORES.pages],
+        ['data/presets.json',       'presets',       DB.STORES.presets],
+        ['data/image-presets.json', 'imagePresets',  DB.STORES.imagePresets],
+      ];
 
-      App.toast('Settings restored! Reloading page\u2026', 'success');
+      let totalItems = 0;
+      const skipped = [];
+      for (const [path, key, store] of storeMap) {
+        const raw = await getContent(path);
+        if (!raw) { skipped.push(key); continue; }
+        const parsed = JSON.parse(raw);
+        const items = parsed[key];
+        if (!validArray(items)) { skipped.push(key); continue; }
+        // Write all items in the store in parallel for speed
+        await Promise.all(items.map(item => DB.put(store, item)));
+        totalItems += items.length;
+      }
+
+      await DB.setSetting('cloudSyncToken', token);
+      await DB.setSetting('cloudSyncRepo', repoInput);
+
+      let msg = `Restored ${totalItems} item(s)!`;
+      if (skipped.length) msg += ` (${skipped.join(', ')} not found in backup)`;
+      App.toast(`${msg} Reloading\u2026`, 'success');
       // Short delay so the success toast is visible before the page reloads
       setTimeout(() => App.navigate('settings'), 900);
     } catch (e) {
-      logError('restoreFromCloud()', e);
+      logError('confirmRestoreFromCloud()', e);
       App.toast(`Restore failed: ${e.message}`, 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '\u2b07 Restore Settings from Cloud'; }
+      if (btn) { btn.disabled = false; btn.textContent = '\u2B07 Restore All Data'; }
     }
   }
 
   return {
     render, postRender, onMount, onUnmount,
     testConnection, save, exportData, importData, clearData, confirmClear,
-    backupToCloud, restoreFromCloud,
+    backupToCloud, restoreFromCloud, confirmRestoreFromCloud,
     togglePicker, closePicker, filterModels, selectModel, refreshModels,
     clearCaptionModel,
     updateImageSizeOptions, checkForUpdate, reloadForUpdate, clearAppCache,
