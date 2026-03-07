@@ -607,10 +607,9 @@ const CreatePage = (() => {
    * Generate images for all panels in pageData that have an imagePrompt.
    * Reads settings and state internally; updates panel.imageUrl in place.
    * @param {Object} pageData - page object with panels array
-   * @param {HTMLElement|null} uiTitle - optional element for status title updates
    * @param {HTMLElement|null} uiMsg   - optional element for status message updates
    */
-  async function generatePanelImages(pageData, uiTitle, uiMsg) {
+  async function generatePanelImages(pageData, uiMsg) {
     const imageResolution = await DB.getSetting('imageSize', '1024x1024');
     const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
     const includeAppearance = await DB.getSetting('includeAppearanceText', true);
@@ -909,7 +908,7 @@ const CreatePage = (() => {
           if (streamTitle) streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
-        await generatePanelImages(pageData, streamTitle, statusMsg);
+        await generatePanelImages(pageData, statusMsg);
       }
 
       // Save page — generate id first so we can track it for re-roll/undo
@@ -1191,7 +1190,7 @@ const CreatePage = (() => {
       const panelsWithImages = currentPage.panels.filter(p => p.imagePrompt).length;
       if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
 
-      await generatePanelImages(currentPage, null, statusMsg);
+      await generatePanelImages(currentPage, statusMsg);
 
       // Persist updated page
       const existingRecord = await DB.get(DB.STORES.pages, currentPageId).catch(() => null);
