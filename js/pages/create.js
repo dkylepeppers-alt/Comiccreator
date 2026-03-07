@@ -810,7 +810,11 @@ const CreatePage = (() => {
     // Build enhanced image prompt: sanitize narrative noise, then optionally append appearance details
     function buildEnhancedImagePrompt(panel) {
       let prompt = sanitizeImagePrompt(panel.imagePrompt);
-      if (imagePromptPrefix) prompt = `${imagePromptPrefix}, ${prompt}`;
+      // Only prepend the prefix if the LLM didn't already include it (the system
+      // prompt now instructs the LLM to start imagePrompts with the preset text).
+      if (imagePromptPrefix && !prompt.toLowerCase().startsWith(imagePromptPrefix.toLowerCase())) {
+        prompt = `${imagePromptPrefix}, ${prompt}`;
+      }
       if (includeAppearance) {
         const panelAppearances = state.characters
           .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
