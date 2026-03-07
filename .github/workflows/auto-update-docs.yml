@@ -1,0 +1,123 @@
+name: Auto-Update Documentation
+
+on:
+  push:
+    branches:
+      - Main
+    # Only trigger when source files (not docs themselves) change, to avoid loops
+    paths:
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'sw.js'
+      - 'manifest.json'
+      - 'version.json'
+      - 'package.json'
+      - 'test/**'
+      - 'scripts/**'
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 08:00 UTC
+  workflow_dispatch:
+
+# One doc-update run at a time; cancel stale in-progress runs
+concurrency:
+  group: auto-update-docs
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    # Skip commits already made by the bot to prevent infinite loops
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read current version and recent changes
+        id: meta
+        run: |
+          VERSION="$(node -p "require('./version.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Collect recently changed non-doc source files for context
+          CHANGED="$(git diff --name-only HEAD~1 HEAD \
+            -- 'js/' 'css/' 'index.html' 'sw.js' 'manifest.json' \
+               'version.json' 'package.json' 'test/' 'scripts/' \
+            2>/dev/null | head -30 || echo '(scheduled or manual run)')"
+          {
+            echo "changed<<EOF"
+            echo "$CHANGED"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update documentation with Copilot coding agent
+        uses: github/copilot-coding-agent@v1
+        with:
+          agent_id: Docs-agent
+          prompt: |
+            Review and update **all documentation files** in this repository so they
+            accurately reflect the current codebase. The current app version is
+            **v${{ steps.meta.outputs.version }}**.
+
+            ## Files to update
+
+            ### 1. `README.md`
+            - Fix any outdated branch names — the default branch is
+              **`${{ github.event.repository.default_branch || 'Main' }}`**
+              (not `master` or any old feature-branch name).
+            - Update version numbers in examples and tables to
+              **v${{ steps.meta.outputs.version }}**.
+            - Ensure the Features section matches what is actually implemented
+              (e.g. character/world image counts, genre count, export options).
+            - Update the "Suggested Automation Upgrades" section — several items
+              listed there have already been implemented (lint CI, Playwright,
+              Dependabot, release workflow); mark or remove them accordingly.
+            - Fix any stale file paths, function names, or architecture details.
+
+            ### 2. `.github/copilot-instructions.md`
+            - Update all version numbers in the Versioning table and code-block
+              examples to **v${{ steps.meta.outputs.version }}**.
+            - Keep the repository layout, script load order, and architecture
+              sections accurate with the current file tree.
+            - Update the CI Workflow section to list all workflows currently
+              present in `.github/workflows/` (release, auto-bump, tests,
+              security, deploy-pages, playwright, auto-update-docs).
+
+            ### 3. `docs/image-generation-pipeline.md`
+            - Verify all function names, API call signatures, and pipeline stage
+              descriptions match the current implementation in `js/api.js` and
+              `js/pages/create.js`.
+            - Update any references to removed or renamed features.
+
+            ### 4. `TEST_COVERAGE_ANALYSIS.md`
+            - Update the test-file list and per-file coverage analysis to reflect
+              what currently exists in `test/*.test.js`.
+
+            ## Guidelines
+            - Preserve the existing writing style, tone, and Markdown formatting.
+            - Only change content that is factually incorrect or outdated.
+            - Do **not** remove sections that are still accurate and useful.
+            - Do **not** modify any source code files (`js/`, `css/`, `sw.js`, etc.).
+
+            ## Context — recently changed source files
+            ```
+            ${{ steps.meta.outputs.changed }}
+            ```
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
