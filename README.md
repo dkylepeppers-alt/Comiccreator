@@ -1,6 +1,6 @@
 # AI Comic Creator
 
-A fully installable Progressive Web App for creating AI-generated comic books with interactive narratives, custom characters, and detailed world-building. Powered by [NanoGPT](https://nano-gpt.com) and optimized for Android devices running Termux.
+A fully installable Progressive Web App for creating AI-generated comic books with interactive narratives, custom characters, and detailed world-building. Powered by [NanoGPT](https://nano-gpt.com).
 
 **Live demo (GitHub Pages):** [https://dkylepeppers-alt.github.io/Comiccreator/](https://dkylepeppers-alt.github.io/Comiccreator/)
 
@@ -56,32 +56,12 @@ Open the URL in Chrome or Brave, enter your NanoGPT API key in Settings, and sta
 
 ### Running locally
 
-### Running in Termux (Android)
-
-#### One-command install (recommended)
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dkylepeppers-alt/Comiccreator/master/install.sh | bash
-```
-
-The installer will:
-- Install `git` and `python` via `pkg` if they are missing (the `python` package provides the `python3` binary in Termux)
-- Clone the repository to `~/Comiccreator`
-- Make all scripts executable
-- Offer to start the server immediately
-- If the repository already exists at `~/Comiccreator`, run `update.sh` automatically instead of cloning again
-
-#### Manual install
-
-```bash
-# 1. Install git and python
-pkg install git python
-
-# 2. Clone the repository
+# 1. Clone the repository
 git clone https://github.com/dkylepeppers-alt/Comiccreator.git
 cd Comiccreator
 
-# 3. Start the server
+# 2. Start the server
 chmod +x server.sh
 ./server.sh
 ```
@@ -130,7 +110,7 @@ php -S 0.0.0.0:8080
 
 ### Update Script (Recommended)
 
-The easiest way to update in Termux:
+Run the update script:
 
 ```bash
 chmod +x update.sh
@@ -155,7 +135,7 @@ After a manual pull, hard-refresh your browser (`Ctrl+Shift+R`) or clear the sit
 
 ### In-App Version Check
 
-Go to **Settings → App Updates → Check for Updates** to see if a newer version is available. If an update is found, run `./update.sh` in Termux to apply it.
+Go to **Settings → App Updates → Check for Updates** to see if a newer version is available. If an update is found, run `./update.sh` to apply it.
 
 ### Troubleshooting
 
@@ -201,9 +181,9 @@ Comiccreator/
 ├── manifest.json           PWA manifest
 ├── sw.js                   Service worker (offline caching)
 ├── version.json            App version metadata
-├── server.sh               Termux-optimized HTTP server launcher
-├── update.sh               Termux update script (git pull + cache bust)
-├── install.sh              Termux one-command installer (pkg install + git clone)
+├── server.sh               HTTP server launcher
+├── update.sh               Update script (git pull + cache bust)
+├── install.sh              One-command installer (git clone + setup)
 ├── generate-icons.html     Browser-based icon generator utility
 │
 ├── css/
