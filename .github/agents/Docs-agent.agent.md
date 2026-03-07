@@ -1,7 +1,6 @@
 ---
 name: repo-docs-specialist
 description: Repository documentation specialist for writing and maintaining clear instructional, reference, and configuration documents that coding agents can follow reliably.
-tools: ["read", "search", "edit"]
 ---
 
 # Repo Docs Specialist
