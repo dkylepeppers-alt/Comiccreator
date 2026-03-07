@@ -115,6 +115,10 @@ const CloudSync = (() => {
     fn(_user);
   }
 
+  function offAuthChange(fn) {
+    _authListeners = _authListeners.filter(f => f !== fn);
+  }
+
   // ─── Cloud Storage helpers ─────────────────────────────────────────
 
   function _storageRef(path) {
@@ -162,9 +166,13 @@ const CloudSync = (() => {
 
   // ─── Save (upload) ─────────────────────────────────────────────────
 
+  // Note: saveStore() and saveSettings() intentionally do NOT check _syncing.
+  // The _syncing flag prevents auto-save (notifyWrite) from firing during
+  // restoreAll(), but saveAll() calls these directly and needs them to execute.
+
   /** Save a single data store to the cloud */
   async function saveStore(storeName) {
-    if (!isSignedIn() || _syncing) return;
+    if (!isSignedIn()) return;
     const file = STORE_FILES[storeName];
     if (!file) return;
 
@@ -178,7 +186,7 @@ const CloudSync = (() => {
 
   /** Save app settings to the cloud */
   async function saveSettings() {
-    if (!isSignedIn() || _syncing) return;
+    if (!isSignedIn()) return;
     const settings = {};
     for (const key of SETTINGS_SYNC_KEYS) {
       settings[key] = await DB.getSetting(key, null);
@@ -212,28 +220,36 @@ const CloudSync = (() => {
         Array.isArray(arr) && arr.every(item => item && typeof item === 'object' && item.id);
 
       // Restore settings
-      const settingsRaw = await _downloadJson('settings.json');
-      if (settingsRaw) {
-        const parsed = JSON.parse(settingsRaw);
-        if (parsed.settings && typeof parsed.settings === 'object') {
-          for (const key of SETTINGS_SYNC_KEYS) {
-            if (Object.prototype.hasOwnProperty.call(parsed.settings, key)) {
-              await DB.setSetting(key, parsed.settings[key]);
+      try {
+        const settingsRaw = await _downloadJson('settings.json');
+        if (settingsRaw) {
+          const parsed = JSON.parse(settingsRaw);
+          if (parsed.settings && typeof parsed.settings === 'object') {
+            for (const key of SETTINGS_SYNC_KEYS) {
+              if (Object.prototype.hasOwnProperty.call(parsed.settings, key)) {
+                await DB.setSetting(key, parsed.settings[key]);
+              }
             }
           }
         }
+      } catch (e) {
+        console.warn('CloudSync: settings restore failed', e);
       }
 
       // Restore each data store
       let totalItems = 0;
       for (const [storeName, file] of Object.entries(STORE_FILES)) {
-        const raw = await _downloadJson(file);
-        if (!raw) continue;
-        const parsed = JSON.parse(raw);
-        const items = parsed[storeName];
-        if (!validArray(items)) continue;
-        await Promise.all(items.map(item => DB.put(DB.STORES[storeName], item)));
-        totalItems += items.length;
+        try {
+          const raw = await _downloadJson(file);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw);
+          const items = parsed[storeName];
+          if (!validArray(items)) continue;
+          await Promise.all(items.map(item => DB.put(DB.STORES[storeName], item)));
+          totalItems += items.length;
+        } catch (e) {
+          console.warn('CloudSync: ' + storeName + ' restore failed', e);
+        }
       }
 
       if (totalItems > 0 && typeof App !== 'undefined') {
@@ -282,6 +298,7 @@ const CloudSync = (() => {
     isEnabled,
     getUser,
     onAuthChange,
+    offAuthChange,
     saveAll,
     restoreAll,
     notifyWrite,

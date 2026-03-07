@@ -357,6 +357,9 @@ const SettingsPage = (() => {
 
   function onUnmount() {
     document.removeEventListener('click', handleOutsideClick);
+    if (CloudSync.isEnabled()) {
+      CloudSync.offAuthChange(_updateCloudSyncUI);
+    }
   }
 
   function handleOutsideClick(e) {
@@ -887,8 +890,7 @@ const SettingsPage = (() => {
       worlds: await DB.getAll(DB.STORES.worlds),
       comics: await DB.getAll(DB.STORES.comics),
       // Strip imageUrl from panels — AI-generated images are large and can be regenerated
-      pages: (typeof CloudSync !== 'undefined' && CloudSync.stripPanelImageUrls)
-        ? CloudSync.stripPanelImageUrls(rawPages) : rawPages,
+      pages: CloudSync.stripPanelImageUrls(rawPages),
       presets: await DB.getAll(DB.STORES.presets),
       imagePresets: await DB.getAll(DB.STORES.imagePresets),
       exportedAt: new Date().toISOString(),
