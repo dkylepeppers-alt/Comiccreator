@@ -31,8 +31,8 @@ permissions:
 jobs:
   update-docs:
     runs-on: ubuntu-latest
-    # Skip commits already made by the bot to prevent infinite loops
-    if: github.actor != 'github-actions[bot]'
+    # Skip commits already made by automation bots to prevent infinite loops
+    if: github.actor != 'github-actions[bot]' && !startsWith(github.actor, 'copilot')
 
     steps:
       - name: Checkout
@@ -40,26 +40,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Read current version and recent changes
         id: meta
         run: |
-          VERSION="$(node -p "require('./version.json').version")"
+          VERSION="$(jq -r '.version' version.json)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           # Collect recently changed non-doc source files for context
-          CHANGED="$(git diff --name-only HEAD~1 HEAD \
-            -- 'js/' 'css/' 'index.html' 'sw.js' 'manifest.json' \
-               'version.json' 'package.json' 'test/' 'scripts/' \
-            2>/dev/null | head -30 || echo '(scheduled or manual run)')"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            CHANGED="$(git diff --name-only ${{ github.event.before }} HEAD \
+              -- 'js/' 'css/' 'index.html' 'sw.js' 'manifest.json' \
+                 'version.json' 'package.json' 'test/' 'scripts/' \
+              2>/dev/null | head -30)"
+          else
+            CHANGED="(scheduled or manual run)"
+          fi
           {
             echo "changed<<EOF"
             echo "$CHANGED"
