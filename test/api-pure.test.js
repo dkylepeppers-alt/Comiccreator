@@ -108,11 +108,63 @@ function buildSystemPrompt(genre, characters, world, customSystemPrompt, options
   const imageSizes = options?.imageSizes;
   const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
   const includeAppearance = options?.includeAppearanceText !== false;
+  const imageStylePreset = options?.imageStylePreset || '';
+
+  const artStyleDirective = imageStylePreset
+    ? imageStylePreset
+    : '[art style keywords matching the story genre]';
+  const artStyleExamples = imageStylePreset
+    ? `art style (use: ${imageStylePreset})`
+    : 'art style (comic book illustration, bold ink lines, cel shading, halftone texture, watercolor, photorealistic — pick the style that fits the story)';
+
+  const panelExample = hasDynamicSizes
+    ? `{
+      "narration": "Scene-setting narration text (optional)",
+      "imagePrompt": "${artStyleDirective}, [shot type], [lighting], [composition] — describe the scene, characters, action",
+      "imageSize": "one of the supported sizes listed below",
+      "dialogue": [
+        { "speaker": "Character Name", "text": "What they say" }
+      ]
+    }`
+    : `{
+      "narration": "Scene-setting narration text (optional)",
+      "imagePrompt": "${artStyleDirective}, [shot type], [lighting], [composition] — describe the scene, characters, action",
+      "dialogue": [
+        { "speaker": "Character Name", "text": "What they say" }
+      ]
+    }`;
+
   let prompt = `${base}
 
 IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
 
-Your response must be a JSON object with this exact structure:`;
+Your response must be a JSON object with this exact structure:
+{
+  "title": "Page title",
+  "panels": [
+    ${panelExample}
+  ],
+  "choices": [
+    { "text": "Choice description for the reader", "summary": "Brief consequence summary" }
+  ]
+}
+
+Generate 3-4 panels per page. Each panel needs:
+- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), ${artStyleExamples}, composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${imageStylePreset ? ` IMPORTANT: Every imagePrompt MUST begin with "${imageStylePreset}" as the art style prefix.` : ''}${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
+- Optional narration for scene-setting
+- Character dialogue that advances the story
+
+CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
+who appears in that panel.${includeAppearance
+    ? ` Include their full physical appearance description
+inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
+black armor, glowing blue eyes)". This is essential for visual consistency.`
+    : ` Describe their actions, poses, and the scene composition.
+Reference images will be provided for visual consistency, so you do not need
+to repeat full appearance descriptions — but always use character names.`}
+If a panel has NO characters (e.g., establishing shot), say "No characters present."
+
+Provide 2-3 meaningful choices at the end that affect the story direction.`;
   if (hasDynamicSizes) {
     prompt += `\n\nIMAGE SIZES:
 For each panel, choose the most appropriate image size from these supported values: ${imageSizes.join(', ')}
@@ -324,6 +376,32 @@ describe('api pure parsing and prompt helpers', () => {
     const chars = [{ name: 'Nova', description: 'A hero', appearance: 'Silver hair' }];
     const prompt = buildSystemPrompt('action', chars, null, null, { includeAppearanceText: true });
     assert.ok(prompt.includes('APPEARANCE: Silver hair'), 'should include appearance when explicitly enabled');
+  });
+
+  it('buildSystemPrompt uses imageStylePreset in prompt instead of hardcoded comic book illustration', () => {
+    const preset = 'watercolor painting, soft edges, gentle color washes, artistic';
+    const prompt = buildSystemPrompt('action', [], null, null, { imageStylePreset: preset });
+    assert.ok(prompt.includes(preset), 'should include the image style preset text');
+    assert.ok(!prompt.toLowerCase().includes('comic book illustration'), 'should NOT include hardcoded comic book illustration when preset is set');
+    assert.ok(prompt.includes(`art style (use: ${preset})`), 'should use preset in art style instruction');
+    assert.ok(prompt.includes(`MUST begin with "${preset}"`), 'should instruct LLM to prefix imagePrompt with preset');
+  });
+
+  it('buildSystemPrompt uses generic art style examples when no imageStylePreset is provided', () => {
+    const prompt = buildSystemPrompt('action', [], null, null);
+    assert.ok(prompt.includes('pick the style that fits the story'), 'should suggest picking style that fits story');
+    assert.ok(prompt.includes('[art style keywords matching the story genre]'), 'should use generic placeholder in example');
+    assert.ok(!prompt.includes('MUST begin with'), 'should not include prefix instruction when no preset');
+  });
+
+  it('buildSystemPrompt imageStylePreset works with dynamic image sizes', () => {
+    const preset = 'anime style, manga art, cel shading';
+    const sizes = ['1024x1024', '1536x1024'];
+    const prompt = buildSystemPrompt('action', [], null, null, { imageStylePreset: preset, imageSizes: sizes });
+    assert.ok(prompt.includes(preset), 'should include preset with dynamic sizes');
+    assert.ok(prompt.includes('IMAGE SIZES:'), 'should include image sizes section');
+    assert.ok(prompt.includes('"imageSize"'), 'should include imageSize field in example');
+    assert.ok(!prompt.toLowerCase().includes('comic book illustration'), 'should not hardcode comic book illustration in example');
   });
 });
 

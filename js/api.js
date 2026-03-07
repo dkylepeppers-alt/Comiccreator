@@ -320,6 +320,7 @@ const API = (() => {
    * @param {Object} [options]
    * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
    * @param {boolean} [options.includeAppearanceText] - whether to include character appearance text (default: true)
+   * @param {string} [options.imageStylePreset] - image style prompt prefix from the selected image preset (e.g. "watercolor painting, soft edges").
    */
   function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
     const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
@@ -327,13 +328,23 @@ const API = (() => {
     const imageSizes = options?.imageSizes;
     const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
     const includeAppearance = options?.includeAppearanceText !== false;
+    const imageStylePreset = options?.imageStylePreset || '';
+
+    // When an image style preset is selected, use it as the art style directive;
+    // otherwise fall back to a generic placeholder so the LLM doesn't hardcode one style.
+    const artStyleDirective = imageStylePreset
+      ? imageStylePreset
+      : '[art style keywords matching the story genre]';
+    const artStyleExamples = imageStylePreset
+      ? `art style (use: ${imageStylePreset})`
+      : 'art style (comic book illustration, bold ink lines, cel shading, halftone texture, watercolor, photorealistic — pick the style that fits the story)';
 
     // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
     // Use the first available size as a placeholder; the IMAGE SIZES section instructs the AI to vary them
     const panelExample = hasDynamicSizes
       ? `{
       "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Comic book illustration, [shot type], [lighting], [art style], [composition] — describe the scene, characters, action",
+      "imagePrompt": "${artStyleDirective}, [shot type], [lighting], [composition] — describe the scene, characters, action",
       "imageSize": "one of the supported sizes listed below",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
@@ -341,7 +352,7 @@ const API = (() => {
     }`
       : `{
       "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Comic book illustration, [shot type], [lighting], [art style], [composition] — describe the scene, characters, action",
+      "imagePrompt": "${artStyleDirective}, [shot type], [lighting], [composition] — describe the scene, characters, action",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
       ]
@@ -363,7 +374,7 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), art style (comic book illustration, bold ink lines, cel shading, halftone texture), composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
+- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), ${artStyleExamples}, composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${imageStylePreset ? ` IMPORTANT: Every imagePrompt MUST begin with "${imageStylePreset}" as the art style prefix.` : ''}${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 
