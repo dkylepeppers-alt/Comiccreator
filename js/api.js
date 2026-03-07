@@ -333,7 +333,7 @@ const API = (() => {
     const panelExample = hasDynamicSizes
       ? `{
       "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "imagePrompt": "Comic book illustration, [shot type], [lighting], [art style], [composition] — describe the scene, characters, action",
       "imageSize": "one of the supported sizes listed below",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
@@ -341,7 +341,7 @@ const API = (() => {
     }`
       : `{
       "narration": "Scene-setting narration text (optional)",
-      "imagePrompt": "Detailed visual description for AI image generation - describe the scene, characters, action, lighting, style, camera angle",
+      "imagePrompt": "Comic book illustration, [shot type], [lighting], [art style], [composition] — describe the scene, characters, action",
       "dialogue": [
         { "speaker": "Character Name", "text": "What they say" }
       ]
@@ -363,7 +363,7 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene in detail (for AI art generation).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
+- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), art style (comic book illustration, bold ink lines, cel shading, halftone texture), composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 

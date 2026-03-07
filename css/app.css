@@ -1,3 +1,6 @@
+/* === Comic Fonts === */
+@import url('https://fonts.googleapis.com/css2?family=Bangers&display=swap');
+
 /* === CSS Variables & Theme === */
 :root {
   --bg-primary: #0a0a1a;
@@ -576,37 +579,66 @@ img { max-width: 100%; display: block; }
 }
 .comic-narration {
   background: #fffde7;
-  border: 1px solid #e6d85e;
-  padding: 8px 12px;
+  border: 2px solid #c8a800;
+  padding: 8px 14px;
   margin: 8px;
   border-radius: var(--radius-xs);
   font-style: italic;
-  color: #333;
-  font-size: 0.9rem;
+  color: #222;
+  font-size: 0.92rem;
+  font-family: 'Bangers', 'Comic Sans MS', 'Segoe UI', cursive, sans-serif;
+  letter-spacing: 0.02em;
+  box-shadow: 2px 2px 0 #c8a800;
 }
 .comic-dialogue {
   background: #fff;
-  border: 2px solid #333;
-  border-radius: 16px;
-  padding: 8px 14px;
-  margin: 8px;
+  border: 2.5px solid #111;
+  border-radius: 20px;
+  padding: 8px 14px 8px 14px;
+  margin: 10px 8px 14px 8px;
   position: relative;
-  color: #000;
-  font-size: 0.9rem;
+  color: #111;
+  font-size: 1rem;
+  font-family: 'Bangers', 'Comic Sans MS', 'Segoe UI', cursive, sans-serif;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  box-shadow: 2px 2px 0 #111;
 }
 .comic-dialogue::after {
   content: '';
   position: absolute;
-  bottom: -8px;
-  left: 20px;
-  width: 16px;
-  height: 16px;
-  background: #fff;
-  border-right: 2px solid #333;
-  border-bottom: 2px solid #333;
-  transform: rotate(45deg);
+  bottom: -13px;
+  left: 22px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 13px solid #111;
 }
-.speaker-name { font-weight: 700; font-size: 0.8rem; color: #555; margin-bottom: 2px; }
+.comic-dialogue::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 23px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 11px solid #fff;
+  z-index: 1;
+}
+.speaker-name {
+  font-weight: 900;
+  font-size: 0.72rem;
+  color: #fff;
+  background: #111;
+  border-radius: 6px 6px 0 0;
+  display: inline-block;
+  padding: 1px 7px 1px 7px;
+  margin-bottom: 4px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* === Choice Buttons === */
 .choices-container {
