@@ -34,27 +34,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          # Enough history for push events (HEAD~1) and workflow_dispatch fallback.
+          fetch-depth: 0
 
       # Collect the list of changed source files and a truncated diff for context.
       - name: Collect changed files and diff
         id: ctx
         run: |
-          FILES=$(git diff --name-only HEAD~1 HEAD \
+          # For push events compare against parent; for workflow_dispatch compare
+          # against the previous tag or fall back to diffing the full tree.
+          if [ "${{ github.event_name }}" = "push" ] && git rev-parse HEAD~1 >/dev/null 2>&1; then
+            BASE="HEAD~1"
+          else
+            # Fallback: use the most recent tag, or Git's empty-tree SHA so we diff
+            # against a blank tree (effectively treating every file as new).
+            BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "4b825dc642cb6eb9a060e54bf899d69f82cf7858")
+          fi
+
+          FILES=$(git diff --name-only "$BASE" HEAD \
             -- js/ css/ index.html sw.js manifest.json package.json \
             | tr '\n' ' ')
           echo "files=$FILES" >> "$GITHUB_OUTPUT"
 
+          if [ -z "$FILES" ]; then
+            echo "No matching source files changed — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Cap the diff at 400 lines to stay within model token limits.
-          git diff HEAD~1 HEAD \
+          git diff "$BASE" HEAD \
             -- js/ css/ index.html sw.js manifest.json package.json \
             | head -n 400 > /tmp/code_diff.txt
 
       # Write the user prompt to a file so we don't have to escape it inline.
+      # Uses env var for the file list to avoid script-injection via ${{ }}.
       - name: Build user prompt
+        if: steps.ctx.outputs.skip != 'true'
+        env:
+          CHANGED_FILES: ${{ steps.ctx.outputs.files }}
         run: |
           {
-            echo "Changed source files: ${{ steps.ctx.outputs.files }}"
+            echo "Changed source files: $CHANGED_FILES"
             echo ""
             echo "=== Code diff (first 400 lines) ==="
             cat /tmp/code_diff.txt
@@ -66,6 +87,7 @@ jobs:
       # Build the JSON payload for the GitHub Models REST API.
       # The system prompt is stored in an env var to avoid YAML/shell quoting issues.
       - name: Build API payload
+        if: steps.ctx.outputs.skip != 'true'
         env:
           SYSTEM_PROMPT: >-
             You are a technical documentation specialist for an AI Comic Creator PWA.
@@ -95,6 +117,7 @@ jobs:
 
       # Call the GitHub Models API (no extra secrets required — GITHUB_TOKEN suffices).
       - name: Call GitHub Models API
+        if: steps.ctx.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -106,15 +129,22 @@ jobs:
             https://models.inference.ai.azure.com/chat/completions)
 
           if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "GitHub Models API returned HTTP $HTTP_STATUS:"
+            echo "::error::GitHub Models API returned HTTP $HTTP_STATUS"
             cat /tmp/api_response.json
             exit 1
           fi
 
-          jq -r '.choices[0].message.content' /tmp/api_response.json > README.md
+          # Extract content and validate before overwriting README.
+          CONTENT=$(jq -r '.choices[0].message.content // empty' /tmp/api_response.json)
+          if [ -z "$CONTENT" ]; then
+            echo "::error::API returned empty or null content — skipping to avoid corrupting README."
+            exit 1
+          fi
+          printf '%s\n' "$CONTENT" > README.md
 
       # Open a PR only when the README actually changed.
       - name: Open pull request with README update
+        if: steps.ctx.outputs.skip != 'true'
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -122,8 +152,7 @@ jobs:
           delete-branch: true
           title: "docs: auto-update README"
           body: |
-            Automated README update triggered by changes to:
-            `${{ steps.ctx.outputs.files }}`
+            Automated README update triggered by changes to source files.
 
             Review the diff below and merge if the changes look correct.
             To skip the update, simply close this PR without merging.
