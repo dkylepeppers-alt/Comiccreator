@@ -80,8 +80,8 @@ Each entry in the `images[]` array has this structure:
   description: string,      // AI-generated or manually entered caption
   embedding: number[]|null, // semantic embedding vector (generated on save)
   embeddingText: string|null, // the enriched text that was embedded
-  aiGenerated: boolean,     // true if created by generateReferences()
-  generationPrompt: string, // the prompt used to generate AI images
+  aiGenerated?: boolean,     // true if created by generateReferences() (undefined for manual uploads)
+  generationPrompt?: string, // the prompt used to generate AI images (undefined for manual uploads)
 }
 ```
 
@@ -250,7 +250,7 @@ During `generatePage()` in `create.js`, after the LLM returns a page JSON with p
 When the user clicks **Generate** (`startGeneration()`), before any LLM call:
 
 1. For each selected character, `DB.migrateCharacter()` normalizes legacy format, then the full `images[]` array and `primaryImageIndex` are stored in `state.characterImagesByName[name]`.
-2. For the selected world, `DB.migrateWorld()` normalizes format, then each world image is added to `state.referenceImages[]` as `{ dataUrl, label, tag, description, type: 'world' }`.
+2. For the selected world, `DB.migrateWorld()` normalizes format. Each world image is added to `state.referenceImages[]` as `{ dataUrl, label, tag, description, type: 'world' }`. For backward compatibility, each selected character's primary image is also pushed into `state.referenceImages[]` as `{ dataUrl, label, type: 'character' }`, although downstream panel logic that builds world reference sets filters this array with `type === 'world'`.
 
 ### Character name detection
 
@@ -469,7 +469,7 @@ Before sending, all reference images are compressed via `compressDataUrl(dataUrl
 
 - Resizes so neither dimension exceeds 1024 px.
 - Re-encodes as JPEG at 85% quality.
-- Falls back to the original data URL on any canvas error.
+- Falls back to the original data URL if the image fails to load; other unexpected errors during compression are propagated.
 
 The number of references is capped by the `maxRefImages` setting (default: 4). Excess refs are truncated with a console warning.
 
