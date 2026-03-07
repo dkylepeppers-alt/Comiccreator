@@ -58,6 +58,18 @@ describe('DB module', () => {
     assert.equal(await DB.get(DB.STORES.characters, character.id), undefined);
   });
 
+  it('get returns undefined for null, undefined, or empty-string id without throwing', async () => {
+    assert.equal(await DB.get(DB.STORES.characters, null), undefined);
+    assert.equal(await DB.get(DB.STORES.characters, undefined), undefined);
+    assert.equal(await DB.get(DB.STORES.characters, ''), undefined);
+  });
+
+  it('del is a no-op for null, undefined, or empty-string id without throwing', async () => {
+    await assert.doesNotReject(() => DB.del(DB.STORES.characters, null));
+    await assert.doesNotReject(() => DB.del(DB.STORES.characters, undefined));
+    await assert.doesNotReject(() => DB.del(DB.STORES.characters, ''));
+  });
+
   it('supports getByIndex for pages by comicId', async () => {
     const comicId = DB.uuid();
     await DB.put(DB.STORES.pages, { id: DB.uuid(), comicId, pageNum: 1 });
