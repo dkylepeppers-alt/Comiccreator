@@ -43,7 +43,7 @@ The pipeline has six stages:
 
 ### How it works
 
-Each character or world can hold up to **20 reference images** (`MAX_IMAGES = 20`). Images are stored as base64 data URLs in IndexedDB inside an `images[]` array on the character/world object.
+Each character or world can hold up to **20 reference images** (`MAX_IMAGES = 20`). In IndexedDB, these are stored on the character/world object in an `images[]` array, where each entry is an object (e.g., `{ dataUrl, tag, description, embedding, ... }`) whose `dataUrl` field contains the base64 image data URL.
 
 #### Manual upload
 

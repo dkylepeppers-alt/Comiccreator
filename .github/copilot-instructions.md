@@ -105,7 +105,7 @@ npm install
 # Run all tests (Node built-in test runner)
 npm test
 
-# Run Playwright E2E tests (requires a local server on port 8080)
+# Run Playwright E2E tests (auto-starts/reuses a local server on port 8080 via python3; requires Python 3)
 npm run test:e2e
 
 # Syntax check all JS files

@@ -29,7 +29,7 @@ A fully installable Progressive Web App for creating AI-generated comic books wi
 ### Image Style Presets
 - Create reusable art-style prompt prefixes (e.g., "watercolor illustration, soft colors, hand-drawn")
 - Select an image style preset at generation time to apply a consistent visual style across all panels
-- Built-in defaults: Comic Book, Watercolor, and 3D Render styles
+- Includes built-in defaults such as Comic Book Ink, Photorealistic, Anime / Manga, Watercolor, and 3D Render styles
 
 ### Prompt Presets & Advanced Controls
 - **Preset System** — Save reusable configurations with custom system prompts and sampler parameters

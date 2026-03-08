@@ -6,7 +6,7 @@ The codebase has automated checks and tests:
 - `npm run check-syntax`
 - `npm run lint`
 - `npm test` (`node --test test/*.test.js`)
-- `npm run test:e2e` (Playwright, requires local server)
+- `npm run test:e2e` (Playwright; automatically starts or reuses a local server via `python3 -m http.server 8080` — requires Python 3)
 - GitHub Actions workflows: `tests.yml` (push + pull_request), `playwright.yml` (push + pull_request)
 
 Remaining quality gaps are primarily richer browser-level integration and end-to-end scenario coverage beyond the existing smoke tests.
