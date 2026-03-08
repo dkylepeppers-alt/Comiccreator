@@ -779,12 +779,16 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
    * World templates use {name} and {description} placeholders.
    */
   const CHARACTER_REF_VARIATIONS = [
-    { tag: 'front-view', prompt: 'Generate a full front view of the character in the reference image, standing upright facing the viewer, neutral pose, full body visible, clean background', desc: 'Front-facing full body reference' },
-    { tag: 'side-view', prompt: 'Generate a side profile view of the character in the reference image, standing facing right, full body visible, clean background', desc: 'Side profile reference' },
-    { tag: 'back-view', prompt: 'Generate a back view of the character in the reference image, standing facing away from the viewer, full body visible, clean background', desc: 'Rear view reference' },
-    { tag: 'close-up', prompt: 'Generate a close-up portrait of the character in the reference image, detailed face and expression, head and shoulders, clean background', desc: 'Close-up face/portrait reference' },
-    { tag: 'action-pose', prompt: 'Generate the character from the reference image in a dynamic action pose, mid-motion, energetic composition, clean background', desc: 'Dynamic action pose reference' },
-    { tag: 'expression', prompt: 'Generate an expressive portrait of the character in the reference image, showing strong emotion, detailed facial features, clean background', desc: 'Emotional expression reference' },
+    { tag: 'front-view', prompt: 'Full-body front view of the character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose. Arms slightly away from body. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.', desc: 'Front-facing full body reference' },
+    { tag: 'side-view', prompt: 'Full-body side profile of the character shown in the reference image. The character stands facing the right side of the frame. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.', desc: 'Side profile reference' },
+    { tag: 'back-view', prompt: 'Full-body rear view of the character shown in the reference image. The character stands facing away from the viewer. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.', desc: 'Rear view reference' },
+    { tag: 'close-up', prompt: 'Close-up portrait of the character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the camera. Highly detailed facial features, hair, and collar. Soft studio lighting. Clean neutral background.', desc: 'Close-up face/portrait reference' },
+    { tag: 'action-pose', prompt: 'The character from the reference image in a powerful, dynamic combat or action stance. Weight shifted forward, weapon or ability actively engaged, body twisted for maximum energy. Low-angle dramatic composition. Motion blur on extremities. Clean gradient background.', desc: 'Dynamic action pose — combat stance' },
+    { tag: 'action-pose', prompt: 'The character from the reference image mid-leap or sprinting at full speed. One foot off the ground, arms pumping, hair and cape/clothing streaming behind. Captured at peak motion. High-energy composition with speed lines. Clean background.', desc: 'Dynamic action pose — running/leaping' },
+    { tag: 'expression', prompt: 'Expressive close-up portrait of the character from the reference image showing intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils. Strong dramatic side-lighting with deep shadows. Head and shoulders framing. Clean dark background.', desc: 'Expression — anger/rage' },
+    { tag: 'expression', prompt: 'Expressive close-up portrait of the character from the reference image showing JOY or TRIUMPH. Wide grin, bright eyes, lifted cheeks. Warm upbeat lighting. Head and shoulders framing. Clean light background.', desc: 'Expression — joy/triumph' },
+    { tag: 'expression', prompt: 'Expressive close-up portrait of the character from the reference image showing FEAR or SHOCK. Wide eyes, raised brows, mouth slightly open. Cool dramatic lighting from below. Head and shoulders framing. Clean background.', desc: 'Expression — fear/shock' },
+    { tag: 'character-sheet', prompt: 'Orthographic character reference sheet of the character from the reference image. Three views arranged side by side: front facing (left), three-quarter view (center), side profile (right). All views show the full body at the same scale. Clean white background, thin guide lines. Comic book character design sheet style.', desc: 'Character sheet — 3-view turnaround' },
   ];
 
   const WORLD_REF_VARIATIONS = [
@@ -792,6 +796,15 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     { tag: 'interior', prompt: 'Interior view of a key location inside {name}, {description}, detailed architecture and furnishings', desc: 'Interior environment detail' },
     { tag: 'night', prompt: 'Night scene of {name}, {description}, dark atmosphere with dramatic lighting and shadows', desc: 'Night atmosphere reference' },
     { tag: 'detail', prompt: 'Close-up architectural or environmental detail of {name}, {description}, texture and material focus', desc: 'Close-up environment detail' },
+  ];
+
+  /**
+   * Variation prompts for generating images of a character interacting within a world.
+   * Uses {charName}, {charAppearance}, {worldName}, {worldDescription} placeholders.
+   */
+  const CHARACTER_WORLD_VARIATIONS = [
+    { tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}). Full-body establishing shot showing the character in context with the environment. The world\'s distinctive atmosphere and architecture visible around them. Comic book illustration style.', desc: 'Character in world — establishing shot' },
+    { tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} in a dynamic action pose inside {worldName} ({worldDescription}). The world\'s signature environmental details frame the action. Dramatic camera angle. Comic book illustration style.', desc: 'Character in world — action pose' },
   ];
 
   /**
@@ -805,11 +818,14 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     try {
       // Use the user's configured image size rather than a hardcoded default
       const resolution = options.resolution || await DB.getSetting('imageSize', '1024x1024');
-      const result = await generateImage(prompt, {
-        imageDataUrl: sourceDataUrl,
-        resolution,
-        model: options.model,
-      });
+      // Support multiple reference images via options.imageDataUrls (array) or single sourceDataUrl
+      const imageGenOpts = { resolution, model: options.model };
+      if (options.imageDataUrls && options.imageDataUrls.length > 0) {
+        imageGenOpts.imageDataUrls = options.imageDataUrls;
+      } else if (sourceDataUrl) {
+        imageGenOpts.imageDataUrl = sourceDataUrl;
+      }
+      const result = await generateImage(prompt, imageGenOpts);
       if (!result) return null;
       // Convert URL results to data URLs for local storage
       if (result.startsWith('http')) {
@@ -853,6 +869,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     generateRefVariation,
     CHARACTER_REF_VARIATIONS,
     WORLD_REF_VARIATIONS,
+    CHARACTER_WORLD_VARIATIONS,
     FALLBACK_TEXT_MODELS,
     FALLBACK_IMAGE_MODELS,
     KNOWN_IMAGE_SIZES,

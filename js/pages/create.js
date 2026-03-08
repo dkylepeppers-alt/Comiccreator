@@ -33,14 +33,15 @@ const CreatePage = (() => {
 
   // Keyword-to-tag affinity map used for fallback ref image selection when embeddings are unavailable
   const TAG_KEYWORDS = {
-    'front-view':       ['front', 'facing', 'standing', 'full body', 'looking at'],
-    'side-view':        ['profile', 'side view', 'side-on', 'looking away'],
-    'back-view':        ['behind', 'back view', 'from behind', 'walking away', 'rear'],
-    'close-up':         ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
-    'action-pose':      ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
-    'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
-    'expression':       ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
-    'character-sheet':  ['character sheet', 'turnaround', 'model sheet', 'reference sheet', 'multiple angles', 'multiple poses', 'multi-angle', 'multi-pose', 'full rotation', '360', 'orthographic'],
+    'front-view':           ['front', 'facing', 'standing', 'full body', 'looking at'],
+    'side-view':            ['profile', 'side view', 'side-on', 'looking away'],
+    'back-view':            ['behind', 'back view', 'from behind', 'walking away', 'rear'],
+    'close-up':             ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
+    'action-pose':          ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
+    'alternate-outfit':     ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
+    'expression':           ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
+    'character-sheet':      ['character sheet', 'turnaround', 'model sheet', 'reference sheet', 'multiple angles', 'multiple poses', 'multi-angle', 'multi-pose', 'full rotation', '360', 'orthographic'],
+    'character-in-world':   ['in the world', 'in the city', 'in the setting', 'environment', 'landscape', 'outdoors', 'indoors', 'location'],
   };
 
   async function render(param) {
