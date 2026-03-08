@@ -241,11 +241,11 @@ errors: # Only public-facing errors
 
 decisions: # Architecture decisions only
   - decision: string
-  - rationale: string
+    rationale: string
 
 changes: # Requirements changes only (not task logs)
   - version: string
-  - change: string
+    change: string
 ```
 </prd_format_guide>
 

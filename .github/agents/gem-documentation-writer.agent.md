@@ -33,7 +33,7 @@ Technical Writing, API Documentation, Diagram Generation, Documentation Maintena
   "plan_id": "string",
   "plan_path": "string",  // "docs/plan/{plan_id}/plan.yaml"
   "task_definition": {
-    "task_type": "documentation|walkthrough|update",
+    "task_type": "documentation|walkthrough|update|prd_finalize",
     // For walkthrough:
     "overview": "string",
     "tasks_completed": ["array of task summaries"],
