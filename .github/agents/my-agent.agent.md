@@ -6,7 +6,7 @@ mcp-servers:
   github:
     type: 'local'
     command: 'github-mcp-server'
-    args: ['--toolsets', 'all']
+    args: ['--toolsets', 'repos,issues,pull_requests,actions,code_security,search']
     tools: ["*"]
 ---
 

@@ -1,12 +1,12 @@
 ---
 name: readme-specialist
 description: Specialized agent for creating and improving README files and project documentation
-tools: ['read', 'search', 'edit', 'github/*']
+tools: ['read', 'search', 'edit']
 mcp-servers:
   github:
     type: 'local'
     command: 'github-mcp-server'
-    args: ['--toolsets', 'all']
+    args: ['--toolsets', 'repos,issues']
     tools: ["*"]
 ---
 
