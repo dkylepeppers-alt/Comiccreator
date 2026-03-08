@@ -32,9 +32,6 @@ const App = (() => {
     await DB.seedDefaults();
     await DB.dedupePresets();
 
-    // Initialise cloud sync (Firebase auth state, auto-save hooks)
-    CloudSync.init();
-
     // Set up navigation
     setupNavigation();
 
