@@ -602,13 +602,11 @@ const WorldsPage = (() => {
 
     const interactionPrompts = [
       {
-        key: 'interaction-ensemble',
         tag: 'character-interaction',
         prompt: `${castNames} are together in ${worldName} (${worldDesc || 'as shown'}). Full-body ensemble shot showing all characters interacting with each other in the environment. Characters: ${castDesc}. Dynamic group composition with ${worldName}'s atmosphere and architecture visible in the background. Match the art style of the provided reference images.`,
         desc: `${castNames} — ensemble interaction in ${worldName}`,
       },
       {
-        key: 'interaction-dramatic',
         tag: 'character-interaction',
         prompt: `${castNames} in a dramatic confrontation or collaboration scene inside ${worldName} (${worldDesc || 'as shown'}). Each character distinctly visible: ${castDesc}. Cinematic wide shot capturing the tension and relationship between characters with the world's setting providing context. Match the art style of the provided reference images.`,
         desc: `${castNames} — dramatic scene in ${worldName}`,
