@@ -76,22 +76,13 @@ const DB = (() => {
 
   async function put(storeName, data) {
     await open();
-    const result = await promisify(tx(storeName, 'readwrite').put(data));
-    // Notify cloud sync (if available) for auto-save
-    if (typeof CloudSync !== 'undefined' && CloudSync.notifyWrite) {
-      CloudSync.notifyWrite(storeName);
-    }
-    return result;
+    return promisify(tx(storeName, 'readwrite').put(data));
   }
 
   async function del(storeName, id) {
     if (id == null || id === '') return;
     await open();
-    const result = await promisify(tx(storeName, 'readwrite').delete(id));
-    if (typeof CloudSync !== 'undefined' && CloudSync.notifyWrite) {
-      CloudSync.notifyWrite(storeName);
-    }
-    return result;
+    return promisify(tx(storeName, 'readwrite').delete(id));
   }
 
   async function getByIndex(storeName, indexName, value) {
