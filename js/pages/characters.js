@@ -433,8 +433,8 @@ const CharactersPage = (() => {
 
     if (available.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
 
-    // Build selection modal
-    const checkboxes = available.slice(0, slotsAvailable).map((v, i) => {
+    // Build selection modal — show ALL available variations, pre-check up to slotsAvailable
+    const checkboxes = available.map((v, i) => {
       const checked = i < slotsAvailable ? 'checked' : '';
       return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
         <input type="checkbox" class="char-ref-pick" data-idx="${i}" ${checked}>
@@ -451,8 +451,9 @@ const CharactersPage = (() => {
         <button class="btn btn-primary" id="char-ref-confirm-btn" onclick="CharactersPage._doGenerateReferences()">Generate Selected</button>
       </div>
     `);
-    // Store available variations for the confirm handler
-    CharactersPage._pendingRefVariations = available.slice(0, slotsAvailable);
+    // Store available variations and slot limit for the confirm handler
+    CharactersPage._pendingRefVariations = available;
+    CharactersPage._pendingRefSlots = slotsAvailable;
   }
 
   /** Execute reference generation for the user-selected variations. */
@@ -460,6 +461,9 @@ const CharactersPage = (() => {
     const picks = document.querySelectorAll('.char-ref-pick:checked');
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const maxSlots = CharactersPage._pendingRefSlots || selectedIdxs.length;
+    if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => CharactersPage._pendingRefVariations[i]).filter(Boolean);
     App.hideModal();
@@ -601,15 +605,16 @@ const CharactersPage = (() => {
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const variations = API.CHARACTER_WORLD_VARIATIONS;
-    const available = variations.slice(0, slotsAvailable);
+    const available = variations;
 
     // Build selection modal with world info
     const checkboxes = available.map((v, i) => {
       const label = v.desc
         .replace(/\{charName\}/g, name)
         .replace(/\{worldName\}/g, world.name);
+      const checked = i < slotsAvailable ? 'checked' : '';
       return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
-        <input type="checkbox" class="char-world-pick" data-idx="${i}" checked>
+        <input type="checkbox" class="char-world-pick" data-idx="${i}" ${checked}>
         <span><strong>${escHtml(v.tag)}</strong> — ${escHtml(label)}</span>
       </label>`;
     }).join('');
@@ -624,7 +629,7 @@ const CharactersPage = (() => {
       </div>
     `);
     CharactersPage._pendingWorldVariations = available;
-    CharactersPage._pendingWorldData = { world, name };
+    CharactersPage._pendingWorldData = { world, name, slotsAvailable };
   }
 
   /** Execute character-in-world generation for the user-selected variations. */
@@ -632,6 +637,9 @@ const CharactersPage = (() => {
     const picks = document.querySelectorAll('.char-world-pick:checked');
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const maxSlots = CharactersPage._pendingWorldData?.slotsAvailable || selectedIdxs.length;
+    if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => CharactersPage._pendingWorldVariations[i]).filter(Boolean);
     const { world, name } = CharactersPage._pendingWorldData;
@@ -843,7 +851,8 @@ const CharactersPage = (() => {
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
     generateReferences, _doGenerateReferences, regenerateImage,
     generateWorldInteractions, _doGenerateWorldInteractions,
-    _pendingRefVariations: null, _pendingWorldVariations: null, _pendingWorldData: null,
+    _pendingRefVariations: null, _pendingRefSlots: 0,
+    _pendingWorldVariations: null, _pendingWorldData: null,
     saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
   };
 })();

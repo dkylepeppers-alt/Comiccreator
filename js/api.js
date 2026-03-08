@@ -620,8 +620,12 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
   /**
    * Generate a contextual caption for an uploaded image using a vision-capable model.
    * The caption is optimised for use as an embedding description that matches comic
-   * panel prompts.  contextHints narrows the prompt to the specific character or world:
-   *   { type: 'character'|'world', name, role, tag, era }
+   * panel prompts.  contextHints narrows the prompt to the specific context:
+   *   type: 'character'              — single character reference (uses name, role, tag, appearance)
+   *       | 'character-in-world'     — character inside a world (uses name, tag, appearance, worldName)
+   *       | 'character-interaction'  — multiple characters interacting (uses characterNames, worldName, tag)
+   *       | 'world'                  — location/environment reference (uses name, era, tag)
+   *   Additional fields: name, role, tag, era, appearance, characterNames, worldName
    * Uses the `captionModel` setting when set, otherwise falls back to the configured
    * text model.  Returns a trimmed string, or null on failure / missing API key /
    * non-vision model.

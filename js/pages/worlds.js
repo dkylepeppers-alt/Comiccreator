@@ -417,12 +417,13 @@ const WorldsPage = (() => {
     const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
-    const batch = available.slice(0, slotsAvailable);
-    if (batch.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
+    if (available.length === 0) return App.toast('All reference variations already exist', 'info');
 
-    const checkboxes = batch.map((v, i) => {
+    // Show ALL available variations, pre-check up to slotsAvailable
+    const checkboxes = available.map((v, i) => {
+      const checked = i < slotsAvailable ? 'checked' : '';
       return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
-        <input type="checkbox" class="world-ref-pick" data-idx="${i}" checked>
+        <input type="checkbox" class="world-ref-pick" data-idx="${i}" ${checked}>
         <span><strong>${escHtml(v.tag)}</strong> — ${escHtml(v.desc)}</span>
       </label>`;
     }).join('');
@@ -436,7 +437,8 @@ const WorldsPage = (() => {
         <button class="btn btn-primary" onclick="WorldsPage._doGenerateReferences()">Generate Selected</button>
       </div>
     `);
-    WorldsPage._pendingRefVariations = batch;
+    WorldsPage._pendingRefVariations = available;
+    WorldsPage._pendingRefSlots = slotsAvailable;
   }
 
   /** Execute reference generation for the user-selected variations. */
@@ -444,6 +446,9 @@ const WorldsPage = (() => {
     const picks = document.querySelectorAll('.world-ref-pick:checked');
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const maxSlots = WorldsPage._pendingRefSlots || selectedIdxs.length;
+    if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => WorldsPage._pendingRefVariations[i]).filter(Boolean);
     App.hideModal();
@@ -613,14 +618,15 @@ const WorldsPage = (() => {
       },
     ];
 
-    const available = interactionPrompts.slice(0, slotsAvailable);
+    const available = interactionPrompts;
 
     // Build linked characters display
     const charList = castChars.map(c => `<strong>${escHtml(c.name)}</strong>${c.appearance ? ` <span class="text-muted">(${escHtml(c.appearance.slice(0, 60))})</span>` : ''}`).join(', ');
 
     const checkboxes = available.map((v, i) => {
+      const checked = i < slotsAvailable ? 'checked' : '';
       return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
-        <input type="checkbox" class="world-inter-pick" data-idx="${i}" checked>
+        <input type="checkbox" class="world-inter-pick" data-idx="${i}" ${checked}>
         <span>${escHtml(v.desc)}</span>
       </label>`;
     }).join('');
@@ -635,7 +641,7 @@ const WorldsPage = (() => {
         <button class="btn btn-primary" onclick="WorldsPage._doGenerateCharacterInteractions()">Generate Selected</button>
       </div>
     `);
-    WorldsPage._pendingInteractionData = { prompts: available, castChars, castNames, castDesc, worldName, worldDesc, worldImg };
+    WorldsPage._pendingInteractionData = { prompts: available, castChars, castNames, castDesc, worldName, worldDesc, worldImg, slotsAvailable };
   }
 
   /** Execute character interaction generation for the user-selected variations. */
@@ -645,6 +651,9 @@ const WorldsPage = (() => {
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
     const data = WorldsPage._pendingInteractionData;
+    const maxSlots = data.slotsAvailable || selectedIdxs.length;
+    if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
+
     const selectedVariations = selectedIdxs.map(i => data.prompts[i]).filter(Boolean);
     App.hideModal();
 
@@ -838,7 +847,7 @@ const WorldsPage = (() => {
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
     generateReferences, _doGenerateReferences, regenerateImage,
     generateCharacterInteractions, _doGenerateCharacterInteractions,
-    _pendingRefVariations: null, _pendingInteractionData: null,
+    _pendingRefVariations: null, _pendingRefSlots: 0, _pendingInteractionData: null,
     saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();
