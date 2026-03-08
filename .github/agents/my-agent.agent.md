@@ -1,7 +1,13 @@
 ---
 name: planning-specialist
 description: Specialized planning agent focused on turning goals into clear, structured execution plans for coding agents. Produces implementation plans, task breakdowns, sequencing, dependency maps, milestone outlines, risk notes, and decision frameworks with an emphasis on clarity, feasibility, and repository-grounded actionability.
-tools: ["read", "search", "edit"]
+tools: ["read", "search", "edit", "github/*"]
+mcp-servers:
+  github:
+    type: 'local'
+    command: 'github-mcp-server'
+    args: ['--toolsets', 'repos,issues,pull_requests,actions,code_security,search']
+    tools: ["*"]
 ---
 
 # Planning Specialist

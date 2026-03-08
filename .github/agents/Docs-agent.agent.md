@@ -1,6 +1,12 @@
 ---
 name: repo-docs-specialist
 description: Repository documentation specialist for writing and maintaining clear instructional, reference, and configuration documents that coding agents can follow reliably.
+mcp-servers:
+  github:
+    type: 'local'
+    command: 'github-mcp-server'
+    args: ['--toolsets', 'repos,issues,pull_requests']
+    tools: ["*"]
 ---
 
 # Repo Docs Specialist
