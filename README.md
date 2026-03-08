@@ -1,6 +1,6 @@
 # AI Comic Creator
 
-A fully installable Progressive Web App for creating AI-generated comic books with interactive narratives, custom characters, and detailed world-building. Powered by [NanoGPT](https://nano-gpt.com) and optimized for Android devices running Termux.
+A fully installable Progressive Web App for creating AI-generated comic books with interactive narratives, custom characters, and detailed world-building. Powered by [NanoGPT](https://nano-gpt.com).
 
 **Live demo (GitHub Pages):** [https://dkylepeppers-alt.github.io/Comiccreator/](https://dkylepeppers-alt.github.io/Comiccreator/)
 
@@ -54,60 +54,7 @@ Open the URL in Chrome or Brave, enter your NanoGPT API key in Settings, and sta
 
 > **Subpath note:** The app is served from `/Comiccreator/` on GitHub Pages. The service worker and manifest are configured for this subpath automatically — no manual changes are needed.
 
-### Running locally
-
-### Running in Termux (Android)
-
-#### One-command install (recommended)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dkylepeppers-alt/Comiccreator/master/install.sh | bash
-```
-
-The installer will:
-- Install `git` and `python` via `pkg` if they are missing (the `python` package provides the `python3` binary in Termux)
-- Clone the repository to `~/Comiccreator`
-- Make all scripts executable
-- Offer to start the server immediately
-- If the repository already exists at `~/Comiccreator`, run `update.sh` automatically instead of cloning again
-
-#### Manual install
-
-```bash
-# 1. Install git and python
-pkg install git python
-
-# 2. Clone the repository
-git clone https://github.com/dkylepeppers-alt/Comiccreator.git
-cd Comiccreator
-
-# 3. Start the server
-chmod +x server.sh
-./server.sh
-```
-
-The server starts on **http://localhost:8080** by default. Open this URL in Chrome or Brave on your device. The server also displays your LAN IP (`http://192.168.x.x:8080`) for connecting from other devices on the same network.
-
-`server.sh` has several built-in improvements:
-
-- **Port conflict detection** — if the requested port is already in use, the script exits with a clear error instead of silently failing
-- **Auto icon generation** — if `icons/icon-192.png` or `icons/icon-512.png` are missing, the script generates minimal placeholder PNGs automatically using Python
-- **Multiple server fallbacks** — tries `python3`, `python`, `npx serve`, `php`, and `busybox httpd` in order, so it works in any environment where at least one of these is available
-- **Network binding** — binds to `0.0.0.0` so the app is reachable from other devices on the same network via the displayed LAN IP
-
-**Custom port:**
-```bash
-PORT=3000 ./server.sh
-```
-
-### Installing as a PWA
-
-1. Open `http://localhost:8080` in Chrome or Brave
-2. Tap the browser menu (three dots)
-3. Select **"Install app"** or **"Add to Home screen"**
-4. The app now launches as a standalone application
-
-### Other Environments
+### Running locally (developers)
 
 Any static HTTP server works. The app is pure HTML/CSS/JS with zero build dependencies.
 
@@ -122,48 +69,34 @@ npx serve -s -l 8080
 php -S 0.0.0.0:8080
 ```
 
+Then open `http://localhost:8080` in Chrome or Brave.
+
 > **Testing locally vs. GitHub Pages:** When running locally, `sw.js` is served from `/sw.js` so `BASE_PATH` is `""` and all assets are cached with absolute root paths (e.g. `/index.html`). On GitHub Pages, `sw.js` is served from `/Comiccreator/sw.js` so `BASE_PATH` is `/Comiccreator` and assets are cached with subpath-prefixed URLs. The same `sw.js` file handles both cases automatically.
+
+### Installing as a PWA
+
+1. Open the app URL in Chrome or Brave
+2. Tap the browser menu (three dots)
+3. Select **"Install app"** or **"Add to Home screen"**
+4. The app now launches as a standalone application
 
 ---
 
 ## Updating
 
-### Update Script (Recommended)
+The app on GitHub Pages is updated automatically on every push to the default branch. After a new version is deployed:
 
-The easiest way to update in Termux:
+1. Open the app in your browser
+2. Go to **Settings → App Updates → Check for Updates** to see if a newer version is available
+3. If an update is found, click **"Reload & Apply Update"** — this clears the service worker cache and reloads the page
 
-```bash
-chmod +x update.sh
-./update.sh
-```
-
-The script will:
-- Auto-detect the default branch (`master` or `main`) so you don't need to specify it
-- Fetch the latest changes from GitHub
-- Stash any local modifications and restore them after updating
-- Invalidate the service worker cache so your browser loads the new version
-- Display the old and new version numbers and a summary of recent commits
-- Offer to start the server immediately after a successful update
-
-### Manual Update
-
-```bash
-git pull origin master
-```
-
-After a manual pull, hard-refresh your browser (`Ctrl+Shift+R`) or clear the site data to bypass the service worker cache.
-
-### In-App Version Check
-
-Go to **Settings → App Updates → Check for Updates** to see if a newer version is available. If an update is found, run `./update.sh` in Termux to apply it.
+After a hard-refresh (`Ctrl+Shift+R`) or clearing site data, your browser will load the latest version from GitHub Pages.
 
 ### Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| `Not a git repository` | Re-clone: `git clone https://github.com/dkylepeppers-alt/Comiccreator.git` |
-| Merge conflicts after pull | Run `git stash && git pull && git stash pop`, or `git reset --hard origin/master` to discard local changes |
-| Browser shows old version after update | Hard-refresh (`Ctrl+Shift+R`), or clear browser site data for localhost |
+| Browser shows old version after update | Hard-refresh (`Ctrl+Shift+R`), or clear browser site data for the app URL |
 | `Check for Updates` fails in-app | Ensure you have internet access; the check fetches from GitHub |
 
 ---
@@ -201,9 +134,6 @@ Comiccreator/
 ├── manifest.json           PWA manifest
 ├── sw.js                   Service worker (offline caching)
 ├── version.json            App version metadata
-├── server.sh               Termux-optimized HTTP server launcher
-├── update.sh               Termux update script (git pull + cache bust)
-├── install.sh              Termux one-command installer (pkg install + git clone)
 ├── generate-icons.html     Browser-based icon generator utility
 │
 ├── css/
@@ -385,7 +315,7 @@ For each merge, update **all three** of these files:
 > **Versioning convention:** Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 > Increment `PATCH` for bug fixes, `MINOR` for new features, `MAJOR` for breaking changes.
 
-Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` lets `update.sh` set the correct cache name after `git pull`, which forces browsers to load the updated app shell, and ensures the Settings page displays the correct version number.
+Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` ensures the service worker invalidates the old cache on next load (because the cache key changes), forcing browsers to fetch updated assets from GitHub Pages. The Settings page also uses `APP_VERSION` to display the current version number.
 
 ---
 

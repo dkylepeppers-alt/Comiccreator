@@ -734,7 +734,7 @@ const SettingsPage = (() => {
         statusEl.innerHTML = `
           <div style="padding:10px;border-radius:8px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);">
             <p class="text-sm" style="color:#ffc107;margin:0 0 4px 0;"><strong>Update available: v${escHtml(remote.version)}</strong></p>
-            <p class="text-sm text-muted" style="margin:0 0 8px 0;">You have v${escHtml(localVersion)}. Run <code>./update.sh</code> in Termux, then reload.</p>
+            <p class="text-sm text-muted" style="margin:0 0 8px 0;">You have v${escHtml(localVersion)}. Use the button below to clear the cache and load the latest version.</p>
             <button class="btn btn-primary btn-sm" onclick="SettingsPage.reloadForUpdate()">Reload &amp; Apply Update</button>
           </div>`;
         App.toast(`Update available: v${remote.version}`, 'info');
