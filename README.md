@@ -17,13 +17,19 @@ A fully installable Progressive Web App for creating AI-generated comic books wi
 ### Character Builder
 - Create heroes, sidekicks, villains, antiheroes, mentors, and support characters
 - Define name, description, appearance, backstory, and powers/abilities
-- Upload reference images stored locally as data URLs
+- Upload up to 20 reference images per character; tag each as front-view, side-view, close-up, action-pose, and more
+- AI auto-captioning and semantic embeddings enable per-panel reference image selection
 - Characters are injected into the AI system prompt for consistent storytelling
 
 ### World Builder
 - Design detailed story settings with name, description, era, and atmosphere
-- Upload up to 20 reference images per world
+- Upload up to 20 reference images per world with aerial, interior, night, and detail variation tags
 - World context is fed to the AI to maintain setting consistency across pages
+
+### Image Style Presets
+- Create reusable art-style prompt prefixes (e.g., "watercolor illustration, soft colors, hand-drawn")
+- Select an image style preset at generation time to apply a consistent visual style across all panels
+- Built-in defaults: Comic Book, Watercolor, and 3D Render styles
 
 ### Prompt Presets & Advanced Controls
 - **Preset System** — Save reusable configurations with custom system prompts and sampler parameters
@@ -140,17 +146,19 @@ Comiccreator/
 │   └── app.css             Complete UI (dark theme, responsive, mobile-first)
 │
 ├── js/
-│   ├── db.js               IndexedDB storage layer (6 object stores)
-│   ├── api.js              NanoGPT API client (streaming SSE, image gen)
+│   ├── utils.js            Shared helpers (escHtml, timeAgo, GENRES, cosineSimilarity, etc.)
+│   ├── db.js               IndexedDB storage layer (7 object stores)
+│   ├── api.js              NanoGPT API client (streaming SSE, image gen, embeddings, captions)
 │   ├── app.js              SPA router, navigation, modals, toasts
 │   │
 │   └── pages/
 │       ├── home.js         Dashboard with stats, recent comics, genre grid
-│       ├── characters.js   Character CRUD with image upload
-│       ├── worlds.js       World CRUD with multi-image upload
+│       ├── characters.js   Character CRUD with multi-image upload (up to 20 per character)
+│       ├── worlds.js       World CRUD with multi-image upload (up to 20 per world)
 │       ├── create.js       Comic generation engine (setup → stream → read → branch)
 │       ├── library.js      Comic viewer and PDF export
 │       ├── presets.js      Prompt preset editor with sampler controls
+│       ├── image-presets.js  Image style preset editor (art-style prompt prefixes)
 │       └── settings.js     API config, model params, data management
 │
 └── icons/
@@ -159,17 +167,16 @@ Comiccreator/
     └── icon-512.png        PWA icon (large)
 ```
 
-**Browser runtime remains vanilla.** The app shell still runs directly as HTML/CSS/JavaScript in the browser (`js/api.js` handles runtime API calls). `nanogptjs` is now included in `package.json` for Node-side usage (e.g., npm-driven scripts/tests or future tooling that needs the official NanoGPT JS client).
-
 ### Data Model
 
 | Store | Key | Contents |
 |-------|-----|----------|
-| `characters` | `id` | Name, role, description, appearance, backstory, powers, reference image |
-| `worlds` | `id` | Name, description, era, atmosphere, details, up to 3 images |
+| `characters` | `id` | Name, role, description, appearance, backstory, powers, reference images array (up to 20) |
+| `worlds` | `id` | Name, description, era, atmosphere, details, reference images array (up to 20) |
 | `comics` | `id` | Title, genre, character/world/preset refs, page count, conversation history |
 | `pages` | `id` (indexed by `comicId`) | Page number, panel data (narration, image prompts/URLs, dialogue), choices |
 | `presets` | `id` | Name, system prompt, temperature, top-p, max tokens, penalties |
+| `imagePresets` | `id` | Name, description, prompt prefix (art-style string prepended to every panel image prompt) |
 | `settings` | `key` | API key, model selections, default parameters |
 
 ### Service Worker Strategy
@@ -290,38 +297,58 @@ Requires a browser with support for:
 
 ### Version Management
 
-**Every merge to `master` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
+**Every merge to `Main` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
 
-For each merge, update **all three** of these files:
+The version appears in **five places** that must all match. Use the bump script to update them atomically:
+
+```bash
+bash scripts/bump-version.sh patch   # e.g. 1.6.30 → 1.6.31
+bash scripts/bump-version.sh minor   # e.g. 1.6.30 → 1.7.0
+bash scripts/bump-version.sh major   # e.g. 1.6.30 → 2.0.0
+```
+
+If you must update manually, change all five locations:
 
 1. **`version.json`** — increment the version number and update the date:
    ```json
    {
-     "version": "1.4.0",
-     "updated": "2026-03-01"
+     "version": "1.6.31",
+     "updated": "2026-03-09"
    }
    ```
 
-2. **`sw.js`** — set `CACHE_NAME` to match the new version:
+2. **`sw.js`** — set `CACHE_NAME` to match:
    ```js
-   const CACHE_NAME = 'comic-creator-v1.4.0';
+   const CACHE_NAME = 'comic-creator-v1.6.31';
    ```
 
-3. **`js/pages/settings.js`** — set `APP_VERSION` to match the new version:
+3. **`js/pages/settings.js`** — set `APP_VERSION` to match:
    ```js
-   const APP_VERSION = '1.4.0';
+   const APP_VERSION = '1.6.31';
+   ```
+
+4. **`index.html`** — update the sidebar footer:
+   ```html
+   <small>v1.6.31 &middot; PWA</small>
+   ```
+
+5. **`package.json`** — set `"version"` to match:
+   ```json
+   "version": "1.6.31"
    ```
 
 > **Versioning convention:** Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 > Increment `PATCH` for bug fixes, `MINOR` for new features, `MAJOR` for breaking changes.
 
-Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` ensures the service worker invalidates the old cache on next load (because the cache key changes), forcing browsers to fetch updated assets from GitHub Pages. The Settings page also uses `APP_VERSION` to display the current version number.
+Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` ensures the service worker invalidates the old cache on next load, forcing browsers to fetch updated assets. The Settings page uses `APP_VERSION` to display the current version number.
+
+On every push to `Main`, `.github/workflows/auto-bump.yml` automatically runs a patch bump and pushes the result, so manual bumps are only needed before merging features that warrant a minor or major increment.
 
 ---
 
 ### GitHub Pages Deployment
 
-The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `claude/ai-comic-generator-pwa-UxZty` branch. The workflow uses the official GitHub Pages actions:
+The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `Main` branch or via manual `workflow_dispatch`. The workflow uses the official GitHub Pages actions:
 
 - `actions/configure-pages` — configures the Pages environment
 - `actions/upload-pages-artifact` — uploads only the runtime site assets (HTML, CSS, JS, icons, SW, manifest)
@@ -335,18 +362,16 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 - `.nojekyll` at the repo root prevents GitHub Pages from treating underscore-prefixed files specially.
 - After a new deployment, users may need to hard-refresh (`Ctrl+Shift+R`) or clear site data to force the service worker to pick up the new cache version.
 
----
+### CI Workflows
 
-### Suggested Automation Upgrades
-
-Current automation already includes `npm run check-syntax`, `npm test`, and the GitHub Actions `Tests` workflow on push/PR.
-
-Recommended next steps:
-
-1. Add a second CI workflow for `npm run lint` after browser-global ESLint config issues are resolved.
-2. Add Playwright E2E smoke tests for critical flows (Settings save, Create flow, Library open/export path) and run them on pull requests.
-3. Enable Dependabot for npm/GitHub Actions updates and add a scheduled `npm audit --production` security workflow.
-4. Add a release workflow (`workflow_dispatch`) that validates checks, bumps version files, and creates a tagged GitHub release.
+| Workflow | Trigger | Steps |
+|----------|---------|-------|
+| `tests.yml` | Push / PR (all branches) | `npm ci` → `check-syntax` → `lint` → `npm test` |
+| `playwright.yml` | Push / PR (all branches) | Install Chromium → `npm run test:e2e`; uploads report artifact |
+| `auto-bump.yml` | Push to `Main` (non-bot) | Runs `bump-version.sh patch`, commits, pushes |
+| `deploy-pages.yml` | Push to `Main` / manual | Deploys static assets to GitHub Pages |
+| `release.yml` | Manual `workflow_dispatch` | Runs all checks → bumps version → tags → creates GitHub Release |
+| `security.yml` | Weekly schedule / manual | `npm audit --audit-level=high` |
 
 ---
 

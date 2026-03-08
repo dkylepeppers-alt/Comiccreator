@@ -21,15 +21,16 @@ js/
                         uuid, settings helpers, fileToDataURL, migrateCharacter, migrateWorld,
                         seedDefaults, dedupePresets)
   api.js                NanoGPT API client (chat streaming, image gen, embeddings, model fetching,
-                        image compression, prompt building)
+                        image compression, prompt building, reference image variations)
   app.js                SPA router (App.navigate, modal, toast, error log)
   pages/
     home.js             Dashboard
-    characters.js       Character CRUD + multi-image upload (up to 6 images per character)
-    worlds.js           World CRUD + multi-image upload (up to 6 images per world)
+    characters.js       Character CRUD + multi-image upload (up to 20 images per character)
+    worlds.js           World CRUD + multi-image upload (up to 20 images per world)
     create.js           Comic generation engine
     library.js          Comic viewer + PDF export
     presets.js          Prompt preset editor
+    image-presets.js    Image style preset editor (reusable art-style prompt prefixes)
     settings.js         API config, model params, data management (contains APP_VERSION constant)
 test/
   config-integrity.test.js   Version sync and sw.js asset checks
@@ -38,6 +39,8 @@ test/
   api-pure.test.js           Pure API function tests
   pure-functions.test.js     Utility function tests
   utils.test.js              escHtml / utils tests
+  e2e/
+    smoke.spec.js            Playwright end-to-end smoke tests (Chromium, requires local server)
 scripts/
   bump-version.sh        Atomically bumps version in all 5 places (see Versioning below)
   install-hooks.sh       Installs git pre-commit hook
@@ -51,17 +54,18 @@ scripts/
 `index.html` loads scripts in this exact order — **do not change it**:
 
 ```html
-<script src="js/utils.js"></script>     <!-- exports globals: escHtml, GENRES, etc. -->
-<script src="js/db.js"></script>        <!-- depends on utils globals (dedupeByNameLatest) -->
-<script src="js/api.js"></script>       <!-- depends on DB global -->
+<script src="js/utils.js"></script>           <!-- exports globals: escHtml, GENRES, etc. -->
+<script src="js/db.js"></script>              <!-- depends on utils globals (dedupeByNameLatest) -->
+<script src="js/api.js"></script>             <!-- depends on DB global -->
 <script src="js/pages/home.js"></script>
 <script src="js/pages/characters.js"></script>
 <script src="js/pages/worlds.js"></script>
 <script src="js/pages/create.js"></script>
 <script src="js/pages/library.js"></script>
 <script src="js/pages/presets.js"></script>
+<script src="js/pages/image-presets.js"></script>
 <script src="js/pages/settings.js"></script>
-<script src="js/app.js"></script>       <!-- depends on all page modules -->
+<script src="js/app.js"></script>             <!-- depends on all page modules -->
 ```
 
 All JS files are browser globals (IIFE or `(function(exports){…})(…)` pattern). There is no module bundler. Every new `<script>` tag added to `index.html` **must also be added to `STATIC_ASSETS` in `sw.js`** — the `config-integrity` test enforces this.
@@ -74,18 +78,18 @@ The app version appears in **five places** and CI tests enforce that all five ma
 
 | File | Location |
 |------|----------|
-| `version.json` | `"version": "1.6.5"` |
-| `sw.js` | `const CACHE_NAME = 'comic-creator-v1.6.5';` |
-| `js/pages/settings.js` | `const APP_VERSION = '1.6.5';` |
-| `index.html` | sidebar footer: `v1.6.5 &middot; PWA` |
-| `package.json` | `"version": "1.6.5"` |
+| `version.json` | `"version": "1.6.30"` |
+| `sw.js` | `const CACHE_NAME = 'comic-creator-v1.6.30';` |
+| `js/pages/settings.js` | `const APP_VERSION = '1.6.30';` |
+| `index.html` | sidebar footer: `v1.6.30 &middot; PWA` |
+| `package.json` | `"version": "1.6.30"` |
 
 **Use the bump script** to update all five atomically:
 
 ```bash
-bash scripts/bump-version.sh patch   # 1.6.5 → 1.6.6
-bash scripts/bump-version.sh minor   # 1.6.5 → 1.7.0
-bash scripts/bump-version.sh major   # 1.6.5 → 2.0.0
+bash scripts/bump-version.sh patch   # 1.6.30 → 1.6.31
+bash scripts/bump-version.sh minor   # 1.6.30 → 1.7.0
+bash scripts/bump-version.sh major   # 1.6.30 → 2.0.0
 ```
 
 If you manually edit the version, update all five files. Failing to do so will break CI.
@@ -101,6 +105,9 @@ npm install
 # Run all tests (Node built-in test runner)
 npm test
 
+# Run Playwright E2E tests (requires a local server on port 8080)
+npm run test:e2e
+
 # Syntax check all JS files
 npm run check-syntax
 
@@ -114,8 +121,6 @@ npm run format:check
 
 # Serve locally on port 8080
 npm run serve
-# or
-./server.sh
 ```
 
 Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:assert` modules. `fake-indexeddb` is used to mock IndexedDB in tests. Always run `npm install` first in a fresh environment.
@@ -128,9 +133,18 @@ Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:
 
 1. `npm ci` — install dependencies
 2. `npm run check-syntax` — `node --check` every JS file
-3. `npm test` — all test files
+3. `npm run lint` — ESLint checks
+4. `npm test` — all unit/integration test files
 
-Both steps must pass before merging. If CI is red, check the workflow run logs.
+`.github/workflows/playwright.yml` also runs on every push and pull request and executes Playwright E2E tests (`npm run test:e2e`) in Chromium. E2E test artifacts (reports) are uploaded with 14-day retention.
+
+Additional workflows:
+- `.github/workflows/auto-bump.yml` — auto-bumps the patch version on every push to `Main` (skips bot commits)
+- `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `Main` or manual trigger
+- `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs checks, bumps version, tags, creates GitHub Release
+- `.github/workflows/security.yml` — weekly `npm audit --audit-level=high` security scan
+
+All steps must pass before merging. If CI is red, check the workflow run logs.
 
 ---
 
@@ -162,7 +176,7 @@ Each page module exposes: `render(param)` (required), optionally `postRender(par
 
 ### IndexedDB (`js/db.js`)
 
-Six object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `settings`.
+Seven object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `imagePresets`, `settings`.
 
 - `DB.get(store, id)` / `DB.put(store, obj)` / `DB.del(store, id)` / `DB.getAll(store)`
 - `DB.getByIndex(store, indexName, value)` — for indexed queries (e.g., pages by comicId)
@@ -181,9 +195,12 @@ All methods are async and read the API key and model settings from IndexedDB aut
 
 - `API.chatCompletionStream(messages, onChunk, options)` — streaming SSE; `onChunk(delta, fullText)` is called for each token; pass `options.signal` (AbortSignal) to support cancellation
 - `API.chatCompletion(messages, options)` — non-streaming
-- `API.generateImage(prompt, options)` — image generation; supports `options.imageDataUrls` (array of reference image data URLs), `options.labeledRefs` (typed references with label/description/type), and `options.resolution`
+- `API.generateImage(prompt, options)` — image generation; supports `options.imageDataUrls` (array of reference image data URLs), `options.labeledRefs` (typed references with label/description/type), and `options.resolution`; caps reference images to DB setting `maxRefImages` (default 4)
 - `API.generateEmbedding(text, options)` — generates a text embedding via NanoGPT embeddings API; reads `embeddingModel` from settings (default: `text-embedding-3-small`); returns a number array or `null` on failure
-- `API.buildSystemPrompt(genre, characters, world, customSystemPrompt)` — assembles the system prompt
+- `API.generateImageCaption(dataUrl, contextHints, options)` — calls a vision-capable LLM to produce a text description of a reference image; `contextHints.type` can be `'character'`, `'character-in-world'`, `'character-interaction'`, or `'world'`
+- `API.generateRefVariation(sourceDataUrl, prompt, options)` — generates a single reference image variation from a source image and a prompt string (used by the Generate References flow)
+- `API.CHARACTER_REF_VARIATIONS` / `API.WORLD_REF_VARIATIONS` / `API.CHARACTER_WORLD_VARIATIONS` — arrays of `{ tag, prompt }` objects that define the variation types produced by the Generate References button
+- `API.buildSystemPrompt(genre, characters, world, customSystemPrompt, options)` — assembles the system prompt
 - `API.parseComicResponse(text)` — extracts JSON from the LLM response (strips markdown fences, finds `{…}`)
 - `API.fetchTextModels()` / `API.fetchImageModels()` — fetched from NanoGPT with 6-hour cache in IndexedDB
 - `API.getModelSizes(modelId)` — returns supported image sizes for a model from live cache or `KNOWN_IMAGE_SIZES` static fallback; returns `null` if unknown (caller should allow free-form entry)
@@ -202,6 +219,7 @@ Use `App.logError(context, error, extraDetails)` to record errors to the in-app 
 3. Add `'/js/pages/mypage.js'` to `STATIC_ASSETS` in `sw.js`.
 4. Register the page in `app.js`: add to `pages` and `pageTitles` objects.
 5. Add navigation links as needed in `index.html`.
+6. Add the new global name (`MyPage`) to `eslint.config.js` globals to avoid `no-undef` lint errors.
 
 ---
 

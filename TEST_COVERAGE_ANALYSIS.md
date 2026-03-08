@@ -2,12 +2,14 @@
 
 ## Current State
 
-The codebase now has automated checks and tests:
+The codebase has automated checks and tests:
 - `npm run check-syntax`
+- `npm run lint`
 - `npm test` (`node --test test/*.test.js`)
-- GitHub Actions workflow: `.github/workflows/tests.yml` (push + pull_request)
+- `npm run test:e2e` (Playwright, requires local server)
+- GitHub Actions workflows: `tests.yml` (push + pull_request), `playwright.yml` (push + pull_request)
 
-Remaining quality gaps are primarily browser-level integration, end-to-end user flows, and richer CI coverage (lint/security/dependency automation).
+Remaining quality gaps are primarily richer browser-level integration and end-to-end scenario coverage beyond the existing smoke tests.
 
 ---
 
@@ -40,9 +42,9 @@ Constructs multi-section prompts from characters, worlds, and genres. String ass
 - World with and without `details` field
 - Custom system prompt override (should replace base, not append)
 
-### `escHtml()` — `js/pages/home.js:105-110`
+### `escHtml()` — `js/utils.js`
 
-XSS prevention function used on every user-facing string. A bug here is a **security vulnerability**.
+XSS prevention function used on every user-facing string. A bug here is a **security vulnerability**. (Previously defined in `js/pages/home.js`; moved to `js/utils.js`.)
 
 **Test cases needed:**
 - Strings containing `<`, `>`, `&`, `"`, `'`
@@ -50,9 +52,9 @@ XSS prevention function used on every user-facing string. A bug here is a **secu
 - Strings with nested HTML tags
 - Script injection attempts
 
-### `timeAgo()` — `js/pages/home.js:112-123`
+### `timeAgo()` — `js/utils.js`
 
-Relative time formatting with boundary conditions.
+Relative time formatting with boundary conditions. (Previously defined in `js/pages/home.js`; moved to `js/utils.js`.)
 
 **Test cases needed:**
 - Timestamps < 1 minute ago → "just now"
@@ -62,7 +64,7 @@ Relative time formatting with boundary conditions.
 - Timestamps at 30+ days → formatted date
 - `null` / `undefined` / `0` input
 
-### `extractProvider()` — `js/pages/settings.js:331-358`
+### `extractProvider()` — `js/pages/settings.js`
 
 20+ prefix-matching rules to classify model IDs into provider names.
 
@@ -173,35 +175,29 @@ In `generatePage()` (lines 410-413), truthy checks like `if (!state.overrideTemp
 
 ## Bugs Found During Analysis
 
-### 1. Missing Brace in `js/app.js:132-137`
+All three bugs identified in the original analysis have since been fixed.
 
-```javascript
-if (typeof pages[page].postRender === 'function') {
-    pages[page].postRender(param);
-// Missing closing brace — onMount is nested inside postRender check
-if (typeof pages[page].onMount === 'function') {
-    await pages[page].onMount(param);
-}
-```
+### ~~1. Missing Brace in `js/app.js`~~ *(Fixed)*
 
-Pages without `postRender` will never have `onMount` called.
+The `onMount` block is now correctly outside the `postRender` check, so pages without `postRender` still have `onMount` called.
 
-### 2. Duplicate `fetchTextModels` in `js/api.js`
+### ~~2. Duplicate `fetchTextModels` in `js/api.js`~~ *(Fixed)*
 
-The function is defined twice (lines 261-277 and 304-339). The second definition shadows the first. The first version lacks caching and is dead code.
+The duplicate definition has been removed. There is now a single `fetchTextModels` implementation with caching.
 
-### 3. Dual `return` in `js/pages/settings.js:566-570`
+### ~~3. Dual `return` in `js/pages/settings.js`~~ *(Fixed)*
 
-Two `return` statements — only the first executes. The newer API surface (`onMount`, `onUnmount`, `togglePicker`, `filterModels`, `selectModel`, `refreshModels`) is never exported.
+The settings module now has a single return statement exporting all public API surface.
 
 ---
 
 ## Recommended Test Infrastructure
 
-1. **Minimal approach**: A `test/` directory with plain Node.js test files using `node:assert`
-2. **IndexedDB mocking**: `fake-indexeddb` (single dev dependency)
-3. **Fetch mocking**: Simple stub function
-4. **DOM testing**: `jsdom` or a browser-based test page (`test.html`)
-5. **Runner**: `node --experimental-vm-modules test/run.js` or a simple HTML test page
+Existing infrastructure:
+1. **Unit/integration tests**: `test/*.test.js` with Node.js built-in `node:test` / `node:assert`
+2. **IndexedDB mocking**: `fake-indexeddb` (dev dependency)
+3. **E2E tests**: Playwright in `test/e2e/smoke.spec.js` using Chromium, served via `python3 -m http.server 8080`
 
-The pure functions in Priority 1 can be tested immediately with **zero npm dependencies**.
+Still needed:
+4. **Fetch mocking in unit tests**: Simple stub function for deeper API client coverage
+5. **DOM testing**: `jsdom` or a browser-based test page for page-level rendering assertions
