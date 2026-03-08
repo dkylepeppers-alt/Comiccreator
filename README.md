@@ -22,7 +22,7 @@ A fully installable Progressive Web App for creating AI-generated comic books wi
 
 ### World Builder
 - Design detailed story settings with name, description, era, and atmosphere
-- Upload up to 3 reference images per world
+- Upload up to 20 reference images per world
 - World context is fed to the AI to maintain setting consistency across pages
 
 ### Prompt Presets & Advanced Controls
