@@ -37,7 +37,7 @@ const CreatePage = (() => {
     'side-view':            ['profile', 'side view', 'side-on', 'looking away'],
     'back-view':            ['behind', 'back view', 'from behind', 'walking away', 'rear'],
     'close-up':             ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
-    'action-pose':          ['running', 'jumping', 'flying', 'fighting', 'action', 'dynamic', 'leaping', 'attacking', 'battle'],
+    'action-pose':          ['doing', 'performing', 'reaching', 'picking up', 'working', 'walking', 'moving', 'gesturing', 'carrying', 'running', 'jumping', 'sitting', 'turning', 'action', 'activity', 'task', 'mid-action'],
     'alternate-outfit':     ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
     'expression':           ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
     'character-sheet':      ['character sheet', 'turnaround', 'model sheet', 'reference sheet', 'multiple angles', 'multiple poses', 'multi-angle', 'multi-pose', 'full rotation', '360', 'orthographic'],
