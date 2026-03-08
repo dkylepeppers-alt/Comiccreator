@@ -36,6 +36,8 @@ const SettingsPage = (() => {
     const includeAppearanceText = await DB.getSetting('includeAppearanceText', true);
     const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
     const imageSize = await DB.getSetting('imageSize', '1024x1024');
+    const enrichImagePrompts = await DB.getSetting('enrichImagePrompts', false);
+    const negativePrompt = await DB.getSetting('negativePrompt', '');
     const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
 
     return `
@@ -191,6 +193,20 @@ const SettingsPage = (() => {
               AI-Picked Panel Sizes
             </label>
             <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="set-enrichprompts" ${enrichImagePrompts ? 'checked' : ''} style="width:auto;">
+              AI Prompt Enrichment
+            </label>
+            <div class="form-hint">When enabled, each panel image prompt is expanded by the text LLM into a detailed cinematic description (shot type, lighting, colour palette, mood) before being sent to the image model. Improves image quality at the cost of one extra LLM call per panel.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Negative Prompt</label>
+            <textarea id="set-negativeprompt" rows="2" placeholder="e.g. blurry, extra limbs, watermark, text, signature, low quality" style="width:100%;resize:vertical;">${escHtml(negativePrompt)}</textarea>
+            <div class="form-hint">Content to exclude from generated images. Passed to the image model as a negative prompt where supported (e.g. FLUX, Stable Diffusion models). Has no effect on models that ignore this field.</div>
           </div>
 
           <div class="form-group">
@@ -819,6 +835,8 @@ const SettingsPage = (() => {
 
     await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
     await DB.setSetting('dynamicImageSizes', document.getElementById('set-dynamicsizes').checked);
+    await DB.setSetting('enrichImagePrompts', document.getElementById('set-enrichprompts').checked);
+    await DB.setSetting('negativePrompt', document.getElementById('set-negativeprompt').value.trim());
     const sizeEl = document.getElementById('set-imgsize');
     const imageSizeVal = sizeEl.value.trim();
     if (!imageSizeVal) {

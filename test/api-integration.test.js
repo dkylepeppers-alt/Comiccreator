@@ -571,3 +571,106 @@ describe('API integration', () => {
     assert.ok(textPart.text.includes('interacting'), 'prompt should mention interaction');
   });
 });
+
+describe('generateImage negative prompt', () => {
+  let ctx;
+
+  beforeEach(async () => {
+    ctx = loadApiContext(async () =>
+      new Response(JSON.stringify({ data: [{ b64_json: 'imgdata' }] }), { status: 200 }),
+    );
+    await ctx.DB.setSetting('apiKey', 'test-key');
+    await ctx.DB.setSetting('imageModel', 'flux-2-turbo');
+  });
+
+  it('sends negative_prompt in body when negativePrompt option is set', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
+    };
+    await ctx.API.generateImage('a hero', { negativePrompt: 'blurry, watermark' });
+    assert.equal(requestBody.negative_prompt, 'blurry, watermark');
+  });
+
+  it('does not include negative_prompt when option is absent', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
+    };
+    await ctx.API.generateImage('a hero');
+    assert.equal(requestBody.negative_prompt, undefined);
+  });
+
+  it('does not include negative_prompt when option is an empty string', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
+    };
+    await ctx.API.generateImage('a hero', { negativePrompt: '   ' });
+    assert.equal(requestBody.negative_prompt, undefined);
+  });
+});
+
+describe('enrichImagePrompt', () => {
+  let ctx;
+
+  beforeEach(async () => {
+    ctx = loadApiContext(async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 }),
+    );
+    await ctx.DB.setSetting('apiKey', 'test-key');
+    await ctx.DB.setSetting('model', 'gpt-4o-mini');
+  });
+
+  it('returns null/empty input unchanged without making any API call', async () => {
+    const calls = [];
+    ctx.fetch = async (url, opts) => {
+      calls.push({ url, opts });
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
+    };
+    assert.equal(await ctx.API.enrichImagePrompt(null), null);
+    assert.equal(await ctx.API.enrichImagePrompt(''), '');
+    assert.equal(await ctx.API.enrichImagePrompt(undefined), undefined);
+    assert.equal(calls.length, 0, 'no fetch call should be made for falsy input');
+  });
+
+  it('returns rawPrompt unchanged when API key is missing', async () => {
+    await ctx.DB.setSetting('apiKey', '');
+    const result = await ctx.API.enrichImagePrompt('A hero in the city');
+    assert.equal(result, 'A hero in the city');
+  });
+
+  it('returns the enriched prompt from the LLM', async () => {
+    ctx.fetch = async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'Cinematic wide shot — hero stands tall' } }] }), { status: 200 });
+    const result = await ctx.API.enrichImagePrompt('hero stands in city');
+    assert.equal(result, 'Cinematic wide shot — hero stands tall');
+  });
+
+  it('falls back to rawPrompt on API error', async () => {
+    ctx.fetch = async () => new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
+    const result = await ctx.API.enrichImagePrompt('hero stands in city');
+    assert.equal(result, 'hero stands in city');
+  });
+
+  it('includes genre context in the LLM request when provided', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
+    };
+    await ctx.API.enrichImagePrompt('dark alley scene', { genre: 'noir' });
+    const userMsg = requestBody.messages.find(m => m.role === 'user');
+    assert.ok(userMsg.content.includes('noir'), 'genre should appear in the user message');
+  });
+
+  it('returns rawPrompt when API response has no content', async () => {
+    ctx.fetch = async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 });
+    const result = await ctx.API.enrichImagePrompt('a dragon flies');
+    assert.equal(result, 'a dragon flies');
+  });
+});

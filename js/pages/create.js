@@ -629,6 +629,8 @@ const CreatePage = (() => {
     const imagePromptPrefix = imagePresetData?.promptPrefix || await DB.getSetting('imagePromptPrefix', '');
     const charRefMode = await DB.getSetting('charRefMode', 'auto');
     const maxRefImages = await DB.getSetting('maxRefImages', 4);
+    const enrichEnabled = await DB.getSetting('enrichImagePrompts', false);
+    const negativePrompt = await DB.getSetting('negativePrompt', '');
 
     // Normalize world refs (plain strings and labeled objects)
     const worldRefs = state.referenceImages
@@ -637,6 +639,8 @@ const CreatePage = (() => {
 
     // Cache panel prompt embeddings within this page generation
     const promptEmbeddingCache = new Map();
+    // Cache enriched prompts within this page generation to avoid duplicate LLM calls
+    const promptEnrichmentCache = new Map();
 
     async function getPromptEmbedding(promptText) {
       if (!promptText) return null;
@@ -761,6 +765,7 @@ const CreatePage = (() => {
         }
       }
       const opts = { resolution };
+      if (negativePrompt) opts.negativePrompt = negativePrompt;
       const charNamesInPanel = Object.keys(state.characterImagesByName)
         .filter(name => nameInPrompt(name, panel.imagePrompt));
 
@@ -808,8 +813,9 @@ const CreatePage = (() => {
       return opts;
     }
 
-    // Build enhanced image prompt: sanitize narrative noise, then optionally append appearance details
-    function buildEnhancedImagePrompt(panel) {
+    // Build enhanced image prompt: sanitize narrative noise, prepend prefix, append
+    // appearance text, and (when enrichment is enabled) expand via LLM.
+    async function buildEnhancedImagePrompt(panel) {
       let prompt = sanitizeImagePrompt(panel.imagePrompt);
       // Only prepend the prefix if the LLM didn't already include it (the system
       // prompt now instructs the LLM to start imagePrompts with the preset text).
@@ -823,6 +829,15 @@ const CreatePage = (() => {
           .join('; ');
         if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
       }
+      if (enrichEnabled) {
+        // promptEnrichmentCache is scoped to this generatePanelImages() call and
+        // cleared on each invocation, so enrichEnabled is stable for its lifetime.
+        if (promptEnrichmentCache.has(prompt)) return promptEnrichmentCache.get(prompt);
+        const genre = state.genre === 'custom' ? (state.customGenre || '') : (state.genre || '');
+        const enriched = await API.enrichImagePrompt(prompt, { genre });
+        promptEnrichmentCache.set(prompt, enriched);
+        return enriched;
+      }
       return prompt;
     }
 
@@ -832,7 +847,7 @@ const CreatePage = (() => {
       if (!panel.imagePrompt) return;
       try {
         const panelOpts = await buildPanelImageOpts(panel);
-        const enhancedPrompt = buildEnhancedImagePrompt(panel);
+        const enhancedPrompt = await buildEnhancedImagePrompt(panel);
         const imageData = await API.generateImage(enhancedPrompt, panelOpts);
         if (imageData) {
           if (imageData.startsWith('http')) {
