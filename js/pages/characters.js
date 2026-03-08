@@ -12,7 +12,7 @@ const CharactersPage = (() => {
   // Index of the image slot currently being filled (for file picker)
   let _pendingSlotIdx = -1;
 
-  const IMAGE_TAGS = ['default', 'front-view', 'side-view', 'back-view', 'close-up', 'action-pose', 'alternate-outfit', 'expression', 'character-sheet', 'custom'];
+  const IMAGE_TAGS = ['default', 'front-view', 'side-view', 'back-view', 'close-up', 'action-pose', 'alternate-outfit', 'expression', 'character-sheet', 'character-in-world', 'custom'];
   const MAX_IMAGES = 12;
 
   async function render(param) {
@@ -73,7 +73,7 @@ const CharactersPage = (() => {
   }
 
   async function renderEditor() {
-    let char = { name: '', role: 'hero', description: '', appearance: '', backstory: '', powers: '', images: [], primaryImageIndex: 0 };
+    let char = { name: '', role: 'hero', description: '', appearance: '', backstory: '', powers: '', images: [], primaryImageIndex: 0, linkedWorldId: '' };
     if (editingId) {
       const saved = await DB.get(DB.STORES.characters, editingId);
       if (saved) char = DB.migrateCharacter(saved);
@@ -81,6 +81,8 @@ const CharactersPage = (() => {
     editorImages = (char.images || []).map(img => Object.assign({}, img));
     editorPrimaryIndex = char.primaryImageIndex ?? 0;
     editorName = char.name || '';
+
+    const worlds = await DB.getAll(DB.STORES.worlds);
 
     return `
       <div class="slide-up">
@@ -102,6 +104,7 @@ const CharactersPage = (() => {
               ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>` : ''}
               <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
               <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
+              ${editorImages.some(img => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
             </div>
           </div>
 
@@ -117,6 +120,15 @@ const CharactersPage = (() => {
                 `<option value="${r}" ${char.role === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
               ).join('')}
             </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Linked World</label>
+            <select id="char-linked-world" onchange="CharactersPage.refreshGallery()">
+              <option value="">— None —</option>
+              ${worlds.map(w => `<option value="${w.id}" ${char.linkedWorldId === w.id ? 'selected' : ''}>${escHtml(w.name)}</option>`).join('')}
+            </select>
+            <div class="form-hint">Link this character to a world to enable character-in-world reference images and interaction shots</div>
           </div>
 
           <div class="form-group">
@@ -199,6 +211,7 @@ const CharactersPage = (() => {
     const toolbar = document.getElementById('char-img-toolbar');
     if (toolbar) {
       const hasImages = editorImages.some(img => img.dataUrl);
+      const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
       // Rebuild toolbar contents to reflect current state
       let btns = '';
       if (editorImages.length < MAX_IMAGES) {
@@ -207,6 +220,9 @@ const CharactersPage = (() => {
       if (hasImages) {
         btns += '<button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()">&#128221; Caption All</button>';
         btns += '<button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
+        if (linkedWorldId) {
+          btns += '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>';
+        }
       }
       toolbar.innerHTML = btns;
     }
@@ -382,7 +398,9 @@ const CharactersPage = (() => {
   /**
    * Generate reference image variations from the primary uploaded image.
    * Uses the image API with the primary image as a reference to create
-   * tagged variations (front-view, side-view, back-view, close-up, action-pose, expression).
+   * tagged variations (front-view, side-view, back-view, close-up, action-pose, expression,
+   * character-sheet). Multiple variations may share the same tag (e.g. two action-pose entries).
+   * Already-generated variations are skipped by counting existing images per tag.
    */
   async function generateReferences() {
     // Use the user-selected primary image as the source for all variations
@@ -396,9 +414,28 @@ const CharactersPage = (() => {
     const appearance = document.getElementById('char-appearance')?.value.trim() || '';
 
     const variations = API.CHARACTER_REF_VARIATIONS;
-    // Skip variations for tags that already have an image
-    const existingTags = new Set(editorImages.filter(img => img.dataUrl).map(img => img.tag));
-    const toGenerate = variations.filter(v => !existingTags.has(v.tag));
+    // Count how many of each tag already have images in the gallery
+    const existingTagCounts = {};
+    for (const img of editorImages.filter(i => i.dataUrl)) {
+      existingTagCounts[img.tag] = (existingTagCounts[img.tag] || 0) + 1;
+    }
+    // Count how many variations exist per tag in the template list
+    const variationTagCounts = {};
+    for (const v of variations) {
+      variationTagCounts[v.tag] = (variationTagCounts[v.tag] || 0) + 1;
+    }
+    // Track how many we've queued per tag so far (for this generation run)
+    const queuedTagCounts = Object.assign({}, existingTagCounts);
+    // Only generate a variation if we have fewer images with that tag than defined variations
+    const toGenerate = variations.filter(v => {
+      const defined = variationTagCounts[v.tag] || 1;
+      const queued = queuedTagCounts[v.tag] || 0;
+      if (queued < defined) {
+        queuedTagCounts[v.tag] = queued + 1;
+        return true;
+      }
+      return false;
+    });
 
     const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
     const batch = toGenerate.slice(0, slotsAvailable);
@@ -510,6 +547,93 @@ const CharactersPage = (() => {
     }
   }
 
+  /**
+   * Generate images showing this character interacting within their linked world.
+   * Uses CHARACTER_WORLD_VARIATIONS prompts with both the character image and world info.
+   */
+  async function generateWorldInteractions() {
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl);
+    if (!primaryImg) return App.toast('Upload at least one character image first', 'error');
+
+    const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
+    if (!linkedWorldId) return App.toast('Link this character to a world first', 'error');
+
+    const world = await DB.get(DB.STORES.worlds, linkedWorldId);
+    if (!world) return App.toast('Linked world not found', 'error');
+
+    const name = document.getElementById('char-name')?.value.trim() || 'the character';
+    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
+    const charAppearanceNote = appearance ? ` (${appearance})` : '';
+
+    const variations = API.CHARACTER_WORLD_VARIATIONS;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const batch = variations.slice(0, slotsAvailable);
+
+    if (batch.length === 0) return App.toast('Gallery is full — remove some images first', 'info');
+
+    const genBtn = document.getElementById('char-gen-world-btn');
+    if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
+
+    let done = 0;
+    let failed = 0;
+    for (const variation of batch) {
+      done++;
+      if (genBtn) genBtn.textContent = `Generating ${done}/${batch.length}\u2026`;
+
+      const prompt = variation.prompt
+        .replace(/\{charName\}/g, name)
+        .replace(/\{charAppearanceNote\}/g, charAppearanceNote)
+        .replace(/\{worldName\}/g, world.name)
+        .replace(/\{worldDescription\}/g, world.description || 'as shown in the world reference');
+
+      const migratedWorld = DB.migrateWorld(world);
+      const worldPrimaryImg = migratedWorld.images?.[migratedWorld.primaryImageIndex ?? 0] || migratedWorld.images?.[0];
+
+      const refUrls = worldPrimaryImg?.dataUrl
+        ? [primaryImg.dataUrl, worldPrimaryImg.dataUrl]
+        : [primaryImg.dataUrl];
+
+      const dataUrl = await API.generateRefVariation(null, prompt, { imageDataUrls: refUrls }).catch(() => null);
+
+      if (dataUrl) {
+        const newImg = {
+          dataUrl,
+          tag: variation.tag,
+          description: variation.desc,
+          embedding: null,
+          embeddingText: null,
+          aiGenerated: true,
+          generationPrompt: prompt,
+        };
+        editorImages.push(newImg);
+        refreshGallery();
+
+        const caption = await API.generateImageCaption(dataUrl, {
+          type: 'character', name, role: document.getElementById('char-role')?.value || '', tag: variation.tag, appearance,
+        }).catch(() => null);
+        if (caption) {
+          newImg.description = caption;
+          newImg.embedding = null;
+          newImg.embeddingText = null;
+          refreshGallery();
+        }
+      } else {
+        failed++;
+      }
+    }
+
+    if (genBtn) { genBtn.disabled = false; genBtn.textContent = '\u{1F30E} Generate in World'; }
+    if (failed > 0) {
+      App.toast(`Generated ${done - failed}/${done} world interaction images (${failed} failed)`, 'info');
+    } else {
+      App.toast(`Generated ${done} world interaction image(s)`, 'success');
+    }
+  }
+
+
   function updateTag(idx, value) {
     if (editorImages[idx]) {
       editorImages[idx].tag = value;
@@ -585,6 +709,7 @@ const CharactersPage = (() => {
       appearance: document.getElementById('char-appearance').value.trim(),
       backstory: document.getElementById('char-backstory').value.trim(),
       powers: document.getElementById('char-powers').value.trim(),
+      linkedWorldId: document.getElementById('char-linked-world')?.value || '',
       images: validImages,
       primaryImageIndex: primaryIdx,
       imageData: '',  // clear legacy field when images[] is present
@@ -635,10 +760,11 @@ const CharactersPage = (() => {
 
   return {
     render,
+    refreshGallery,
     newCharacter, editCharacter, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
-    generateReferences, regenerateImage,
+    generateReferences, regenerateImage, generateWorldInteractions,
     saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
   };
 })();

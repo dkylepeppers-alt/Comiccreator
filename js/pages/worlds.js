@@ -12,7 +12,7 @@ const WorldsPage = (() => {
   // Index of the image slot currently being filled (for file picker)
   let _pendingSlotIdx = -1;
 
-  const IMAGE_TAGS = ['establishing', 'interior', 'exterior', 'aerial', 'night', 'day', 'detail', 'landmark', 'custom'];
+  const IMAGE_TAGS = ['establishing', 'interior', 'exterior', 'aerial', 'night', 'day', 'detail', 'landmark', 'character-interaction', 'custom'];
   const MAX_IMAGES = 12;
 
   async function render(param) {
@@ -84,6 +84,11 @@ const WorldsPage = (() => {
     editorPrimaryIndex = world.primaryImageIndex ?? 0;
     editorName = world.name || '';
 
+    // Find characters linked to this world
+    const linkedChars = editingId
+      ? (await DB.getAll(DB.STORES.characters)).filter(c => c.linkedWorldId === editingId)
+      : [];
+
     return `
       <div class="slide-up">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
@@ -104,6 +109,7 @@ const WorldsPage = (() => {
               ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
               <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
               <button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
+              ${editorImages.some(img => img.dataUrl) && linkedChars.length >= 2 ? `<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>` : ''}
             </div>
           </div>
 
@@ -131,6 +137,20 @@ const WorldsPage = (() => {
             <label class="form-label">Additional Details</label>
             <textarea id="world-details" rows="3" placeholder="Key locations, technology level, magic systems, factions...">${escHtml(world.details || '')}</textarea>
           </div>
+
+          ${linkedChars.length > 0 ? `
+          <div class="form-group">
+            <label class="form-label">Linked Characters (${linkedChars.length})</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${linkedChars.map(c => `
+                <div class="chip" onclick="App.navigate('characters','${c.id}')" style="cursor:pointer;" title="Edit ${escHtml(c.name)}">
+                  ${escHtml(c.name)}${c.role ? ` <span class="text-muted" style="font-size:0.75em;">(${escHtml(c.role)})</span>` : ''}
+                </div>
+              `).join('')}
+            </div>
+            <div class="form-hint">Characters linked to this world. Click a character to edit them.</div>
+          </div>
+          ` : ''}
         </div>
 
         <button class="btn btn-primary btn-block mt-sm" id="world-save-btn" onclick="WorldsPage.saveWorld()">
@@ -188,7 +208,7 @@ const WorldsPage = (() => {
     const nameEl = document.getElementById('world-name');
     if (nameEl) editorName = nameEl.value.trim();
     gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
-    // Update toolbar button visibility
+    // Update toolbar button visibility — async check for linked characters
     const toolbar = document.getElementById('world-img-toolbar');
     if (toolbar) {
       const hasImages = editorImages.some(img => img.dataUrl);
@@ -201,6 +221,21 @@ const WorldsPage = (() => {
         btns += '<button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
       }
       toolbar.innerHTML = btns;
+      // Async: add interactions button if 2+ characters are linked
+      if (hasImages && editingId) {
+        DB.getAll(DB.STORES.characters).then(chars => {
+          const linked = chars.filter(c => c.linkedWorldId === editingId);
+          if (linked.length >= 2 && toolbar.parentNode) {
+            const interBtn = '<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>';
+            if (!toolbar.querySelector('#world-gen-interactions-btn')) {
+              toolbar.insertAdjacentHTML('beforeend', interBtn);
+            }
+          }
+        }).catch(err => {
+          App.logError('WorldsPage.refreshGallery: failed to load characters', err, { worldId: editingId });
+          App.toast('Could not load characters for interaction images. Check the error log for details.', 'error');
+        });
+      }
     }
   }
 
@@ -501,6 +536,110 @@ const WorldsPage = (() => {
     }
   }
 
+  /**
+   * Generate images of linked characters interacting with each other inside this world.
+   * Requires at least 2 characters linked to this world and at least one world image.
+   */
+  async function generateCharacterInteractions() {
+    if (!editingId) return App.toast('Save the world first before generating interactions', 'error');
+
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const worldImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl);
+    if (!worldImg) return App.toast('Upload at least one world image first', 'error');
+
+    const allChars = await DB.getAll(DB.STORES.characters);
+    const linkedChars = allChars.filter(c => c.linkedWorldId === editingId);
+    if (linkedChars.length < 2) return App.toast('Link at least 2 characters to this world first', 'error');
+
+    const worldName = document.getElementById('world-name')?.value.trim() || 'the world';
+    const worldDesc = document.getElementById('world-desc')?.value.trim() || '';
+
+    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
+
+    const genBtn = document.getElementById('world-gen-interactions-btn');
+    if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
+
+    // Pick up to 4 characters for the interaction shot
+    const castChars = linkedChars.slice(0, 4);
+    const castNames = castChars.map(c => c.name).join(', ');
+    const castDesc = castChars.map(c => {
+      const appearances = c.appearance ? ` (${c.appearance.trim()})` : '';
+      return `${c.name}${appearances}`;
+    }).join('; ');
+
+    const interactionPrompts = [
+      {
+        tag: 'character-interaction',
+        prompt: `Comic book illustration. ${castNames} are together in ${worldName} (${worldDesc || 'as shown'}). Full-body ensemble shot showing all characters interacting with each other in the environment. Characters: ${castDesc}. Dynamic group composition with ${worldName}'s atmosphere and architecture visible in the background.`,
+        desc: `${castNames} interaction in ${worldName}`,
+      },
+      {
+        tag: 'character-interaction',
+        prompt: `Comic book illustration. ${castNames} in a dramatic confrontation or collaboration scene inside ${worldName} (${worldDesc || 'as shown'}). Each character distinctly visible: ${castDesc}. Cinematic wide shot capturing the tension and relationship between characters with the world's setting providing context.`,
+        desc: `${castNames} scene in ${worldName}`,
+      },
+    ];
+
+    // Collect primary images for each character to use as references
+    const charRefUrls = castChars
+      .map(c => {
+        const m = DB.migrateCharacter(c);
+        const img = m.images?.[m.primaryImageIndex ?? 0] || m.images?.[0];
+        return img?.dataUrl || null;
+      })
+      .filter(Boolean);
+
+    const refUrls = [worldImg.dataUrl, ...charRefUrls];
+
+    let done = 0;
+    let failed = 0;
+    const batchSize = Math.min(interactionPrompts.length, slotsAvailable);
+    for (let i = 0; i < batchSize; i++) {
+      done++;
+      if (genBtn) genBtn.textContent = `Generating ${done}/${batchSize}\u2026`;
+      const variation = interactionPrompts[i];
+      const dataUrl = await API.generateRefVariation(null, variation.prompt, { imageDataUrls: refUrls }).catch(() => null);
+
+      if (dataUrl) {
+        const newImg = {
+          dataUrl,
+          tag: variation.tag,
+          description: variation.desc,
+          embedding: null,
+          embeddingText: null,
+          aiGenerated: true,
+          generationPrompt: variation.prompt,
+        };
+        editorImages.push(newImg);
+        refreshGallery();
+
+        const name = worldName;
+        const era = document.getElementById('world-era')?.value.trim() || '';
+        const caption = await API.generateImageCaption(dataUrl, {
+          type: 'world', name, era, tag: variation.tag,
+        }).catch(() => null);
+        if (caption) {
+          newImg.description = caption;
+          newImg.embedding = null;
+          newImg.embeddingText = null;
+          refreshGallery();
+        }
+      } else {
+        failed++;
+      }
+    }
+
+    if (genBtn) { genBtn.disabled = false; genBtn.textContent = '\u{1F9D1} Generate Interactions'; }
+    if (failed > 0) {
+      App.toast(`Generated ${done - failed}/${done} interaction images (${failed} failed)`, 'info');
+    } else {
+      App.toast(`Generated ${done} character interaction image(s)`, 'success');
+    }
+  }
+
   function updateTag(idx, value) {
     if (editorImages[idx]) {
       editorImages[idx].tag = value;
@@ -630,7 +769,7 @@ const WorldsPage = (() => {
     render, newWorld, editWorld, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
-    generateReferences, regenerateImage,
+    generateReferences, regenerateImage, generateCharacterInteractions,
     saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();
