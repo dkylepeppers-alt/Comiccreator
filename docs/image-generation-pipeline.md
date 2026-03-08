@@ -369,7 +369,7 @@ The output is an options object:
 |---|---|
 | `js/pages/create.js` | `buildEnhancedImagePrompt()` |
 | `js/utils.js` | `sanitizeImagePrompt()` |
-| `js/api.js` | `generateImage()` — reference legend construction |
+| `js/api.js` | `generateImage()` — reference legend construction, `enrichImagePrompt()` — LLM prompt expansion |
 
 ### `buildEnhancedImagePrompt(panel)`
 
@@ -401,8 +401,29 @@ Append character appearances (if includeAppearanceText is true)
     │  Appends ". Characters in scene: {name}: {appearance}; …"
     │
     ▼
+AI Prompt Enrichment  (if enrichImagePrompts is true)
+    │  Calls API.enrichImagePrompt(prompt, { genre })
+    │  LLM expands the prompt with:
+    │    - Specific shot type (close-up, dutch-angle wide shot, etc.)
+    │    - Lighting style (rim lighting, chiaroscuro, soft fill, etc.)
+    │    - Dominant colour palette and mood
+    │    - Compositional details
+    │  Result is cached in promptEnrichmentCache for the current page
+    │  Falls back to un-enriched prompt on any API failure
+    │
+    ▼
 Returns: enhanced prompt string
 ```
+
+### `API.enrichImagePrompt(rawPrompt, options)`
+
+Uses the configured text LLM to expand a terse panel prompt into a detailed, cinematic description that produces noticeably better image results.
+
+- `options.genre` — passed as genre context to the LLM (e.g. `'noir'`, `'sci-fi'`)
+- `options.model` — override the text model used for enrichment
+- `options.signal` — `AbortSignal` for cancellation
+- Returns `rawPrompt` unchanged if: input is falsy, API key is missing, or any API error occurs
+- Token budget: 250 output tokens, temperature 0.5
 
 ### Reference legend (inside `generateImage()`)
 
@@ -448,12 +469,13 @@ POST /api/v1/images/generations
     Content-Type: application/json
     Authorization: Bearer {apiKey}
   Body: {
-    model: string,          // e.g. 'gpt-image-1'
-    prompt: string,         // finalPrompt
-    size: string,           // e.g. '1024x1024'
+    model: string,             // e.g. 'gpt-image-1'
+    prompt: string,            // finalPrompt
+    size: string,              // e.g. '1024x1024'
     n: 1,
     showExplicitContent?: boolean,
-    imageDataUrls?: string[]  // compressed base64 reference images
+    imageDataUrls?: string[],  // compressed base64 reference images
+    negative_prompt?: string   // from options.negativePrompt; omitted if empty
   }
     │
     ▼
@@ -462,6 +484,8 @@ Response: { data: [{ url | b64_json }] }
     ▼
 Returns: URL string or base64 string
 ```
+
+**Negative prompt:** when `options.negativePrompt` is a non-empty string, it is sent to the API as `negative_prompt`. Models that support it (FLUX, Stable Diffusion family, etc.) will avoid generating the described content. Models that ignore the field treat it as a no-op — no error is raised.
 
 ### Image compression
 
@@ -501,6 +525,8 @@ The final data URL is stored in `panel.imageUrl` and persisted to IndexedDB with
 | `dynamicImageSizes` | `false` | 4 | Let the LLM pick per-panel sizes |
 | `includeAppearanceText` | `true` | 5 | Append character appearance to image prompts |
 | `imagePromptPrefix` | `''` | 5 | Legacy style prefix (superseded by image presets) |
+| `enrichImagePrompts` | `false` | 5 | Expand each panel prompt via LLM before image generation |
+| `negativePrompt` | `''` | 6 | Content to suppress in generated images (model-dependent) |
 | `captionModel` | `''` | 2 | Dedicated model for vision captioning (falls back to chat model) |
 | `embeddingModel` | `'text-embedding-3-small'` | 3 | Model for text embeddings |
 | `enableImages` | `true` | 4–6 | Master toggle for image generation during comic creation |

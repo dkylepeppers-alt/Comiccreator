@@ -221,6 +221,72 @@ const API = (() => {
   }
 
   /**
+   * Expand a terse panel image prompt into a detailed, cinematic description
+   * using the configured text LLM.  The enriched prompt adds shot type,
+   * lighting, colour palette, and compositional specifics while preserving
+   * every visual element in the original text.
+   *
+   * Falls back to the original prompt on any API failure so image generation
+   * always proceeds — callers should treat enrichment as best-effort.
+   *
+   * @param {string} rawPrompt  - Sanitised panel image prompt
+   * @param {Object} [options]  - { genre, model, signal }
+   * @returns {Promise<string>} - Enriched prompt, or rawPrompt on failure
+   */
+  async function enrichImagePrompt(rawPrompt, options = {}) {
+    // Return falsy inputs (null, undefined, '') unchanged — mirrors how other
+    // API helpers handle missing input without throwing.
+    if (!rawPrompt) return rawPrompt;
+    const apiKey = await getApiKey();
+    if (!apiKey) return rawPrompt;
+
+    const model = options.model || await getModel();
+    const genre = options.genre ? ` The comic genre is "${options.genre}".` : '';
+
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'You are an expert art director specialising in comic books and graphic novels. ' +
+          'Expand the given brief image prompt into a detailed, cinematic description ' +
+          'for an AI image generator. Add a specific shot type (e.g. extreme close-up, ' +
+          'wide establishing shot, dutch-angle medium shot), lighting style (e.g. ' +
+          'rim lighting, chiaroscuro, soft diffused fill), dominant colour palette, ' +
+          'and atmospheric mood. Preserve every visual element and character detail ' +
+          'from the original. Reply with only the enhanced description — no explanation, ' +
+          'no quotation marks, no preamble.',
+      },
+      {
+        role: 'user',
+        content:
+          `Expand this comic panel image prompt into a detailed cinematic description.${genre}\n\n` +
+          `Original: ${rawPrompt}\n\nEnhanced:`,
+      },
+    ];
+
+    try {
+      const enriched = await chatCompletion(messages, {
+        model,
+        maxTokens: 250,
+        temperature: 0.5,
+        signal: options.signal,
+      });
+      // chatCompletion returns a string or null; fall back to rawPrompt if empty
+      const trimmed = typeof enriched === 'string' ? enriched.trim() : '';
+      return trimmed || rawPrompt;
+    } catch (err) {
+      if (typeof App !== 'undefined') {
+        App.logError(
+          'enrichImagePrompt',
+          err,
+          `Prompt enrichment failed — using original. Prompt: "${rawPrompt.slice(0, 80)}..."`,
+        );
+      }
+      return rawPrompt;
+    }
+  }
+
+  /**
    * Generate image via NanoGPT image API.
    *
    * Sends a JSON POST to /images/generations. On failure, throws with the
@@ -277,6 +343,8 @@ const API = (() => {
     const body = { model: modelId, prompt: finalPrompt, size: resolution, n: 1 };
     if (showExplicitContent) body.showExplicitContent = true;
     if (compressedRefs?.length > 0) body.imageDataUrls = compressedRefs;
+    // Pass caller-supplied negative prompt to models that support it (ignored by models that don't)
+    if (options.negativePrompt?.trim()) body.negative_prompt = options.negativePrompt.trim();
 
     const res = await fetch(`${BASE_URL}/images/generations`, {
       method: 'POST',
@@ -872,6 +940,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     chatCompletion,
     chatCompletionStream,
     generateImage,
+    enrichImagePrompt,
     generateEmbedding,
     generateImageCaption,
     buildSystemPrompt,
