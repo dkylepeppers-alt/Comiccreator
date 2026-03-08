@@ -369,6 +369,7 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 | `tests.yml` | Push / PR (all branches) | `npm ci` → `check-syntax` → `lint` → `npm test` |
 | `playwright.yml` | Push / PR (all branches) | Install Chromium → `npm run test:e2e`; uploads report artifact |
 | `auto-bump.yml` | Push to `Main` (non-bot) | Runs `bump-version.sh patch`, commits, pushes |
+| `auto-update-docs.yml` | Push to `Main` (non-bot) | Updates CHANGELOG and syncs version refs in docs |
 | `deploy-pages.yml` | Push to `Main` / manual | Deploys static assets to GitHub Pages |
 | `release.yml` | Manual `workflow_dispatch` | Runs all checks → bumps version → tags → creates GitHub Release |
 | `security.yml` | Weekly schedule / manual | `npm audit --audit-level=high` |

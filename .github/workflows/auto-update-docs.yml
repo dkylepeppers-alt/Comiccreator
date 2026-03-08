@@ -1,0 +1,55 @@
+name: Auto Update Docs
+
+on:
+  push:
+    branches:
+      - Main
+
+# Cancel any in-progress doc update if a newer commit arrives first.
+concurrency:
+  group: auto-update-docs
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    # Skip commits already made by bots to prevent infinite loops.
+    if: github.actor != 'github-actions[bot]' && github.actor != 'copilot[bot]'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update documentation
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+        run: bash scripts/update-docs.sh
+
+      - name: Commit and push updated docs
+        run: |
+          git add CHANGELOG.md README.md docs/
+          git diff --staged --quiet && { echo "No doc changes to commit."; exit 0; }
+          git commit -m "docs: auto-update documentation"
+          # Rebase over any concurrent push (e.g. the auto-bump commit) before pushing.
+          if ! git pull --rebase origin "${{ github.ref_name }}"; then
+            echo "::error::Rebase failed — a conflicting push may have occurred. Aborting doc update."
+            git rebase --abort 2>/dev/null || true
+            exit 1
+          fi
+          git push origin "HEAD:${{ github.ref_name }}"
