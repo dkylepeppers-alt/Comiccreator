@@ -462,7 +462,7 @@ const CharactersPage = (() => {
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
-    const maxSlots = CharactersPage._pendingRefSlots || selectedIdxs.length;
+    const maxSlots = CharactersPage._pendingRefSlots ?? selectedIdxs.length;
     if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => CharactersPage._pendingRefVariations[i]).filter(Boolean);
@@ -638,7 +638,7 @@ const CharactersPage = (() => {
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
-    const maxSlots = CharactersPage._pendingWorldData?.slotsAvailable || selectedIdxs.length;
+    const maxSlots = CharactersPage._pendingWorldData?.slotsAvailable ?? selectedIdxs.length;
     if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => CharactersPage._pendingWorldVariations[i]).filter(Boolean);

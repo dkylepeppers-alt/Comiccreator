@@ -447,7 +447,7 @@ const WorldsPage = (() => {
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
-    const maxSlots = WorldsPage._pendingRefSlots || selectedIdxs.length;
+    const maxSlots = WorldsPage._pendingRefSlots ?? selectedIdxs.length;
     if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => WorldsPage._pendingRefVariations[i]).filter(Boolean);
@@ -651,7 +651,7 @@ const WorldsPage = (() => {
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
     const data = WorldsPage._pendingInteractionData;
-    const maxSlots = data.slotsAvailable || selectedIdxs.length;
+    const maxSlots = data.slotsAvailable ?? selectedIdxs.length;
     if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => data.prompts[i]).filter(Boolean);
