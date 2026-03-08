@@ -401,38 +401,70 @@ const WorldsPage = (() => {
 
   /**
    * Generate reference image variations from the primary uploaded image.
-   * Uses the image API with the primary image as a reference to create
-   * tagged variations (aerial, interior, night, detail).
+   * Shows a selection modal letting the user choose which variations to generate.
    */
-  async function generateReferences() {
-    // Use the user-selected primary image as the source for all variations
+  function generateReferences() {
     const primaryCandidate = editorImages[editorPrimaryIndex];
     const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
       ? primaryCandidate
-      : editorImages.find(img => img.dataUrl); // fallback if primary has no data
+      : editorImages.find(img => img.dataUrl);
+    if (!primaryImg) return App.toast('Upload at least one image first', 'error');
+
+    const variations = API.WORLD_REF_VARIATIONS;
+    const existingTags = new Set(editorImages.filter(img => img.dataUrl).map(img => img.tag));
+    const available = variations.filter(v => !existingTags.has(v.tag));
+
+    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
+
+    const batch = available.slice(0, slotsAvailable);
+    if (batch.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
+
+    const checkboxes = batch.map((v, i) => {
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+        <input type="checkbox" class="world-ref-pick" data-idx="${i}" checked>
+        <span><strong>${escHtml(v.tag)}</strong> — ${escHtml(v.desc)}</span>
+      </label>`;
+    }).join('');
+
+    App.showModal(`
+      <div class="modal-title">Select Reference Images to Generate</div>
+      <p class="text-sm text-muted" style="margin-bottom:12px;">Choose which reference image types to generate (${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available):</p>
+      <div style="max-height:45vh;overflow-y:auto;">${checkboxes}</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="App.hideModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="WorldsPage._doGenerateReferences()">Generate Selected</button>
+      </div>
+    `);
+    WorldsPage._pendingRefVariations = batch;
+  }
+
+  /** Execute reference generation for the user-selected variations. */
+  async function _doGenerateReferences() {
+    const picks = document.querySelectorAll('.world-ref-pick:checked');
+    const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
+    if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const selectedVariations = selectedIdxs.map(i => WorldsPage._pendingRefVariations[i]).filter(Boolean);
+    App.hideModal();
+
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
     const name = document.getElementById('world-name')?.value.trim() || 'the location';
     const description = document.getElementById('world-desc')?.value.trim() || '';
-
-    const variations = API.WORLD_REF_VARIATIONS;
-    // Skip variations for tags that already have an image
-    const existingTags = new Set(editorImages.filter(img => img.dataUrl).map(img => img.tag));
-    const toGenerate = variations.filter(v => !existingTags.has(v.tag));
-
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
-    const batch = toGenerate.slice(0, slotsAvailable);
-
-    if (batch.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
 
     const genBtn = document.getElementById('world-gen-refs-btn');
     if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
 
     let done = 0;
     let failed = 0;
-    for (const variation of batch) {
+    for (const variation of selectedVariations) {
       done++;
-      if (genBtn) genBtn.textContent = `Generating ${done}/${batch.length}\u2026`;
+      if (genBtn) genBtn.textContent = `Generating ${done}/${selectedVariations.length}\u2026`;
 
       const prompt = variation.prompt
         .replace(/\{name\}/g, name)
@@ -538,6 +570,7 @@ const WorldsPage = (() => {
 
   /**
    * Generate images of linked characters interacting with each other inside this world.
+   * Shows a selection modal letting the user choose which interactions to generate.
    * Requires at least 2 characters linked to this world and at least one world image.
    */
   async function generateCharacterInteractions() {
@@ -559,9 +592,6 @@ const WorldsPage = (() => {
     const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
-    const genBtn = document.getElementById('world-gen-interactions-btn');
-    if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
-
     // Pick up to 4 characters for the interaction shot
     const castChars = linkedChars.slice(0, 4);
     const castNames = castChars.map(c => c.name).join(', ');
@@ -572,16 +602,55 @@ const WorldsPage = (() => {
 
     const interactionPrompts = [
       {
+        key: 'interaction-ensemble',
         tag: 'character-interaction',
-        prompt: `Comic book illustration. ${castNames} are together in ${worldName} (${worldDesc || 'as shown'}). Full-body ensemble shot showing all characters interacting with each other in the environment. Characters: ${castDesc}. Dynamic group composition with ${worldName}'s atmosphere and architecture visible in the background.`,
-        desc: `${castNames} interaction in ${worldName}`,
+        prompt: `${castNames} are together in ${worldName} (${worldDesc || 'as shown'}). Full-body ensemble shot showing all characters interacting with each other in the environment. Characters: ${castDesc}. Dynamic group composition with ${worldName}'s atmosphere and architecture visible in the background. Match the art style of the provided reference images.`,
+        desc: `${castNames} — ensemble interaction in ${worldName}`,
       },
       {
+        key: 'interaction-dramatic',
         tag: 'character-interaction',
-        prompt: `Comic book illustration. ${castNames} in a dramatic confrontation or collaboration scene inside ${worldName} (${worldDesc || 'as shown'}). Each character distinctly visible: ${castDesc}. Cinematic wide shot capturing the tension and relationship between characters with the world's setting providing context.`,
-        desc: `${castNames} scene in ${worldName}`,
+        prompt: `${castNames} in a dramatic confrontation or collaboration scene inside ${worldName} (${worldDesc || 'as shown'}). Each character distinctly visible: ${castDesc}. Cinematic wide shot capturing the tension and relationship between characters with the world's setting providing context. Match the art style of the provided reference images.`,
+        desc: `${castNames} — dramatic scene in ${worldName}`,
       },
     ];
+
+    const available = interactionPrompts.slice(0, slotsAvailable);
+
+    // Build linked characters display
+    const charList = castChars.map(c => `<strong>${escHtml(c.name)}</strong>${c.appearance ? ` <span class="text-muted">(${escHtml(c.appearance.slice(0, 60))})</span>` : ''}`).join(', ');
+
+    const checkboxes = available.map((v, i) => {
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+        <input type="checkbox" class="world-inter-pick" data-idx="${i}" checked>
+        <span>${escHtml(v.desc)}</span>
+      </label>`;
+    }).join('');
+
+    App.showModal(`
+      <div class="modal-title">Generate Character Interactions</div>
+      <p class="text-sm text-muted" style="margin-bottom:8px;">Characters: ${charList}</p>
+      <p class="text-sm text-muted" style="margin-bottom:12px;">Choose which interaction images to generate (${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available):</p>
+      <div style="max-height:45vh;overflow-y:auto;">${checkboxes}</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="App.hideModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="WorldsPage._doGenerateCharacterInteractions()">Generate Selected</button>
+      </div>
+    `);
+    WorldsPage._pendingInteractionData = { prompts: available, castChars, castNames, castDesc, worldName, worldDesc, worldImg };
+  }
+
+  /** Execute character interaction generation for the user-selected variations. */
+  async function _doGenerateCharacterInteractions() {
+    const picks = document.querySelectorAll('.world-inter-pick:checked');
+    const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
+    if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const data = WorldsPage._pendingInteractionData;
+    const selectedVariations = selectedIdxs.map(i => data.prompts[i]).filter(Boolean);
+    App.hideModal();
+
+    const { castChars, castNames, worldName, worldImg } = data;
 
     // Collect primary images for each character to use as references
     const charRefUrls = castChars
@@ -594,13 +663,14 @@ const WorldsPage = (() => {
 
     const refUrls = [worldImg.dataUrl, ...charRefUrls];
 
+    const genBtn = document.getElementById('world-gen-interactions-btn');
+    if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
+
     let done = 0;
     let failed = 0;
-    const batchSize = Math.min(interactionPrompts.length, slotsAvailable);
-    for (let i = 0; i < batchSize; i++) {
+    for (const variation of selectedVariations) {
       done++;
-      if (genBtn) genBtn.textContent = `Generating ${done}/${batchSize}\u2026`;
-      const variation = interactionPrompts[i];
+      if (genBtn) genBtn.textContent = `Generating ${done}/${selectedVariations.length}\u2026`;
       const dataUrl = await API.generateRefVariation(null, variation.prompt, { imageDataUrls: refUrls }).catch(() => null);
 
       if (dataUrl) {
@@ -616,10 +686,9 @@ const WorldsPage = (() => {
         editorImages.push(newImg);
         refreshGallery();
 
-        const name = worldName;
-        const era = document.getElementById('world-era')?.value.trim() || '';
         const caption = await API.generateImageCaption(dataUrl, {
-          type: 'world', name, era, tag: variation.tag,
+          type: 'character-interaction', name: worldName, tag: variation.tag,
+          characterNames: castNames, worldName,
         }).catch(() => null);
         if (caption) {
           newImg.description = caption;
@@ -769,7 +838,9 @@ const WorldsPage = (() => {
     render, newWorld, editWorld, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
-    generateReferences, regenerateImage, generateCharacterInteractions,
+    generateReferences, _doGenerateReferences, regenerateImage,
+    generateCharacterInteractions, _doGenerateCharacterInteractions,
+    _pendingRefVariations: null, _pendingInteractionData: null,
     saveWorld, exportWorld, deleteWorld, confirmDelete,
   };
 })();

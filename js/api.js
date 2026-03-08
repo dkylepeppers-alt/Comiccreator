@@ -641,12 +641,24 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       if (modelInfo && modelInfo.supports_vision === false) return null;
     } catch { /* ignore cache errors — attempt captioning anyway */ }
 
-    const { type = 'character', name = '', role = '', tag = '', era = '', appearance = '' } = contextHints;
+    const { type = 'character', name = '', role = '', tag = '', era = '', appearance = '', characterNames = '', worldName = '' } = contextHints;
 
     // Build targeted context and instruction lines for the vision prompt
     let contextLine = '';
     let instructionLine = '';
-    if (type === 'character') {
+    if (type === 'character-interaction') {
+      // Character interaction images: multiple characters interacting inside a world
+      const chars = characterNames || 'the characters';
+      const world = worldName || name || 'the world';
+      contextLine = `This is a reference image showing ${chars} interacting together inside ${world}. The image is tagged "${tag || 'character-interaction'}".`;
+      instructionLine = `Write 1-2 sentences describing the characters visible and what they are doing together. Name each character you can identify (expected: ${chars}). Mention the setting/environment. Focus on the interaction, poses, and composition. Reply with only the description, no preamble.`;
+    } else if (type === 'character-in-world') {
+      // Single character in a world environment
+      const charName = name || 'the character';
+      const world = worldName || 'the world';
+      contextLine = `This is a reference image showing ${charName} inside the world of ${world}. The image is tagged "${tag || 'character-in-world'}".`;
+      instructionLine = `Write 1-2 sentences describing what ${charName} is doing in ${world}. Begin with "${charName}" as the subject. Focus on the character's pose, activity, and how they interact with the environment. Reply with only the description, no preamble.`;
+    } else if (type === 'character') {
       if (tag === 'character-sheet') {
         // Character sheet: multi-angle / multi-pose reference image
         contextLine = name
@@ -803,8 +815,8 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
    * Uses {charName}, {charAppearanceNote}, {worldName}, {worldDescription} placeholders.
    */
   const CHARACTER_WORLD_VARIATIONS = [
-    { tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}). Full-body establishing shot showing the character in context with the environment. The world\'s distinctive atmosphere and architecture visible around them. Comic book illustration style.', desc: 'Character in world — establishing shot' },
-    { tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}) — working, exploring, interacting with an object, or moving through the environment. Full-body shot showing the character mid-activity with the world\'s distinctive atmosphere and architecture visible around them. Comic book illustration style.', desc: 'Character in world — doing an activity' },
+    { key: 'in-world-establishing', tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}). Full-body establishing shot showing the character in context with the environment. The world\'s distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.', desc: '{charName} in {worldName} — establishing shot' },
+    { key: 'in-world-activity', tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}) — working, exploring, interacting with an object, or moving through the environment. Full-body shot showing the character mid-activity with the world\'s distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.', desc: '{charName} in {worldName} — doing an activity' },
   ];
 
   /**
