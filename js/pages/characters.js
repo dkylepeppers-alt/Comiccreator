@@ -400,7 +400,7 @@ const CharactersPage = (() => {
    * Uses the image API with the primary image as a reference to create
    * tagged variations (front-view, side-view, back-view, close-up, action-pose, expression,
    * character-sheet). Multiple variations may share the same tag (e.g. two action-pose entries).
-   * Already-generated variations are skipped by matching on (tag + desc).
+   * Already-generated variations are skipped by counting existing images per tag.
    */
   async function generateReferences() {
     // Use the user-selected primary image as the source for all variations
@@ -414,11 +414,28 @@ const CharactersPage = (() => {
     const appearance = document.getElementById('char-appearance')?.value.trim() || '';
 
     const variations = API.CHARACTER_REF_VARIATIONS;
-    // Skip variations whose (tag + desc) pair already exists in the gallery
-    const existingKeys = new Set(
-      editorImages.filter(img => img.dataUrl).map(img => `${img.tag}||${img.description}`)
-    );
-    const toGenerate = variations.filter(v => !existingKeys.has(`${v.tag}||${v.desc}`));
+    // Count how many of each tag already have images in the gallery
+    const existingTagCounts = {};
+    for (const img of editorImages.filter(i => i.dataUrl)) {
+      existingTagCounts[img.tag] = (existingTagCounts[img.tag] || 0) + 1;
+    }
+    // Count how many variations exist per tag in the template list
+    const variationTagCounts = {};
+    for (const v of variations) {
+      variationTagCounts[v.tag] = (variationTagCounts[v.tag] || 0) + 1;
+    }
+    // Track how many we've queued per tag so far (for this generation run)
+    const queuedTagCounts = Object.assign({}, existingTagCounts);
+    // Only generate a variation if we have fewer images with that tag than defined variations
+    const toGenerate = variations.filter(v => {
+      const defined = variationTagCounts[v.tag] || 1;
+      const queued = queuedTagCounts[v.tag] || 0;
+      if (queued < defined) {
+        queuedTagCounts[v.tag] = queued + 1;
+        return true;
+      }
+      return false;
+    });
 
     const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
     const batch = toGenerate.slice(0, slotsAvailable);

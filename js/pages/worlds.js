@@ -563,7 +563,6 @@ const WorldsPage = (() => {
     const castChars = linkedChars.slice(0, 4);
     const castNames = castChars.map(c => c.name).join(', ');
     const castDesc = castChars.map(c => {
-      const m = DB.migrateCharacter(c);
       const appearances = c.appearance ? ` (${c.appearance.trim()})` : '';
       return `${c.name}${appearances}`;
     }).join('; ');
