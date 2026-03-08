@@ -231,7 +231,10 @@ const WorldsPage = (() => {
               toolbar.insertAdjacentHTML('beforeend', interBtn);
             }
           }
-        }).catch(() => {});
+        }).catch(err => {
+          App.logError('WorldsPage.refreshGallery: failed to load characters', err, { worldId: editingId });
+          App.toast('Could not load characters for interaction images. Check the error log for details.', 'error');
+        });
       }
     }
   }
@@ -589,7 +592,7 @@ const WorldsPage = (() => {
       })
       .filter(Boolean);
 
-    const refUrls = [worldImg.dataUrl, ...charRefUrls].slice(0, 4);
+    const refUrls = [worldImg.dataUrl, ...charRefUrls];
 
     let done = 0;
     let failed = 0;

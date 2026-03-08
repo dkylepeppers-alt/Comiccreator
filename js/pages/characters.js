@@ -124,7 +124,7 @@ const CharactersPage = (() => {
 
           <div class="form-group">
             <label class="form-label">Linked World</label>
-            <select id="char-linked-world">
+            <select id="char-linked-world" onchange="CharactersPage.refreshGallery()">
               <option value="">— None —</option>
               ${worlds.map(w => `<option value="${w.id}" ${char.linkedWorldId === w.id ? 'selected' : ''}>${escHtml(w.name)}</option>`).join('')}
             </select>
@@ -760,6 +760,7 @@ const CharactersPage = (() => {
 
   return {
     render,
+    refreshGallery,
     newCharacter, editCharacter, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
