@@ -5,17 +5,17 @@ on:
     branches:
       - Main
 
-# Cancel any in-progress doc update if a newer commit arrives first.
+# Share the concurrency group with auto-bump.yml so that the two bots are
+# queued and never push simultaneously — preventing non-fast-forward failures.
 concurrency:
-  group: auto-update-docs
-  cancel-in-progress: true
-
-permissions:
-  contents: write
+  group: auto-main-push
+  cancel-in-progress: false
 
 jobs:
   update-docs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     # Skip commits already made by bots to prevent infinite loops.
     if: github.actor != 'github-actions[bot]' && github.actor != 'copilot[bot]'
     steps:

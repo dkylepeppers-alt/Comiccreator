@@ -5,10 +5,11 @@ on:
     branches:
       - Main
 
-# Cancel any in-progress bump if a newer commit arrives on Main
+# Share the concurrency group with auto-update-docs.yml so the two bots are
+# queued and never push simultaneously — preventing non-fast-forward failures.
 concurrency:
-  group: auto-bump
-  cancel-in-progress: true
+  group: auto-main-push
+  cancel-in-progress: false
 
 jobs:
   auto-bump:

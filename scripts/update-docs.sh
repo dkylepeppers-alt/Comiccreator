@@ -76,10 +76,14 @@ while i < len(lines):
         while i < len(lines) and lines[i].strip() == '':
             out.append(lines[i])
             i += 1
-        # Only insert if a duplicate entry for the same text is not already there.
-        # We check all bullet-point lines globally so the same entry cannot appear
-        # under multiple version sections if the script is re-run.
-        existing = [l.rstrip() for l in lines if l.startswith('- ')]
+        # Only insert if a duplicate entry doesn't already exist within this
+        # version section (scan forward until the next version header or EOF).
+        existing = []
+        j = i
+        while j < len(lines) and not lines[j].strip().startswith('## ['):
+            if lines[j].startswith('- '):
+                existing.append(lines[j].rstrip())
+            j += 1
         if entry.rstrip() not in existing:
             out.append(entry + '\n')
         continue
