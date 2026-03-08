@@ -534,4 +534,40 @@ describe('API integration', () => {
     // Character sheets get a higher token limit for more detailed captions
     assert.equal(requestBody.max_tokens, 200, 'character-sheet should get 200 max_tokens');
   });
+
+  it('generateImageCaption uses character-in-world prompt with worldName context', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova stands amid the neon towers of Neo-Tokyo.' } }] }), { status: 200 });
+    };
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    const result = await ctx.API.generateImageCaption(
+      'data:image/png;base64,aGVsbG8=',
+      { type: 'character-in-world', name: 'Nova', tag: 'character-in-world', appearance: 'silver armor', worldName: 'Neo-Tokyo' },
+    );
+    assert.equal(result, 'Nova stands amid the neon towers of Neo-Tokyo.');
+    const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
+    assert.ok(textPart.text.includes('Nova'), 'prompt should include character name');
+    assert.ok(textPart.text.includes('Neo-Tokyo'), 'prompt should include world name');
+    assert.ok(textPart.text.includes('character-in-world'), 'prompt should include tag');
+  });
+
+  it('generateImageCaption uses character-interaction prompt with characterNames and worldName', async () => {
+    let requestBody;
+    ctx.fetch = async (_url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova and Blaze face off in the arena.' } }] }), { status: 200 });
+    };
+    await ctx.DB.setSetting('captionModel', 'gpt-4o');
+    const result = await ctx.API.generateImageCaption(
+      'data:image/png;base64,aGVsbG8=',
+      { type: 'character-interaction', name: 'Colosseum', tag: 'character-interaction', characterNames: 'Nova, Blaze', worldName: 'Colosseum' },
+    );
+    assert.equal(result, 'Nova and Blaze face off in the arena.');
+    const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
+    assert.ok(textPart.text.includes('Nova, Blaze'), 'prompt should include character names');
+    assert.ok(textPart.text.includes('Colosseum'), 'prompt should include world name');
+    assert.ok(textPart.text.includes('interacting'), 'prompt should mention interaction');
+  });
 });

@@ -397,37 +397,31 @@ const CharactersPage = (() => {
 
   /**
    * Generate reference image variations from the primary uploaded image.
-   * Uses the image API with the primary image as a reference to create
-   * tagged variations (front-view, side-view, back-view, close-up, action-pose, expression,
-   * character-sheet). Multiple variations may share the same tag (e.g. two action-pose entries).
-   * Already-generated variations are skipped by counting existing images per tag.
+   * Shows a selection modal letting the user choose which variations to generate.
    */
-  async function generateReferences() {
+  function generateReferences() {
     // Use the user-selected primary image as the source for all variations
     const primaryCandidate = editorImages[editorPrimaryIndex];
     const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
       ? primaryCandidate
-      : editorImages.find(img => img.dataUrl); // fallback if primary has no data
+      : editorImages.find(img => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
-    const name = document.getElementById('char-name')?.value.trim() || 'the character';
-    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
+    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const variations = API.CHARACTER_REF_VARIATIONS;
-    // Count how many of each tag already have images in the gallery
+    // Count existing images per tag
     const existingTagCounts = {};
     for (const img of editorImages.filter(i => i.dataUrl)) {
       existingTagCounts[img.tag] = (existingTagCounts[img.tag] || 0) + 1;
     }
-    // Count how many variations exist per tag in the template list
     const variationTagCounts = {};
     for (const v of variations) {
       variationTagCounts[v.tag] = (variationTagCounts[v.tag] || 0) + 1;
     }
-    // Track how many we've queued per tag so far (for this generation run)
     const queuedTagCounts = Object.assign({}, existingTagCounts);
-    // Only generate a variation if we have fewer images with that tag than defined variations
-    const toGenerate = variations.filter(v => {
+    const available = variations.filter(v => {
       const defined = variationTagCounts[v.tag] || 1;
       const queued = queuedTagCounts[v.tag] || 0;
       if (queued < defined) {
@@ -437,19 +431,60 @@ const CharactersPage = (() => {
       return false;
     });
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
-    const batch = toGenerate.slice(0, slotsAvailable);
+    if (available.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
 
-    if (batch.length === 0) return App.toast('All reference variations already exist or gallery is full', 'info');
+    // Build selection modal — show ALL available variations, pre-check up to slotsAvailable
+    const checkboxes = available.map((v, i) => {
+      const checked = i < slotsAvailable ? 'checked' : '';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+        <input type="checkbox" class="char-ref-pick" data-idx="${i}" ${checked}>
+        <span><strong>${escHtml(v.tag)}</strong> — ${escHtml(v.desc)}</span>
+      </label>`;
+    }).join('');
+
+    App.showModal(`
+      <div class="modal-title">Select Reference Images to Generate</div>
+      <p class="text-sm text-muted" style="margin-bottom:12px;">Choose which reference image types to generate (${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available):</p>
+      <div style="max-height:45vh;overflow-y:auto;">${checkboxes}</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="App.hideModal()">Cancel</button>
+        <button class="btn btn-primary" id="char-ref-confirm-btn" onclick="CharactersPage._doGenerateReferences()">Generate Selected</button>
+      </div>
+    `);
+    // Store available variations and slot limit for the confirm handler
+    CharactersPage._pendingRefVariations = available;
+    CharactersPage._pendingRefSlots = slotsAvailable;
+  }
+
+  /** Execute reference generation for the user-selected variations. */
+  async function _doGenerateReferences() {
+    const picks = document.querySelectorAll('.char-ref-pick:checked');
+    const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
+    if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const maxSlots = CharactersPage._pendingRefSlots ?? selectedIdxs.length;
+    if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
+
+    const selectedVariations = selectedIdxs.map(i => CharactersPage._pendingRefVariations[i]).filter(Boolean);
+    App.hideModal();
+
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl);
+    if (!primaryImg) return App.toast('Upload at least one image first', 'error');
+
+    const name = document.getElementById('char-name')?.value.trim() || 'the character';
+    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
 
     const genBtn = document.getElementById('char-gen-refs-btn');
     if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
 
     let done = 0;
     let failed = 0;
-    for (const variation of batch) {
+    for (const variation of selectedVariations) {
       done++;
-      if (genBtn) genBtn.textContent = `Generating ${done}/${batch.length}\u2026`;
+      if (genBtn) genBtn.textContent = `Generating ${done}/${selectedVariations.length}\u2026`;
 
       const prompt = variation.prompt;
 
@@ -549,7 +584,7 @@ const CharactersPage = (() => {
 
   /**
    * Generate images showing this character interacting within their linked world.
-   * Uses CHARACTER_WORLD_VARIATIONS prompts with both the character image and world info.
+   * Shows a selection modal letting the user choose which variations to generate.
    */
   async function generateWorldInteractions() {
     const primaryCandidate = editorImages[editorPrimaryIndex];
@@ -565,29 +600,78 @@ const CharactersPage = (() => {
     if (!world) return App.toast('Linked world not found', 'error');
 
     const name = document.getElementById('char-name')?.value.trim() || 'the character';
-    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
-    const charAppearanceNote = appearance ? ` (${appearance})` : '';
+
+    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const variations = API.CHARACTER_WORLD_VARIATIONS;
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
-    const batch = variations.slice(0, slotsAvailable);
+    const available = variations;
 
-    if (batch.length === 0) return App.toast('Gallery is full — remove some images first', 'info');
+    // Build selection modal with world info
+    const checkboxes = available.map((v, i) => {
+      const label = v.desc
+        .replace(/\{charName\}/g, name)
+        .replace(/\{worldName\}/g, world.name);
+      const checked = i < slotsAvailable ? 'checked' : '';
+      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+        <input type="checkbox" class="char-world-pick" data-idx="${i}" ${checked}>
+        <span><strong>${escHtml(v.tag)}</strong> — ${escHtml(label)}</span>
+      </label>`;
+    }).join('');
+
+    App.showModal(`
+      <div class="modal-title">Generate Character in World</div>
+      <p class="text-sm text-muted" style="margin-bottom:12px;">Generate images of <strong>${escHtml(name)}</strong> in <strong>${escHtml(world.name)}</strong> (${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available):</p>
+      <div style="max-height:45vh;overflow-y:auto;">${checkboxes}</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="App.hideModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="CharactersPage._doGenerateWorldInteractions()">Generate Selected</button>
+      </div>
+    `);
+    CharactersPage._pendingWorldVariations = available;
+    CharactersPage._pendingWorldData = { world, name, slotsAvailable };
+  }
+
+  /** Execute character-in-world generation for the user-selected variations. */
+  async function _doGenerateWorldInteractions() {
+    const picks = document.querySelectorAll('.char-world-pick:checked');
+    const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
+    if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
+
+    const maxSlots = CharactersPage._pendingWorldData?.slotsAvailable ?? selectedIdxs.length;
+    if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
+
+    const selectedVariations = selectedIdxs.map(i => CharactersPage._pendingWorldVariations[i]).filter(Boolean);
+    const { world, name } = CharactersPage._pendingWorldData;
+    App.hideModal();
+
+    const primaryCandidate = editorImages[editorPrimaryIndex];
+    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
+      ? primaryCandidate
+      : editorImages.find(img => img.dataUrl);
+    if (!primaryImg) return App.toast('Upload at least one character image first', 'error');
+
+    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
+    const charAppearanceNote = appearance ? ` (${appearance})` : '';
 
     const genBtn = document.getElementById('char-gen-world-btn');
     if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating\u2026'; }
 
     let done = 0;
     let failed = 0;
-    for (const variation of batch) {
+    for (const variation of selectedVariations) {
       done++;
-      if (genBtn) genBtn.textContent = `Generating ${done}/${batch.length}\u2026`;
+      if (genBtn) genBtn.textContent = `Generating ${done}/${selectedVariations.length}\u2026`;
 
       const prompt = variation.prompt
         .replace(/\{charName\}/g, name)
         .replace(/\{charAppearanceNote\}/g, charAppearanceNote)
         .replace(/\{worldName\}/g, world.name)
         .replace(/\{worldDescription\}/g, world.description || 'as shown in the world reference');
+
+      const desc = variation.desc
+        .replace(/\{charName\}/g, name)
+        .replace(/\{worldName\}/g, world.name);
 
       const migratedWorld = DB.migrateWorld(world);
       const worldPrimaryImg = migratedWorld.images?.[migratedWorld.primaryImageIndex ?? 0] || migratedWorld.images?.[0];
@@ -602,7 +686,7 @@ const CharactersPage = (() => {
         const newImg = {
           dataUrl,
           tag: variation.tag,
-          description: variation.desc,
+          description: desc,
           embedding: null,
           embeddingText: null,
           aiGenerated: true,
@@ -612,7 +696,8 @@ const CharactersPage = (() => {
         refreshGallery();
 
         const caption = await API.generateImageCaption(dataUrl, {
-          type: 'character', name, role: document.getElementById('char-role')?.value || '', tag: variation.tag, appearance,
+          type: 'character-in-world', name, tag: variation.tag, appearance,
+          worldName: world.name,
         }).catch(() => null);
         if (caption) {
           newImg.description = caption;
@@ -764,7 +849,10 @@ const CharactersPage = (() => {
     newCharacter, editCharacter, backToList,
     pickImage, pickImageForSlot, handleImage, addImageSlot,
     updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
-    generateReferences, regenerateImage, generateWorldInteractions,
+    generateReferences, _doGenerateReferences, regenerateImage,
+    generateWorldInteractions, _doGenerateWorldInteractions,
+    _pendingRefVariations: null, _pendingRefSlots: 0,
+    _pendingWorldVariations: null, _pendingWorldData: null,
     saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
   };
 })();
