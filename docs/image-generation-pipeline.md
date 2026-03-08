@@ -43,7 +43,7 @@ The pipeline has six stages:
 
 ### How it works
 
-Each character or world can hold up to **12 reference images** (`MAX_IMAGES = 12`). Images are stored as base64 data URLs in IndexedDB inside an `images[]` array on the character/world object.
+Each character or world can hold up to **20 reference images** (`MAX_IMAGES = 20`). In IndexedDB, these are stored on the character/world object in an `images[]` array, where each entry is an object (e.g., `{ dataUrl, tag, description, embedding, ... }`) whose `dataUrl` field contains the base64 image data URL.
 
 #### Manual upload
 
@@ -137,20 +137,24 @@ The function accepts `contextHints` to tailor the prompt:
 
 ```js
 contextHints = {
-  type: 'character' | 'world',
-  name: string,       // character or world name
-  role: string,       // character role (hero, villain, etc.)
-  tag: string,        // image tag (front-view, aerial, etc.)
-  era: string,        // world era/period
-  appearance: string, // known character appearance text
+  type: 'character' | 'character-in-world' | 'character-interaction' | 'world',
+  name: string,            // character or world name
+  role: string,            // character role (hero, villain, etc.)
+  tag: string,             // image tag (front-view, aerial, etc.)
+  era: string,             // world era/period
+  appearance: string,      // known character appearance text
+  worldName: string,       // world name (used for character-in-world and character-interaction types)
+  characterNames: string[], // all character names in scene (used for character-interaction type)
 }
 ```
 
-**Character prompts** instruct the model to begin with the character's name as subject and focus on outfit, pose, expression, notable features.
+**`character`** — instructs the model to begin with the character's name as subject and focus on outfit, pose, expression, notable features.
 
-**Character-sheet tag** gets a specialized prompt (200 max tokens instead of the default 120) asking for multi-angle description: consistent visual traits, views/angles shown, and outfit details.
+**`character-in-world`** — focuses on how the character appears within a specific world setting.
 
-**World prompts** instruct the model to begin with the location name and focus on architecture, lighting, atmosphere, scale.
+**`character-interaction`** — describes multiple characters together in a shared scene.
+
+**`world`** — instructs the model to begin with the location name and focus on architecture, lighting, atmosphere, scale.
 
 ### Model selection
 
