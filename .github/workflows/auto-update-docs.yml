@@ -24,15 +24,14 @@ concurrency:
   group: auto-update-docs
   cancel-in-progress: true
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   update-docs:
     runs-on: ubuntu-latest
     # Skip commits already made by automation bots to prevent infinite loops
-    if: github.actor != 'github-actions[bot]' && !startsWith(github.actor, 'copilot')
+    if: github.actor != 'github-actions[bot]' && github.actor != 'copilot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout
