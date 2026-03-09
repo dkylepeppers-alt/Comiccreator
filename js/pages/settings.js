@@ -305,10 +305,7 @@ const SettingsPage = (() => {
    * Loads model lists asynchronously so the page renders instantly.
    */
   async function onMount() {
-    await Promise.all([
-      loadModels('text'),
-      loadModels('image'),
-    ]);
+    await Promise.all([loadModels('text'), loadModels('image')]);
     // After image models are loaded, auto-select the first model if none is saved
     let currentImageModel = document.getElementById('set-imgmodel')?.value;
     if (!currentImageModel && imageModels.length > 0) {
@@ -320,7 +317,7 @@ const SettingsPage = (() => {
       // Update selected state in the model list
       const listEl = document.getElementById('image-model-list');
       if (listEl) {
-        listEl.querySelectorAll('.model-option').forEach(el => {
+        listEl.querySelectorAll('.model-option').forEach((el) => {
           el.classList.toggle('selected', el.dataset.modelId === currentImageModel);
         });
       }
@@ -357,7 +354,7 @@ const SettingsPage = (() => {
         textModelsLoading = false;
         // Refresh caption models (vision-capable subset) whenever text models reload.
         // supports_vision === false means explicitly no vision; undefined/true means attempt it.
-        captionModels = textModels.filter(m => m.supports_vision !== false);
+        captionModels = textModels.filter((m) => m.supports_vision !== false);
         const captionCountEl = document.getElementById('caption-model-count');
         if (captionCountEl) captionCountEl.textContent = captionModels.length;
         const captionStatusEl = document.getElementById('caption-model-status');
@@ -377,9 +374,10 @@ const SettingsPage = (() => {
     } catch (err) {
       logError(`loadModels(${type})`, err);
       if (statusEl) statusEl.textContent = 'Failed to load models. Using fallback list.';
-      const fallback = type === 'text'
-        ? API.FALLBACK_TEXT_MODELS.map(id => ({ id, name: id, owned_by: '' }))
-        : API.FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
+      const fallback =
+        type === 'text'
+          ? API.FALLBACK_TEXT_MODELS.map((id) => ({ id, name: id, owned_by: '' }))
+          : API.FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
 
       if (type === 'text') {
         textModels = fallback;
@@ -457,7 +455,15 @@ const SettingsPage = (() => {
     if (slashIdx > 0) return model.id.substring(0, slashIdx);
     // Guess from common prefixes
     const id = model.id.toLowerCase();
-    if (id.startsWith('gpt-') || id.startsWith('chatgpt') || id.startsWith('dall-e') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) return 'OpenAI';
+    if (
+      id.startsWith('gpt-') ||
+      id.startsWith('chatgpt') ||
+      id.startsWith('dall-e') ||
+      id.startsWith('o1') ||
+      id.startsWith('o3') ||
+      id.startsWith('o4')
+    )
+      return 'OpenAI';
     if (id.startsWith('claude')) return 'Anthropic';
     if (id.startsWith('gemini') || id.startsWith('nano-banana')) return 'Google';
     if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
@@ -497,9 +503,9 @@ const SettingsPage = (() => {
         // Text models: pricing.prompt is per-million-tokens
         if (m.pricing.prompt != null) {
           parts.push(`$${m.pricing.prompt}/1M in`);
-        // Image models: pricing.per_image is { resolution: cost }
+          // Image models: pricing.per_image is { resolution: cost }
         } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
-          const prices = Object.values(m.pricing.per_image).filter(v => typeof v === 'number');
+          const prices = Object.values(m.pricing.per_image).filter((v) => typeof v === 'number');
           if (prices.length > 0) {
             const minPrice = Math.min(...prices);
             parts.push(`$${minPrice}/img`);
@@ -523,7 +529,7 @@ const SettingsPage = (() => {
     if (!wrap || !modelId) return;
 
     const currentEl = document.getElementById('set-imgsize');
-    const currentSize = currentEl?.value || await DB.getSetting('imageSize', '1024x1024');
+    const currentSize = currentEl?.value || (await DB.getSetting('imageSize', '1024x1024'));
     const sizes = await API.getModelSizes(modelId);
 
     if (!sizes || sizes.length === 0) {
@@ -533,7 +539,7 @@ const SettingsPage = (() => {
     }
 
     wrap.innerHTML = `<select id="set-imgsize">${sizes
-      .map(s => `<option value="${escHtml(s)}" ${s === currentSize ? 'selected' : ''}>${escHtml(s)}</option>`)
+      .map((s) => `<option value="${escHtml(s)}" ${s === currentSize ? 'selected' : ''}>${escHtml(s)}</option>`)
       .join('')}</select>`;
 
     // If the saved size isn't valid for this model, auto-select the first supported
@@ -557,7 +563,10 @@ const SettingsPage = (() => {
     } else {
       dropdown.classList.remove('hidden');
       const search = document.getElementById(`${type}-model-search`);
-      if (search) { search.value = ''; search.focus(); }
+      if (search) {
+        search.value = '';
+        search.focus();
+      }
       // Reset filter
       filterModels(type, '');
     }
@@ -575,7 +584,7 @@ const SettingsPage = (() => {
       renderModelList(type, models);
       return;
     }
-    const filtered = models.filter(m => {
+    const filtered = models.filter((m) => {
       const searchStr = `${m.id} ${m.name || ''} ${m.owned_by || ''}`.toLowerCase();
       return searchStr.includes(q);
     });
@@ -609,7 +618,7 @@ const SettingsPage = (() => {
     // Update selected state in the list
     const listEl = document.getElementById(`${type}-model-list`);
     if (listEl) {
-      listEl.querySelectorAll('.model-option').forEach(el => {
+      listEl.querySelectorAll('.model-option').forEach((el) => {
         el.classList.toggle('selected', el.dataset.modelId === modelId);
       });
     }
@@ -632,7 +641,7 @@ const SettingsPage = (() => {
     if (hiddenEl) hiddenEl.value = '';
     if (displayEl) displayEl.textContent = 'Auto (use text model)\u2026';
     const listEl = document.getElementById('caption-model-list');
-    if (listEl) listEl.querySelectorAll('.model-option').forEach(el => el.classList.remove('selected'));
+    if (listEl) listEl.querySelectorAll('.model-option').forEach((el) => el.classList.remove('selected'));
     closePicker('caption');
   }
 
@@ -643,7 +652,10 @@ const SettingsPage = (() => {
     if (!apiKey) return App.toast('Enter an API key first', 'error');
 
     const btn = document.getElementById('test-conn-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Testing\u2026'; }
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Testing\u2026';
+    }
 
     try {
       const model = document.getElementById('set-model')?.value || 'gpt-4o-mini';
@@ -651,7 +663,7 @@ const SettingsPage = (() => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model,
@@ -673,7 +685,10 @@ const SettingsPage = (() => {
       logError('testConnection()', e, `Model: ${document.getElementById('set-model')?.value || 'unknown'}`);
       App.toast(`Connection failed: ${e.message}`, 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Test Connection'; }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Test Connection';
+      }
     }
   }
 
@@ -696,7 +711,10 @@ const SettingsPage = (() => {
     if (!statusEl) return;
 
     const btn = document.getElementById('check-update-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Checking\u2026';
+    }
 
     statusEl.innerHTML = '<p class="text-sm text-muted">Checking for updates...</p>';
 
@@ -704,8 +722,12 @@ const SettingsPage = (() => {
     const repoInput = document.getElementById('set-update-repo');
     const repo = (repoInput?.value || '').trim() || DEFAULT_UPDATE_REPO;
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-      statusEl.innerHTML = '<p class="text-sm" style="color:var(--danger);">Invalid repository format. Use owner/repo (e.g. user/project).</p>';
-      if (btn) { btn.disabled = false; btn.textContent = 'Check for Updates'; }
+      statusEl.innerHTML =
+        '<p class="text-sm" style="color:var(--danger);">Invalid repository format. Use owner/repo (e.g. user/project).</p>';
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Check for Updates';
+      }
       return;
     }
     await DB.setSetting('updateRepo', repo);
@@ -720,7 +742,9 @@ const SettingsPage = (() => {
         const localData = await localRes.json();
         if (localData.version) localVersion = localData.version;
       }
-    } catch (_) { /* fall back to hardcoded APP_VERSION */ }
+    } catch (_) {
+      /* fall back to hardcoded APP_VERSION */
+    }
 
     try {
       // Detect the repository's default branch so the check works regardless of
@@ -736,7 +760,9 @@ const SettingsPage = (() => {
           const info = await infoRes.json();
           branch = info.default_branch || 'Main';
         }
-      } catch (_) { /* use fallback branch name */ }
+      } catch (_) {
+        /* use fallback branch name */
+      }
 
       const url = `https://raw.githubusercontent.com/${repo}/${branch}/version.json?_=${Date.now()}`;
       const res = await fetch(url);
@@ -759,7 +785,7 @@ const SettingsPage = (() => {
           <div style="padding:10px;border-radius:8px;background:rgba(76,175,80,0.15);border:1px solid rgba(76,175,80,0.3);">
             <p class="text-sm" style="color:#4caf50;margin:0;"><strong>You're up to date! (v${escHtml(localVersion)})</strong></p>
           </div>`;
-        App.toast('You\'re running the latest version!', 'success');
+        App.toast("You're running the latest version!", 'success');
       }
     } catch (e) {
       logError('checkForUpdate()', e, `Repo: ${repo}`);
@@ -770,7 +796,10 @@ const SettingsPage = (() => {
         </div>`;
       App.toast('Update check failed', 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Check for Updates'; }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Check for Updates';
+      }
     }
   }
 
@@ -778,9 +807,11 @@ const SettingsPage = (() => {
     try {
       if ('caches' in window) {
         const keys = await caches.keys();
-        await Promise.all(keys.map(key => caches.delete(key)));
+        await Promise.all(keys.map((key) => caches.delete(key)));
       }
-    } catch (_) { /* proceed to reload even if cache clear fails */ }
+    } catch (_) {
+      /* proceed to reload even if cache clear fails */
+    }
     window.location.reload();
   }
 
@@ -790,7 +821,7 @@ const SettingsPage = (() => {
     }
     try {
       const keys = await caches.keys();
-      await Promise.all(keys.map(key => caches.delete(key)));
+      await Promise.all(keys.map((key) => caches.delete(key)));
       App.toast('App cache cleared! Reload the page to fetch fresh assets.', 'success');
     } catch (e) {
       logError('clearAppCache()', e);
@@ -824,12 +855,19 @@ const SettingsPage = (() => {
         if (!Array.isArray(c.images)) continue;
         let changed = false;
         for (const img of c.images) {
-          if (img.embedding) { img.embedding = null; changed = true; invalidated++; }
+          if (img.embedding) {
+            img.embedding = null;
+            changed = true;
+            invalidated++;
+          }
         }
         if (changed) await DB.put(DB.STORES.characters, c);
       }
       if (invalidated > 0) {
-        App.toast(`Embedding model changed — cleared ${invalidated} embedding(s). Re-save characters to regenerate.`, 'info');
+        App.toast(
+          `Embedding model changed — cleared ${invalidated} embedding(s). Re-save characters to regenerate.`,
+          'info',
+        );
       }
     }
 
@@ -861,11 +899,11 @@ const SettingsPage = (() => {
   async function exportData() {
     const rawPages = await DB.getAll(DB.STORES.pages);
     // Strip imageUrl from panels — AI-generated images are large and can be regenerated
-    const strippedPages = rawPages.map(p => {
+    const strippedPages = rawPages.map((p) => {
       const copy = Object.assign({}, p);
       if (copy.data && Array.isArray(copy.data.panels)) {
         copy.data = Object.assign({}, copy.data, {
-          panels: copy.data.panels.map(panel => {
+          panels: copy.data.panels.map((panel) => {
             const pc = Object.assign({}, panel);
             delete pc.imageUrl;
             return pc;
@@ -903,7 +941,8 @@ const SettingsPage = (() => {
       const data = JSON.parse(text);
 
       // Validate imported data: each collection must be an array of objects with id fields
-      const validArray = (arr) => Array.isArray(arr) && arr.every(item => item && typeof item === 'object' && item.id);
+      const validArray = (arr) =>
+        Array.isArray(arr) && arr.every((item) => item && typeof item === 'object' && item.id);
       if (data.characters && !validArray(data.characters)) throw new Error('Invalid characters data');
       if (data.worlds && !validArray(data.worlds)) throw new Error('Invalid worlds data');
       if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
@@ -938,7 +977,14 @@ const SettingsPage = (() => {
   }
 
   async function confirmClear() {
-    const stores = [DB.STORES.characters, DB.STORES.worlds, DB.STORES.comics, DB.STORES.pages, DB.STORES.presets, DB.STORES.imagePresets];
+    const stores = [
+      DB.STORES.characters,
+      DB.STORES.worlds,
+      DB.STORES.comics,
+      DB.STORES.pages,
+      DB.STORES.presets,
+      DB.STORES.imagePresets,
+    ];
     for (const store of stores) {
       const items = await DB.getAll(store);
       for (const item of items) await DB.del(store, item.id);
@@ -949,10 +995,25 @@ const SettingsPage = (() => {
   }
 
   return {
-    render, postRender, onMount, onUnmount,
-    testConnection, save, exportData, importData, clearData, confirmClear,
-    togglePicker, closePicker, filterModels, selectModel, refreshModels,
+    render,
+    postRender,
+    onMount,
+    onUnmount,
+    testConnection,
+    save,
+    exportData,
+    importData,
+    clearData,
+    confirmClear,
+    togglePicker,
+    closePicker,
+    filterModels,
+    selectModel,
+    refreshModels,
     clearCaptionModel,
-    updateImageSizeOptions, checkForUpdate, reloadForUpdate, clearAppCache,
+    updateImageSizeOptions,
+    checkForUpdate,
+    reloadForUpdate,
+    clearAppCache,
   };
 })();

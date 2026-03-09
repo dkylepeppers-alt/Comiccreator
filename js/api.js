@@ -10,30 +10,30 @@ const API = (() => {
   // Static fallback sizes for well-known models when the live API doesn't return size info.
   // Keys are model IDs (or ID prefixes), values are arrays of supported WxH strings.
   const KNOWN_IMAGE_SIZES = {
-    'gpt-image-1':          ['1024x1024', '1536x1024', '1024x1536', 'auto'],
-    'gpt-image-1.5':        ['1024x1024', '1536x1024', '1024x1536', 'auto'],
-    'gpt-image-1-mini':     ['1024x1024', 'auto'],
-    'flux-2-turbo':         ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-    'flux-2-flash':         ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-    'flux-2-pro':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-    'flux-2-max':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-    'flux-2-dev':           ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-    'flux-2-flex':          ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-    'seedream-v4':          ['1024x1024', '1536x1024', '1024x1536', '2048x2048'],
-    'seedream-v3':          ['1024x1024', '1152x896', '896x1152', '1344x768', '768x1344'],
-    'nano-banana':          ['auto'],
-    'nano-banana-pro':      ['1k', '2k', '4k'],
-    'qwen-image':           ['auto', '1024x1024', '512x512', '768x1024', '1024x768'],
-    'hunyuan-image-3':      ['auto', '1024x1024', '768x1024', '1024x768', '1024x1536', '1536x1024', '512x512'],
+    'gpt-image-1': ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+    'gpt-image-1.5': ['1024x1024', '1536x1024', '1024x1536', 'auto'],
+    'gpt-image-1-mini': ['1024x1024', 'auto'],
+    'flux-2-turbo': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-flash': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-pro': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-max': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-dev': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'flux-2-flex': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
+    'seedream-v4': ['1024x1024', '1536x1024', '1024x1536', '2048x2048'],
+    'seedream-v3': ['1024x1024', '1152x896', '896x1152', '1344x768', '768x1344'],
+    'nano-banana': ['auto'],
+    'nano-banana-pro': ['1k', '2k', '4k'],
+    'qwen-image': ['auto', '1024x1024', '512x512', '768x1024', '1024x768'],
+    'hunyuan-image-3': ['auto', '1024x1024', '768x1024', '1024x768', '1024x1536', '1536x1024', '512x512'],
     // Legacy entries retained for backward compatibility
-    'dall-e-3':             ['1024x1024', '1024x1792', '1792x1024'],
-    'dall-e-2':             ['256x256', '512x512', '1024x1024'],
-    'gpt-4o-image':         ['1024x1024', '1024x1792', '1792x1024'],
-    'flux-pro':             ['1024x1024', '1024x768', '768x1024', '1280x768', '768x1280'],
-    'flux-schnell':         ['1024x1024', '1024x768', '768x1024'],
-    'flux-kontext':         ['1024x1024', '1024x768', '768x1024'],
-    'stable-diffusion-xl':  ['1024x1024', '1024x768', '768x1024'],
-    'stable-diffusion-3':   ['1024x1024', '1024x768', '768x1024'],
+    'dall-e-3': ['1024x1024', '1024x1792', '1792x1024'],
+    'dall-e-2': ['256x256', '512x512', '1024x1024'],
+    'gpt-4o-image': ['1024x1024', '1024x1792', '1792x1024'],
+    'flux-pro': ['1024x1024', '1024x768', '768x1024', '1280x768', '768x1280'],
+    'flux-schnell': ['1024x1024', '1024x768', '768x1024'],
+    'flux-kontext': ['1024x1024', '1024x768', '768x1024'],
+    'stable-diffusion-xl': ['1024x1024', '1024x768', '768x1024'],
+    'stable-diffusion-3': ['1024x1024', '1024x768', '768x1024'],
   };
 
   /**
@@ -51,10 +51,12 @@ const API = (() => {
         _modelSizesCache = await DB.getSetting('cachedImageModels', null);
       }
       if (Array.isArray(_modelSizesCache)) {
-        const m = _modelSizesCache.find(x => x.id === modelId);
+        const m = _modelSizesCache.find((x) => x.id === modelId);
         if (m?.sizes?.length) return m.sizes;
       }
-    } catch (_) { /* ignore cache errors */ }
+    } catch (_) {
+      /* ignore cache errors */
+    }
 
     // Fall back to static known sizes for well-known model IDs
     if (KNOWN_IMAGE_SIZES[modelId]) return KNOWN_IMAGE_SIZES[modelId];
@@ -89,7 +91,7 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const model = options.model || await getModel();
+    const model = options.model || (await getModel());
     const params = await getModelParams();
 
     const body = {
@@ -104,7 +106,7 @@ const API = (() => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     });
@@ -127,7 +129,7 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
-    const model = options.model || await getModel();
+    const model = options.model || (await getModel());
     const params = await getModelParams();
 
     const body = {
@@ -143,7 +145,7 @@ const API = (() => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     };
@@ -202,10 +204,10 @@ const API = (() => {
         let { width, height } = img;
         if (width > maxDim || height > maxDim) {
           if (width >= height) {
-            height = Math.round(height * maxDim / width);
+            height = Math.round((height * maxDim) / width);
             width = maxDim;
           } else {
-            width = Math.round(width * maxDim / height);
+            width = Math.round((width * maxDim) / height);
             height = maxDim;
           }
         }
@@ -240,7 +242,7 @@ const API = (() => {
     const apiKey = await getApiKey();
     if (!apiKey) return rawPrompt;
 
-    const model = options.model || await getModel();
+    const model = options.model || (await getModel());
     const genre = options.genre ? ` The comic genre is "${options.genre}".` : '';
 
     const messages = [
@@ -304,15 +306,18 @@ const API = (() => {
 
     // Collect and compress reference images (configurable cap)
     const maxRefImages = await DB.getSetting('maxRefImages', 4);
-    const rawRefs = options.imageDataUrls?.length > 0
-      ? options.imageDataUrls.slice(0, maxRefImages)
-      : options.imageDataUrl ? [options.imageDataUrl] : [];
+    const rawRefs =
+      options.imageDataUrls?.length > 0
+        ? options.imageDataUrls.slice(0, maxRefImages)
+        : options.imageDataUrl
+          ? [options.imageDataUrl]
+          : [];
     if (options.imageDataUrls?.length > maxRefImages) {
-      console.warn(`[generateImage] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`);
+      console.warn(
+        `[generateImage] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`,
+      );
     }
-    const compressedRefs = rawRefs.length > 0
-      ? await Promise.all(rawRefs.map(u => compressDataUrl(u)))
-      : null;
+    const compressedRefs = rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u))) : null;
 
     // Prepend reference legend when labeled refs are provided
     const labeledRefs = options.labeledRefs;
@@ -321,14 +326,20 @@ const API = (() => {
       const legend = labeledRefs
         .slice(0, maxRefImages)
         .map((ref, i) => {
-          const details = ref.description ? ` — ${ref.description}` : (ref.tag && ref.tag !== 'default' ? ` (${ref.tag})` : '');
+          const details = ref.description
+            ? ` — ${ref.description}`
+            : ref.tag && ref.tag !== 'default'
+              ? ` (${ref.tag})`
+              : '';
           let instruction;
           switch (ref.type) {
             case 'character':
-              instruction = "Replicate this character's exact appearance, proportions, outfit, and distinguishing features precisely as shown.";
+              instruction =
+                "Replicate this character's exact appearance, proportions, outfit, and distinguishing features precisely as shown.";
               break;
             case 'world':
-              instruction = 'Use this as an environment and style reference — match the architecture, lighting, and atmosphere.';
+              instruction =
+                'Use this as an environment and style reference — match the architecture, lighting, and atmosphere.';
               break;
             default:
               instruction = 'Use this as a visual reference.';
@@ -350,20 +361,19 @@ const API = (() => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     });
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      const apiMsg = errData.error?.message || errData.message
-        || `HTTP ${res.status} ${res.statusText}`;
+      const apiMsg = errData.error?.message || errData.message || `HTTP ${res.status} ${res.statusText}`;
       const error = new Error(
         `Image generation failed [HTTP ${res.status}]\n` +
-        `Model: ${modelId}  Size: ${resolution}\n` +
-        `API: ${apiMsg}\n` +
-        `Prompt: ${prompt}`
+          `Model: ${modelId}  Size: ${resolution}\n` +
+          `API: ${apiMsg}\n` +
+          `Prompt: ${prompt}`,
       );
       error.status = res.status;
       error.model = modelId;
@@ -400,9 +410,7 @@ const API = (() => {
 
     // When an image style preset is selected, use it as the art style directive;
     // otherwise fall back to a generic placeholder so the LLM doesn't hardcode one style.
-    const artStyleDirective = imageStylePreset
-      ? imageStylePreset
-      : '[art style keywords matching the story genre]';
+    const artStyleDirective = imageStylePreset ? imageStylePreset : '[art style keywords matching the story genre]';
     const artStyleExamples = imageStylePreset
       ? `art style (use: ${imageStylePreset})`
       : 'art style (comic book illustration, bold ink lines, cel shading, halftone texture, watercolor, photorealistic — pick the style that fits the story)';
@@ -442,18 +450,20 @@ Your response must be a JSON object with this exact structure:
 }
 
 Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), ${artStyleExamples}, composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${imageStylePreset ? ` IMPORTANT: Every imagePrompt MUST begin with "${imageStylePreset}" as the art style prefix.` : ''}${includeAppearance ? ' Include each character\'s physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency.' : ''}
+- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), ${artStyleExamples}, composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${imageStylePreset ? ` IMPORTANT: Every imagePrompt MUST begin with "${imageStylePreset}" as the art style prefix.` : ''}${includeAppearance ? " Include each character's physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency." : ''}
 - Optional narration for scene-setting
 - Character dialogue that advances the story
 
 CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
-who appears in that panel.${includeAppearance
-  ? ` Include their full physical appearance description
+who appears in that panel.${
+      includeAppearance
+        ? ` Include their full physical appearance description
 inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
 black armor, glowing blue eyes)". This is essential for visual consistency.`
-  : ` Describe their actions, poses, and the scene composition.
+        : ` Describe their actions, poses, and the scene composition.
 Reference images will be provided for visual consistency, so you do not need
-to repeat full appearance descriptions — but always use character names.`}
+to repeat full appearance descriptions — but always use character names.`
+    }
 If a panel has NO characters (e.g., establishing shot), say "No characters present."
 
 Provide 2-3 meaningful choices at the end that affect the story direction.`;
@@ -514,9 +524,18 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
 
     for (let i = 0; i < s.length; i++) {
       const c = s[i];
-      if (escape) { escape = false; continue; }
-      if (c === '\\' && inString) { escape = true; continue; }
-      if (c === '"') { inString = !inString; continue; }
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (c === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+      if (c === '"') {
+        inString = !inString;
+        continue;
+      }
       if (inString) continue;
       if (c === '{') stack.push('}');
       else if (c === '[') stack.push(']');
@@ -555,13 +574,13 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
     }
 
-    const buildResult = parsed => ({
+    const buildResult = (parsed) => ({
       title: parsed.title || 'Untitled Page',
-      panels: (parsed.panels || []).map(p => {
+      panels: (parsed.panels || []).map((p) => {
         const panel = {
           narration: p.narration || '',
           imagePrompt: p.imagePrompt || p.image_prompt || '',
-          dialogue: (p.dialogue || []).map(d => ({
+          dialogue: (p.dialogue || []).map((d) => ({
             speaker: d.speaker || 'Unknown',
             text: d.text || '',
           })),
@@ -569,7 +588,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
         if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
         return panel;
       }),
-      choices: (parsed.choices || []).map(c => ({
+      choices: (parsed.choices || []).map((c) => ({
         text: c.text || c.description || '',
         summary: c.summary || '',
       })),
@@ -602,23 +621,25 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     if (!forceRefresh) {
       const cached = await DB.getSetting(CACHE_KEY, null);
       const cachedAt = await DB.getSetting(CACHE_TS_KEY, 0);
-      if (cached && (Date.now() - cachedAt) < CACHE_TTL) return cached;
+      if (cached && Date.now() - cachedAt < CACHE_TTL) return cached;
     }
 
     try {
       const res = await fetch(`${BASE_URL}/models?detailed=true`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const models = (data.data || data || []).map(m => ({
-        id: m.id,
-        name: m.name || m.id,
-        owned_by: m.owned_by || '',
-        context_length: m.context_length || null,
-        pricing: m.pricing || null,
-        // NanoGPT API returns capabilities under a nested `capabilities` object
-        supports_vision: (m.capabilities?.vision ?? m.supports_vision) ?? false,
-        supports_tools: (m.capabilities?.tool_calling ?? m.supports_tools) ?? false,
-      })).sort((a, b) => a.id.localeCompare(b.id));
+      const models = (data.data || data || [])
+        .map((m) => ({
+          id: m.id,
+          name: m.name || m.id,
+          owned_by: m.owned_by || '',
+          context_length: m.context_length || null,
+          pricing: m.pricing || null,
+          // NanoGPT API returns capabilities under a nested `capabilities` object
+          supports_vision: m.capabilities?.vision ?? m.supports_vision ?? false,
+          supports_tools: m.capabilities?.tool_calling ?? m.supports_tools ?? false,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id));
 
       await DB.setSetting(CACHE_KEY, models);
       await DB.setSetting(CACHE_TS_KEY, Date.now());
@@ -628,7 +649,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       // Return cache even if expired, or fallback
       const cached = await DB.getSetting(CACHE_KEY, null);
       if (cached) return cached;
-      return FALLBACK_TEXT_MODELS.map(id => ({ id, name: id, owned_by: '' }));
+      return FALLBACK_TEXT_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
     }
   }
 
@@ -644,25 +665,27 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     if (!forceRefresh) {
       const cached = await DB.getSetting(CACHE_KEY, null);
       const cachedAt = await DB.getSetting(CACHE_TS_KEY, 0);
-      if (cached && (Date.now() - cachedAt) < CACHE_TTL) return cached;
+      if (cached && Date.now() - cachedAt < CACHE_TTL) return cached;
     }
 
     try {
       const apiKey = await getApiKey();
-      const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {};
+      const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
       const res = await fetch(`${BASE_URL}/image-models?detailed=true`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const models = (data.data || data || []).map(m => ({
-        id: m.id || m.model,
-        name: m.name || m.id || m.model,
-        owned_by: m.owned_by || m.provider || '',
-        pricing: m.pricing || null,
-        // NanoGPT API returns image_to_image support under capabilities.image_to_image
-        supports_edit: (m.capabilities?.image_to_image ?? m.supports_edit) ?? false,
-        // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
-        sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
-      })).sort((a, b) => a.id.localeCompare(b.id));
+      const models = (data.data || data || [])
+        .map((m) => ({
+          id: m.id || m.model,
+          name: m.name || m.id || m.model,
+          owned_by: m.owned_by || m.provider || '',
+          pricing: m.pricing || null,
+          // NanoGPT API returns image_to_image support under capabilities.image_to_image
+          supports_edit: m.capabilities?.image_to_image ?? m.supports_edit ?? false,
+          // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
+          sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id));
 
       await DB.setSetting(CACHE_KEY, models);
       await DB.setSetting(CACHE_TS_KEY, Date.now());
@@ -672,7 +695,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       if (typeof App !== 'undefined') App.logError('fetchImageModels', err);
       const cached = await DB.getSetting(CACHE_KEY, null);
       if (cached) return cached;
-      return FALLBACK_IMAGE_MODELS.map(id => ({ id, name: id, owned_by: '' }));
+      return FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
     }
   }
 
@@ -702,18 +725,29 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     const apiKey = await getApiKey();
     if (!apiKey) return null;
 
-    const model = options.model || await DB.getSetting('captionModel', '') || await getModel();
+    const model = options.model || (await DB.getSetting('captionModel', '')) || (await getModel());
 
     // Silently skip models that are known not to support vision to avoid error-log spam.
     // fetchTextModels is cached (6 h TTL), so this lookup is cheap on subsequent calls.
     try {
       const textModels = await fetchTextModels();
-      const modelInfo = textModels.find(m => m.id === model);
+      const modelInfo = textModels.find((m) => m.id === model);
       // Only gate when we have explicit capability data; unknown models are attempted.
       if (modelInfo && modelInfo.supports_vision === false) return null;
-    } catch { /* ignore cache errors — attempt captioning anyway */ }
+    } catch {
+      /* ignore cache errors — attempt captioning anyway */
+    }
 
-    const { type = 'character', name = '', role = '', tag = '', era = '', appearance = '', characterNames = '', worldName = '' } = contextHints;
+    const {
+      type = 'character',
+      name = '',
+      role = '',
+      tag = '',
+      era = '',
+      appearance = '',
+      characterNames = '',
+      worldName = '',
+    } = contextHints;
 
     // Build targeted context and instruction lines for the vision prompt
     let contextLine = '';
@@ -738,7 +772,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
           : 'This is a character sheet (model/reference sheet) for a comic book character showing the same character from multiple angles, poses, or views.';
         instructionLine = name
           ? `This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character's consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. Begin with "${name}" as the subject. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.`
-          : 'This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character\'s consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.';
+          : "This is a character sheet with multiple views of the same character. Write 2-3 sentences describing: 1) the character's consistent visual traits (build, hair, distinguishing features), 2) what views/angles are shown (front, side, back, three-quarter, etc.), 3) outfit details visible across the poses. This description will be used to match the character across different comic panel compositions. Reply with only the description, no preamble.";
       } else {
         contextLine = name
           ? `This is a reference image for a comic book character named "${name}"${role ? ` (${role})` : ''}.${appearance ? ` Known appearance: ${appearance}.` : ''} The image is tagged "${tag || 'default'}".`
@@ -762,7 +796,8 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     const messages = [
       {
         role: 'system',
-        content: 'You are a visual description assistant for a comic book creator. Describe reference images concisely to help match them to comic panel art prompts.',
+        content:
+          'You are a visual description assistant for a comic book creator. Describe reference images concisely to help match them to comic panel art prompts.',
       },
       {
         role: 'user',
@@ -801,7 +836,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     const apiKey = await getApiKey();
     if (!apiKey) return null;
 
-    const model = options.model || await DB.getSetting('embeddingModel', 'text-embedding-3-small');
+    const model = options.model || (await DB.getSetting('embeddingModel', 'text-embedding-3-small'));
     const body = {
       input: text,
       model,
@@ -817,42 +852,63 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        if (typeof App !== 'undefined') App.logError('generateEmbedding', new Error(`HTTP ${res.status}`), `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`);
+        if (typeof App !== 'undefined')
+          App.logError(
+            'generateEmbedding',
+            new Error(`HTTP ${res.status}`),
+            `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`,
+          );
         return null;
       }
       const data = await res.json();
       return data?.data?.[0]?.embedding || null;
     } catch (err) {
-      if (typeof App !== 'undefined') App.logError('generateEmbedding', err, `Embedding API call failed for text: "${text.slice(0, 80)}..."`);
+      if (typeof App !== 'undefined')
+        App.logError('generateEmbedding', err, `Embedding API call failed for text: "${text.slice(0, 80)}..."`);
       return null;
     }
   }
 
   // Fallback lists used only when API is unreachable and no cache exists
   const FALLBACK_TEXT_MODELS = [
-    'openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5',
-    'openai/gpt-5.1', 'openai/gpt-5.2',
+    'openai/gpt-5-mini',
+    'openai/gpt-5-nano',
+    'openai/gpt-5',
+    'openai/gpt-5.1',
+    'openai/gpt-5.2',
     'claude-sonnet-4-5-20250929',
-    'deepseek-chat', 'deepseek-reasoner',
-    'gemini-2.5-flash', 'gemini-2.5-pro',
-    'mistral-large-latest', 'mistral-small-latest',
-    'grok-2', 'grok-3-mini',
+    'deepseek-chat',
+    'deepseek-reasoner',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'mistral-large-latest',
+    'mistral-small-latest',
+    'grok-2',
+    'grok-3-mini',
     'qwen-2.5-72b-instruct',
-    'llama-4-scout', 'llama-4-maverick',
+    'llama-4-scout',
+    'llama-4-maverick',
     'command-r-plus',
   ];
 
   const FALLBACK_IMAGE_MODELS = [
-    'gpt-image-1', 'gpt-image-1.5', 'gpt-image-1-mini',
-    'flux-2-turbo', 'flux-2-pro', 'flux-2-dev',
-    'seedream-v4', 'seedream-v4.5',
-    'nano-banana', 'nano-banana-pro',
-    'qwen-image', 'hunyuan-image-3',
+    'gpt-image-1',
+    'gpt-image-1.5',
+    'gpt-image-1-mini',
+    'flux-2-turbo',
+    'flux-2-pro',
+    'flux-2-dev',
+    'seedream-v4',
+    'seedream-v4.5',
+    'nano-banana',
+    'nano-banana-pro',
+    'qwen-image',
+    'hunyuan-image-3',
   ];
 
   /**
@@ -863,23 +919,99 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
    * World templates use {name} and {description} placeholders.
    */
   const CHARACTER_REF_VARIATIONS = [
-    { key: 'front-view-main', tag: 'front-view', prompt: 'Full-body front view of the character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose. Arms slightly away from body. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.', desc: 'Front-facing full body reference' },
-    { key: 'side-view-main', tag: 'side-view', prompt: 'Full-body side profile of the character shown in the reference image. The character stands facing the right side of the frame. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.', desc: 'Side profile reference' },
-    { key: 'back-view-main', tag: 'back-view', prompt: 'Full-body rear view of the character shown in the reference image. The character stands facing away from the viewer. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.', desc: 'Rear view reference' },
-    { key: 'close-up-portrait', tag: 'close-up', prompt: 'Close-up portrait of the character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the camera. Highly detailed facial features, hair, and collar. Soft studio lighting. Clean neutral background.', desc: 'Close-up face/portrait reference' },
-    { key: 'action-pose-task', tag: 'action-pose', prompt: 'The character from the reference image actively performing a task or everyday activity — reaching for something, gesturing expressively, working with their hands, or walking with purpose. Natural mid-action body language showing the character doing something. Full body visible. Clean neutral background.', desc: 'Action pose — performing a task/activity' },
-    { key: 'action-pose-motion', tag: 'action-pose', prompt: 'The character from the reference image caught in natural motion — turning to look at something, picking up an object, sitting down, or stepping forward. Captured mid-movement in a relaxed, purposeful pose. Conveys what the character is doing, not a heroic stance. Full body visible. Clean neutral background.', desc: 'Action pose — natural movement/activity' },
-    { key: 'expression-anger', tag: 'expression', prompt: 'Expressive close-up portrait of the character from the reference image showing intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils. Strong dramatic side-lighting with deep shadows. Head and shoulders framing. Clean dark background.', desc: 'Expression — anger/rage' },
-    { key: 'expression-joy', tag: 'expression', prompt: 'Expressive close-up portrait of the character from the reference image showing JOY or TRIUMPH. Wide grin, bright eyes, lifted cheeks. Warm upbeat lighting. Head and shoulders framing. Clean light background.', desc: 'Expression — joy/triumph' },
-    { key: 'expression-fear', tag: 'expression', prompt: 'Expressive close-up portrait of the character from the reference image showing FEAR or SHOCK. Wide eyes, raised brows, mouth slightly open. Cool dramatic lighting from below. Head and shoulders framing. Clean background.', desc: 'Expression — fear/shock' },
-    { key: 'character-sheet-3view', tag: 'character-sheet', prompt: 'Orthographic character reference sheet of the character from the reference image. Three views arranged side by side: front facing (left), three-quarter view (center), side profile (right). All views show the full body at the same scale. Clean white background, thin guide lines. Comic book character design sheet style.', desc: 'Character sheet — 3-view turnaround' },
+    {
+      key: 'front-view-main',
+      tag: 'front-view',
+      prompt:
+        'Full-body front view of the character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose. Arms slightly away from body. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.',
+      desc: 'Front-facing full body reference',
+    },
+    {
+      key: 'side-view-main',
+      tag: 'side-view',
+      prompt:
+        'Full-body side profile of the character shown in the reference image. The character stands facing the right side of the frame. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.',
+      desc: 'Side profile reference',
+    },
+    {
+      key: 'back-view-main',
+      tag: 'back-view',
+      prompt:
+        'Full-body rear view of the character shown in the reference image. The character stands facing away from the viewer. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.',
+      desc: 'Rear view reference',
+    },
+    {
+      key: 'close-up-portrait',
+      tag: 'close-up',
+      prompt:
+        'Close-up portrait of the character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the camera. Highly detailed facial features, hair, and collar. Soft studio lighting. Clean neutral background.',
+      desc: 'Close-up face/portrait reference',
+    },
+    {
+      key: 'action-pose-task',
+      tag: 'action-pose',
+      prompt:
+        'The character from the reference image actively performing a task or everyday activity — reaching for something, gesturing expressively, working with their hands, or walking with purpose. Natural mid-action body language showing the character doing something. Full body visible. Clean neutral background.',
+      desc: 'Action pose — performing a task/activity',
+    },
+    {
+      key: 'action-pose-motion',
+      tag: 'action-pose',
+      prompt:
+        'The character from the reference image caught in natural motion — turning to look at something, picking up an object, sitting down, or stepping forward. Captured mid-movement in a relaxed, purposeful pose. Conveys what the character is doing, not a heroic stance. Full body visible. Clean neutral background.',
+      desc: 'Action pose — natural movement/activity',
+    },
+    {
+      key: 'expression-anger',
+      tag: 'expression',
+      prompt:
+        'Expressive close-up portrait of the character from the reference image showing intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils. Strong dramatic side-lighting with deep shadows. Head and shoulders framing. Clean dark background.',
+      desc: 'Expression — anger/rage',
+    },
+    {
+      key: 'expression-joy',
+      tag: 'expression',
+      prompt:
+        'Expressive close-up portrait of the character from the reference image showing JOY or TRIUMPH. Wide grin, bright eyes, lifted cheeks. Warm upbeat lighting. Head and shoulders framing. Clean light background.',
+      desc: 'Expression — joy/triumph',
+    },
+    {
+      key: 'expression-fear',
+      tag: 'expression',
+      prompt:
+        'Expressive close-up portrait of the character from the reference image showing FEAR or SHOCK. Wide eyes, raised brows, mouth slightly open. Cool dramatic lighting from below. Head and shoulders framing. Clean background.',
+      desc: 'Expression — fear/shock',
+    },
+    {
+      key: 'character-sheet-3view',
+      tag: 'character-sheet',
+      prompt:
+        'Orthographic character reference sheet of the character from the reference image. Three views arranged side by side: front facing (left), three-quarter view (center), side profile (right). All views show the full body at the same scale. Clean white background, thin guide lines. Comic book character design sheet style.',
+      desc: 'Character sheet — 3-view turnaround',
+    },
   ];
 
   const WORLD_REF_VARIATIONS = [
-    { tag: 'aerial', prompt: 'Aerial bird\'s-eye view of {name}, {description}, wide panoramic perspective showing the full landscape', desc: 'Aerial panoramic view' },
-    { tag: 'interior', prompt: 'Interior view of a key location inside {name}, {description}, detailed architecture and furnishings', desc: 'Interior environment detail' },
-    { tag: 'night', prompt: 'Night scene of {name}, {description}, dark atmosphere with dramatic lighting and shadows', desc: 'Night atmosphere reference' },
-    { tag: 'detail', prompt: 'Close-up architectural or environmental detail of {name}, {description}, texture and material focus', desc: 'Close-up environment detail' },
+    {
+      tag: 'aerial',
+      prompt: "Aerial bird's-eye view of {name}, {description}, wide panoramic perspective showing the full landscape",
+      desc: 'Aerial panoramic view',
+    },
+    {
+      tag: 'interior',
+      prompt: 'Interior view of a key location inside {name}, {description}, detailed architecture and furnishings',
+      desc: 'Interior environment detail',
+    },
+    {
+      tag: 'night',
+      prompt: 'Night scene of {name}, {description}, dark atmosphere with dramatic lighting and shadows',
+      desc: 'Night atmosphere reference',
+    },
+    {
+      tag: 'detail',
+      prompt: 'Close-up architectural or environmental detail of {name}, {description}, texture and material focus',
+      desc: 'Close-up environment detail',
+    },
   ];
 
   /**
@@ -887,8 +1019,20 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
    * Uses {charName}, {charAppearanceNote}, {worldName}, {worldDescription} placeholders.
    */
   const CHARACTER_WORLD_VARIATIONS = [
-    { key: 'in-world-establishing', tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}). Full-body establishing shot showing the character in context with the environment. The world\'s distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.', desc: '{charName} in {worldName} — establishing shot' },
-    { key: 'in-world-activity', tag: 'character-in-world', prompt: 'The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}) — working, exploring, interacting with an object, or moving through the environment. Full-body shot showing the character mid-activity with the world\'s distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.', desc: '{charName} in {worldName} — doing an activity' },
+    {
+      key: 'in-world-establishing',
+      tag: 'character-in-world',
+      prompt:
+        "The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}). Full-body establishing shot showing the character in context with the environment. The world's distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.",
+      desc: '{charName} in {worldName} — establishing shot',
+    },
+    {
+      key: 'in-world-activity',
+      tag: 'character-in-world',
+      prompt:
+        "The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}) — working, exploring, interacting with an object, or moving through the environment. Full-body shot showing the character mid-activity with the world's distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.",
+      desc: '{charName} in {worldName} — doing an activity',
+    },
   ];
 
   /**
@@ -901,7 +1045,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
   async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
     try {
       // Use the user's configured image size rather than a hardcoded default
-      const resolution = options.resolution || await DB.getSetting('imageSize', '1024x1024');
+      const resolution = options.resolution || (await DB.getSetting('imageSize', '1024x1024'));
       // Support multiple reference images via options.imageDataUrls (array) or single sourceDataUrl
       const imageGenOpts = { resolution, model: options.model };
       if (options.imageDataUrls && options.imageDataUrls.length > 0) {

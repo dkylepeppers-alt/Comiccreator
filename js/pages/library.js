@@ -22,10 +22,9 @@ const LibraryPage = (() => {
 
   function applyFilter(comics) {
     const q = _searchQuery.toLowerCase().trim();
-    return comics.filter(c => {
-      const matchesSearch = !q ||
-        (c.title || '').toLowerCase().includes(q) ||
-        (c.genreName || c.genre || '').toLowerCase().includes(q);
+    return comics.filter((c) => {
+      const matchesSearch =
+        !q || (c.title || '').toLowerCase().includes(q) || (c.genreName || c.genre || '').toLowerCase().includes(q);
       const matchesGenre = !_genreFilter || c.genre === _genreFilter;
       return matchesSearch && matchesGenre;
     });
@@ -41,7 +40,9 @@ const LibraryPage = (() => {
         </div>
       `;
     }
-    return filtered.map(c => `
+    return filtered
+      .map(
+        (c) => `
       <div class="list-item" onclick="App.navigate('library', '${c.id}')">
         <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
         <div class="list-item-info">
@@ -56,7 +57,9 @@ const LibraryPage = (() => {
           <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();LibraryPage.deleteComic('${c.id}','${escHtml(c.title || '')}')">&#128465;</button>
         </div>
       </div>
-    `).join('');
+    `,
+      )
+      .join('');
   }
 
   /**
@@ -90,36 +93,48 @@ const LibraryPage = (() => {
 
     const filtered = applyFilter(_allComics);
     // Collect genres that exist in the collection for the filter dropdown
-    const usedGenreIds = [...new Set(_allComics.map(c => c.genre).filter(Boolean))];
-    const usedGenres = GENRES.filter(g => usedGenreIds.includes(g.id));
+    const usedGenreIds = [...new Set(_allComics.map((c) => c.genre).filter(Boolean))];
+    const usedGenres = GENRES.filter((g) => usedGenreIds.includes(g.id));
 
     return `
       <div class="slide-up">
         <h2 class="section-title">My Comics</h2>
         <p class="section-subtitle">Your comic book collection</p>
 
-        ${_allComics.length > 1 ? `
+        ${
+          _allComics.length > 1
+            ? `
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <input type="search" placeholder="Search..." value="${escHtml(_searchQuery)}"
               oninput="LibraryPage.setSearch(this.value)"
               style="flex:1;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;">
-            ${usedGenres.length > 1 ? `
+            ${
+              usedGenres.length > 1
+                ? `
               <select onchange="LibraryPage.setGenre(this.value)"
                 style="padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;">
                 <option value="" ${!_genreFilter ? 'selected' : ''}>All Genres</option>
-                ${usedGenres.map(g => `<option value="${g.id}" ${_genreFilter === g.id ? 'selected' : ''}>${escHtml(g.name)}</option>`).join('')}
+                ${usedGenres.map((g) => `<option value="${g.id}" ${_genreFilter === g.id ? 'selected' : ''}>${escHtml(g.name)}</option>`).join('')}
               </select>
-            ` : ''}
+            `
+                : ''
+            }
           </div>
-        ` : ''}
+        `
+            : ''
+        }
 
-        ${_allComics.length === 0 ? `
+        ${
+          _allComics.length === 0
+            ? `
           <div class="empty-state">
             <div class="empty-state-icon">&#128214;</div>
             <div class="empty-state-text">No comics yet. Create your first one!</div>
             <button class="btn btn-primary" onclick="App.navigate('create')">Create Comic</button>
           </div>
-        ` : `<div id="library-comics-list">${renderComicItems(filtered)}</div>`}
+        `
+            : `<div id="library-comics-list">${renderComicItems(filtered)}</div>`
+        }
       </div>
     `;
   }
@@ -150,7 +165,9 @@ const LibraryPage = (() => {
 
         <!-- Comic Pages -->
         <div id="comic-render-area">
-          ${pages.map((p, i) => `
+          ${pages
+            .map(
+              (p, i) => `
             <div class="card">
               <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
                 <span class="card-title">Page ${i + 1}${p.data?.title ? ': ' + escHtml(p.data.title) : ''}</span>
@@ -160,7 +177,9 @@ const LibraryPage = (() => {
                 ${renderPanels(p.data)}
               </div>
             </div>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </div>
 
         ${pages.length === 0 ? '<p class="text-muted text-center">No pages generated yet.</p>' : ''}
@@ -171,20 +190,32 @@ const LibraryPage = (() => {
   function renderPanels(pageData) {
     if (!pageData || !pageData.panels) return '<p class="text-muted">Empty page</p>';
 
-    return pageData.panels.map((panel, i) => `
+    return pageData.panels
+      .map(
+        (panel, i) => `
       <div class="comic-panel">
-        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;">` :
-          panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:150px;display:flex;align-items:center;justify-content:center;"><p class="text-sm" style="color:#9898cc;font-style:italic;text-align:center;">${escHtml(panel.imagePrompt).slice(0, 200)}</p></div>` :
-          ''}
+        ${
+          panel.imageUrl
+            ? `<img src="${panel.imageUrl}" alt="Panel ${i + 1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;">`
+            : panel.imagePrompt
+              ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:150px;display:flex;align-items:center;justify-content:center;"><p class="text-sm" style="color:#9898cc;font-style:italic;text-align:center;">${escHtml(panel.imagePrompt).slice(0, 200)}</p></div>`
+              : ''
+        }
         ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
-        ${(panel.dialogue || []).map(d => `
+        ${(panel.dialogue || [])
+          .map(
+            (d) => `
           <div class="comic-dialogue">
             <div class="speaker-name">${escHtml(d.speaker)}</div>
             <div>${escHtml(d.text)}</div>
           </div>
-        `).join('')}
+        `,
+          )
+          .join('')}
       </div>
-    `).join('');
+    `,
+      )
+      .join('');
   }
 
   /**
@@ -204,8 +235,10 @@ const LibraryPage = (() => {
 
   /** Bind zoom click handlers after the comic reader HTML is in the DOM. */
   function onMount() {
-    document.querySelectorAll('.zoomable-panel').forEach(img => {
-      img.addEventListener('click', function () { zoomImage(this.src); });
+    document.querySelectorAll('.zoomable-panel').forEach((img) => {
+      img.addEventListener('click', function () {
+        zoomImage(this.src);
+      });
     });
   }
 
@@ -326,26 +359,43 @@ const LibraryPage = (() => {
     <div style="margin-top:20px;color:#999;font-size:0.9rem;">Generated with AI Comic Creator</div>
   </div>
 
-  ${pages.map((p, i) => `
+  ${pages
+    .map(
+      (p, i) => `
     <div class="page-container">
       <div class="page-title">Page ${i + 1}${p.data?.title ? ': ' + escHtml(p.data.title) : ''}</div>
-      <div class="${(p.data?.panels?.length >= 3) ? 'panels-grid' : ''}">
-      ${(p.data?.panels || []).map((panel, pi) => `
+      <div class="${p.data?.panels?.length >= 3 ? 'panels-grid' : ''}">
+      ${(p.data?.panels || [])
+        .map(
+          (panel, pi) => `
         <div class="panel">
-          ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${pi+1}">` :
-            panel.imagePrompt ? `<div class="img-placeholder">${escHtml(panel.imagePrompt).slice(0, 200)}</div>` : ''}
+          ${
+            panel.imageUrl
+              ? `<img src="${panel.imageUrl}" alt="Panel ${pi + 1}">`
+              : panel.imagePrompt
+                ? `<div class="img-placeholder">${escHtml(panel.imagePrompt).slice(0, 200)}</div>`
+                : ''
+          }
           ${panel.narration ? `<div class="narration">${escHtml(panel.narration)}</div>` : ''}
-          ${(panel.dialogue || []).map(d => `
+          ${(panel.dialogue || [])
+            .map(
+              (d) => `
             <div class="dialogue-bubble">
               <div class="speaker">${escHtml(d.speaker)}</div>
               <div>${escHtml(d.text)}</div>
             </div>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </div>
-      `).join('')}
+      `,
+        )
+        .join('')}
       </div>
     </div>
-  `).join('')}
+  `,
+    )
+    .join('')}
 </body>
 </html>`;
   }
@@ -368,15 +418,17 @@ const LibraryPage = (() => {
     const panelW = W - PAD * 2;
 
     // Pre-load all panel images
-    const loadedImages = await Promise.all(panels.map(p => {
-      if (!p.imageUrl) return Promise.resolve(null);
-      return new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
-        img.src = p.imageUrl;
-      });
-    }));
+    const loadedImages = await Promise.all(
+      panels.map((p) => {
+        if (!p.imageUrl) return Promise.resolve(null);
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = p.imageUrl;
+        });
+      }),
+    );
 
     // Calculate total height
     let totalH = PAD;
@@ -451,8 +503,12 @@ const LibraryPage = (() => {
       }
 
       // Dialogue bubbles
-      for (const d of (panel.dialogue || [])) {
-        const bx = x + 16, by = y + 4, bw = panelW - 32, bh = 48, r = 12;
+      for (const d of panel.dialogue || []) {
+        const bx = x + 16,
+          by = y + 4,
+          bw = panelW - 32,
+          bh = 48,
+          r = 12;
 
         // Rounded rect bubble
         ctx.fillStyle = '#ffffff';
@@ -498,7 +554,7 @@ const LibraryPage = (() => {
     }
 
     // Export as PNG download
-    canvas.toBlob(blob => {
+    canvas.toBlob((blob) => {
       if (!blob) return App.toast('Failed to render image', 'error');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -511,8 +567,17 @@ const LibraryPage = (() => {
   }
 
   return {
-    render, onMount, onUnmount, backToList,
-    deleteComic, confirmDelete, exportPDF, downloadPageImage,
-    zoomImage, setSearch, setGenre, clearFilter,
+    render,
+    onMount,
+    onUnmount,
+    backToList,
+    deleteComic,
+    confirmDelete,
+    exportPDF,
+    downloadPageImage,
+    zoomImage,
+    setSearch,
+    setGenre,
+    clearFilter,
   };
 })();

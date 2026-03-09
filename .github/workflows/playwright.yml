@@ -4,7 +4,25 @@ on:
   push:
     branches:
       - '**'
+    paths:
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'sw.js'
+      - 'test/e2e/**'
+      - 'playwright.config.js'
   pull_request:
+    paths:
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'sw.js'
+      - 'test/e2e/**'
+      - 'playwright.config.js'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   e2e:

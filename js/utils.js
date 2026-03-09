@@ -35,7 +35,7 @@
   }
 
   function getGenreEmoji(genre) {
-    const g = GENRES.find(x => x.id === genre);
+    const g = GENRES.find((x) => x.id === genre);
     return g ? g.emoji : '&#128214;';
   }
 
@@ -46,7 +46,7 @@
     const seen = new Set();
     const unique = [];
     for (const item of sorted) {
-      const key = ((item?.name || '').trim().toLowerCase()) || item?.id || '';
+      const key = (item?.name || '').trim().toLowerCase() || item?.id || '';
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(item);
@@ -60,7 +60,9 @@
    */
   function cosineSimilarity(a, b) {
     if (!a?.length || !b?.length || a.length !== b.length) return 0;
-    let dot = 0, magA = 0, magB = 0;
+    let dot = 0,
+      magA = 0,
+      magB = 0;
     for (let i = 0; i < a.length; i++) {
       dot += a[i] * b[i];
       magA += a[i] * a[i];
@@ -92,10 +94,18 @@
     }
 
     // Collapse extra whitespace and orphaned punctuation
-    cleaned = cleaned.replace(/\s{2,}/g, ' ').replace(/^\s*[,;]\s*/, '').trim();
+    cleaned = cleaned
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^\s*[,;]\s*/, '')
+      .trim();
 
     if (!cleaned) {
-      if (typeof App !== 'undefined') App.logError('sanitizeImagePrompt', new Error('Sanitization fallback'), `Sanitization removed all content, falling back to original prompt: "${rawPrompt.slice(0, 100)}..."`);
+      if (typeof App !== 'undefined')
+        App.logError(
+          'sanitizeImagePrompt',
+          new Error('Sanitization fallback'),
+          `Sanitization removed all content, falling back to original prompt: "${rawPrompt.slice(0, 100)}..."`,
+        );
       return rawPrompt;
     }
     return cleaned;
