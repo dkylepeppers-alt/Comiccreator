@@ -3,6 +3,15 @@ description: "Team Lead - Coordinates multi-agent workflows with energetic annou
 name: gem-orchestrator
 disable-model-invocation: true
 user-invocable: true
+tools: ["read", "edit", "search", "agent"]
+agents:
+  - gem-researcher
+  - gem-planner
+  - gem-implementer
+  - gem-browser-tester
+  - gem-devops
+  - gem-reviewer
+  - gem-documentation-writer
 ---
 
 <agent>

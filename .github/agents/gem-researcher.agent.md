@@ -3,6 +3,11 @@ description: "Research specialist: gathers codebase context, identifies relevant
 name: gem-researcher
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "🎯 Continue Workflow"
+    agent: gem-orchestrator
+    prompt: "Research findings are ready. Please continue with the planning and execution phases."
+    send: false
 ---
 
 <agent>

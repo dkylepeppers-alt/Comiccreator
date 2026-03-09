@@ -3,6 +3,11 @@ description: "Generates technical docs, diagrams, maintains code-documentation p
 name: gem-documentation-writer
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "✅ Finalize Workflow"
+    agent: gem-orchestrator
+    prompt: "Documentation is complete. Please finalize the workflow and present the summary."
+    send: false
 ---
 
 <agent>
