@@ -11,10 +11,6 @@ on:
       - 'sw.js'
       - 'test/e2e/**'
       - 'playwright.config.js'
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - 'plan/**'
   pull_request:
     paths:
       - 'js/**'
@@ -23,13 +19,9 @@ on:
       - 'sw.js'
       - 'test/e2e/**'
       - 'playwright.config.js'
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - 'plan/**'
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
