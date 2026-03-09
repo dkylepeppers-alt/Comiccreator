@@ -4,8 +4,7 @@
 # Sections delimited by AUTO-GENERATED-CONTENT markers are replaced with
 # freshly-generated content.  Everything outside the markers is untouched.
 #
-# Requirements: bash ≥ 4, awk, sed, find.  Uses `tree` when available for
-# the directory listing (falls back to `find`-based output otherwise).
+# Requirements: bash ≥ 4, awk, sed, find.
 #
 # Usage:
 #   bash scripts/update-docs.sh
@@ -68,30 +67,24 @@ generate_tree() {
   echo '```'
   echo 'Comiccreator/'
 
-  if command -v tree &>/dev/null; then
-    # tree is available — use it with sensible exclusions
-    tree --dirsfirst -n --charset=utf-8 --noreport \
-         -I 'node_modules|test-results|playwright-report' . \
-      | tail -n +2   # skip the first line (root ".")
-  else
-    # Portable fallback using find + indented listing
-    find . \
-      -path './node_modules' -prune -o \
-      -path './test-results' -prune -o \
-      -path './playwright-report' -prune -o \
-      -path './.git' -prune -o \
-      \( -type f -o -type d \) -print \
-    | sed 's|^\./||' \
-    | sort \
-    | awk '{
-        n = split($0, parts, "/")
-        indent = ""
-        for (i = 1; i < n; i++) indent = indent "    "
-        name = parts[n]
-        # Detect directories (they appear as prefixes of other entries)
-        print indent name
-      }'
-  fi
+  # Deterministic, portable directory listing using find.
+  # Always uses find (never tree) so output is identical across CI and local.
+  find . \
+    -path './node_modules' -prune -o \
+    -path './test-results' -prune -o \
+    -path './playwright-report' -prune -o \
+    -path './.git' -prune -o \
+    \( -type f -o -type d \) -print \
+  | sed 's|^\./||' \
+  | sed '/^\.$/d' \
+  | sort \
+  | awk '{
+      n = split($0, parts, "/")
+      indent = ""
+      for (i = 1; i < n; i++) indent = indent "    "
+      name = parts[n]
+      print indent name
+    }'
 
   echo '```'
 }

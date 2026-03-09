@@ -153,7 +153,7 @@ Additional workflows:
 - `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs checks, bumps version, tags, creates GitHub Release
 - `.github/workflows/security.yml` — weekly `npm audit --audit-level=high` security scan
 
-`auto-bump.yml` and `auto-update-docs.yml` share a concurrency group (`auto-main-push`) to serialize bot pushes and avoid non-fast-forward failures.
+`auto-bump.yml` and `auto-update-docs.yml` share a concurrency group (`auto-main-push`). `auto-bump` uses `cancel-in-progress: true` so only the latest push is bumped; `auto-update-docs` uses `cancel-in-progress: false` and retries pushes with rebase to handle non-fast-forward failures.
 
 All steps must pass before merging. If CI is red, check the workflow run logs.
 

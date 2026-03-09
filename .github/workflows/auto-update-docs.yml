@@ -35,8 +35,32 @@ jobs:
         run: |
           git add README.md
           if ! git diff --staged --quiet; then
+            # Sync to latest origin/Main before committing to avoid
+            # non-fast-forward failures when auto-bump pushes first.
+            git fetch origin Main
+            git rebase origin/Main
+
             git commit -m "docs: auto-update README generated sections"
-            git push origin "HEAD:${{ github.ref_name }}"
+
+            max_attempts=3
+            attempt=1
+            while true; do
+              if git push origin "HEAD:${{ github.ref_name }}"; then
+                echo "Push succeeded."
+                break
+              fi
+
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Push failed after ${max_attempts} attempts; giving up."
+                exit 1
+              fi
+
+              echo "Push failed (attempt ${attempt}); fetching and rebasing before retry..."
+              git fetch origin Main
+              git rebase origin/Main
+
+              attempt=$((attempt + 1))
+            done
           else
             echo "No documentation changes detected — skipping commit."
           fi

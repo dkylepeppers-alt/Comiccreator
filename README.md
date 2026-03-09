@@ -137,53 +137,82 @@ Image generation can be disabled in Settings to save API credits (text-only comi
 <!-- AUTO-GENERATED-CONTENT:START (DIRECTORY_TREE) -->
 ```
 Comiccreator/
-├── css
-│   └── app.css
-├── docs
-│   └── image-generation-pipeline.md
-├── icons
-│   ├── icon-192.png
-│   ├── icon-512.png
-│   └── icon.svg
-├── js
-│   ├── pages
-│   │   ├── characters.js
-│   │   ├── create.js
-│   │   ├── home.js
-│   │   ├── image-presets.js
-│   │   ├── library.js
-│   │   ├── presets.js
-│   │   ├── settings.js
-│   │   └── worlds.js
-│   ├── api.js
-│   ├── app.js
-│   ├── db.js
-│   └── utils.js
-├── scripts
-│   ├── bump-version.sh
-│   ├── install-hooks.sh
-│   ├── pre-commit
-│   └── update-docs.sh
-├── test
-│   ├── e2e
-│   │   └── smoke.spec.js
-│   ├── api-integration.test.js
-│   ├── api-pure.test.js
-│   ├── config-integrity.test.js
-│   ├── db.test.js
-│   ├── pure-functions.test.js
-│   └── utils.test.js
-├── README.md
-├── TEST_COVERAGE_ANALYSIS.md
-├── eslint.config.js
-├── generate-icons.html
-├── index.html
-├── manifest.json
-├── package-lock.json
-├── package.json
-├── playwright.config.js
-├── sw.js
-└── version.json
+.editorconfig
+.github
+    agents
+        Bugfixer.agent.md
+        Docs-agent.agent.md
+        Readme.agent.md
+        architect-innovator.md
+        gem-browser-tester.agent.md
+        gem-devops.agent.md
+        gem-documentation-writer.agent.md
+        gem-implementer.agent.md
+        gem-orchestrator.agent.md
+        gem-planner.agent.md
+        gem-researcher.agent.md
+        gem-reviewer.agent.md
+        my-agent.agent.md
+    copilot-instructions.md
+    dependabot.yml
+    workflows
+        auto-bump.yml
+        auto-update-docs.yml
+        deploy-pages.yml
+        playwright.yml
+        release.yml
+        security.yml
+        tests.yml
+.gitignore
+.nojekyll
+.prettierrc
+README.md
+TEST_COVERAGE_ANALYSIS.md
+css
+    app.css
+docs
+    image-generation-pipeline.md
+eslint.config.js
+generate-icons.html
+icons
+    icon-192.png
+    icon-512.png
+    icon.svg
+index.html
+js
+    api.js
+    app.js
+    db.js
+    pages
+        characters.js
+        create.js
+        home.js
+        image-presets.js
+        library.js
+        presets.js
+        settings.js
+        worlds.js
+    utils.js
+manifest.json
+package-lock.json
+package.json
+playwright.config.js
+scripts
+    bump-version.sh
+    install-hooks.sh
+    pre-commit
+    update-docs.sh
+sw.js
+test
+    api-integration.test.js
+    api-pure.test.js
+    config-integrity.test.js
+    db.test.js
+    e2e
+        smoke.spec.js
+    pure-functions.test.js
+    utils.test.js
+version.json
 ```
 <!-- AUTO-GENERATED-CONTENT:END (DIRECTORY_TREE) -->
 
@@ -366,7 +395,7 @@ On every push to `Main`, `.github/workflows/auto-bump.yml` automatically runs a 
 
 ### Auto-Updating Documentation
 
-Sections of this README marked with `<!-- AUTO-GENERATED-CONTENT -->` comments are regenerated automatically. On every push to `Main`, `.github/workflows/auto-update-docs.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
+Sections of this README wrapped in `<!-- AUTO-GENERATED-CONTENT:START (NAME) -->` / `<!-- AUTO-GENERATED-CONTENT:END (NAME) -->` comments are regenerated automatically. On every push to `Main`, `.github/workflows/auto-update-docs.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
 
 - **Architecture directory tree** — reflects the actual file structure of the repository
 - **CI Workflows table** — lists all workflow files with their triggers and names
