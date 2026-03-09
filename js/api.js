@@ -503,6 +503,11 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       prompt += `\nWORLD SETTING:\nName: ${world.name}\nDescription: ${world.description}\n`;
       if (world.details) prompt += `Details: ${world.details}\n`;
       if (world.atmosphere) prompt += `Atmosphere: ${world.atmosphere}\n`;
+      prompt += `\nWORLD VISUAL RULES:
+- Every imagePrompt must ground the scene in ${world.name}. Include at least one specific environmental detail (architecture style, lighting quality, material textures, colour palette) that reflects this world's atmosphere.
+- When characters appear indoors, name the specific interior space (e.g., "a cluttered kitchen in ${world.name}", "the dim office corridor of ${world.name}") rather than a generic room.
+- When characters appear outdoors, name the specific exterior context (e.g., "the rain-slicked streets of ${world.name}", "the rooftop overlooking ${world.name}") to reinforce the world's visual identity.
+- Blend the character's presence with the world — show how they belong to (or contrast with) this environment through lighting, colour mood, and framing.`;
     }
 
     return prompt;
@@ -993,24 +998,76 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
 
   const WORLD_REF_VARIATIONS = [
     {
+      tag: 'establishing',
+      prompt:
+        'Wide establishing shot of {name}, {description}. Eye-level perspective showing the full scope of the location — buildings, skyline, or landscape. Neutral daylight lighting. Cinematic composition with foreground, midground, and background layers clearly visible.',
+      desc: 'Wide establishing shot',
+    },
+    {
       tag: 'aerial',
-      prompt: "Aerial bird's-eye view of {name}, {description}, wide panoramic perspective showing the full landscape",
+      prompt:
+        "Aerial bird's-eye view of {name}, {description}. Wide panoramic overhead perspective revealing the full layout and scale of the location — streets, structures, terrain. Dramatic depth of field, natural daylight.",
       desc: 'Aerial panoramic view',
     },
     {
+      tag: 'exterior-street',
+      prompt:
+        'Street-level exterior view of {name}, {description}. Looking down the main street or thoroughfare — storefronts, pavement, signage, pedestrian scale. Realistic environmental detail with atmospheric perspective.',
+      desc: 'Street-level exterior view',
+    },
+    {
+      tag: 'exterior-entrance',
+      prompt:
+        'Close-up of the main entrance or facade of {name}, {description}. Architectural detail — doors, archways, steps, signage, and surrounding exterior elements. Medium shot framing the entry point directly.',
+      desc: 'Entrance / facade detail',
+    },
+    {
+      tag: 'interior-living-room',
+      prompt:
+        'Interior view of the living room or main common area inside {name}, {description}. Comfortable furnishings, ambient lighting, personal objects and décor that reflect the world\'s tone and era. Medium wide shot showing the full room.',
+      desc: 'Interior — living room / common area',
+    },
+    {
+      tag: 'interior-kitchen',
+      prompt:
+        'Interior view of the kitchen or food preparation area inside {name}, {description}. Countertops, appliances or period-appropriate cooking equipment, utensils, and supplies. Warm functional lighting. Medium wide shot.',
+      desc: 'Interior — kitchen',
+    },
+    {
+      tag: 'interior-bedroom',
+      prompt:
+        'Interior view of a bedroom inside {name}, {description}. Bed, personal belongings, window, and décor elements that reflect the inhabitant\'s personality and the world\'s era. Soft ambient lighting. Medium wide shot.',
+      desc: 'Interior — bedroom',
+    },
+    {
+      tag: 'interior-office',
+      prompt:
+        'Interior view of an office, study, or workspace inside {name}, {description}. Desk, equipment, shelves, documents, and environmental details suited to the world\'s era and tone. Directional task lighting. Medium wide shot.',
+      desc: 'Interior — office / workspace',
+    },
+    {
       tag: 'interior',
-      prompt: 'Interior view of a key location inside {name}, {description}, detailed architecture and furnishings',
+      prompt:
+        'Interior view of a key location inside {name}, {description}. Detailed architecture, furnishings, lighting fixtures, and atmospheric props that establish the world\'s tone. Medium wide angle shot showing spatial depth.',
       desc: 'Interior environment detail',
     },
     {
       tag: 'night',
-      prompt: 'Night scene of {name}, {description}, dark atmosphere with dramatic lighting and shadows',
+      prompt:
+        'Night scene of {name}, {description}. Dark atmosphere with dramatic artificial lighting — neon, lanterns, streetlights, or moonlight casting pools of light and deep shadows. High contrast mood, cinematic composition.',
       desc: 'Night atmosphere reference',
     },
     {
       tag: 'detail',
-      prompt: 'Close-up architectural or environmental detail of {name}, {description}, texture and material focus',
+      prompt:
+        'Close-up architectural or environmental detail of {name}, {description}. Extreme texture and material focus — worn stone, metal grating, weathered wood, graffiti, foliage, or signature objects. Shallow depth of field emphasising surface quality.',
       desc: 'Close-up environment detail',
+    },
+    {
+      tag: 'landmark',
+      prompt:
+        'Hero shot of the most iconic landmark or recognisable structure of {name}, {description}. Dramatic low-angle or three-quarter perspective emphasising the scale and character of the landmark. Cinematic lighting that highlights the structure\'s defining features.',
+      desc: 'Iconic landmark / hero shot',
     },
   ];
 
@@ -1032,6 +1089,20 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       prompt:
         "The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}) — working, exploring, interacting with an object, or moving through the environment. Full-body shot showing the character mid-activity with the world's distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.",
       desc: '{charName} in {worldName} — doing an activity',
+    },
+    {
+      key: 'in-world-closeup',
+      tag: 'character-in-world',
+      prompt:
+        "Close-up portrait of {charName}{charAppearanceNote} inside {worldName} ({worldDescription}). Head and shoulders framing with the world's environment softly visible in the background — architecture, lighting, and atmosphere subtly establishing the location. The character's expression is engaged and context-aware. Match the art style of the provided reference images.",
+      desc: '{charName} in {worldName} — close-up portrait',
+    },
+    {
+      key: 'in-world-interior',
+      tag: 'character-in-world',
+      prompt:
+        "The character {charName}{charAppearanceNote} inside an interior space within {worldName} ({worldDescription}). The room's furnishings, lighting, and architectural details clearly place the character in this world. The character interacts naturally with the space — seated, examining something, or in conversation. Full-body or medium shot. Match the art style of the provided reference images.",
+      desc: '{charName} in {worldName} — interior scene',
     },
   ];
 
