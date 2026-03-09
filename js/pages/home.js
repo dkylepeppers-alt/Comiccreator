@@ -54,13 +54,17 @@ const HomePage = (() => {
         </div>
 
         <!-- Recent Comics -->
-        ${recentComics.length > 0 ? `
+        ${
+          recentComics.length > 0
+            ? `
           <div class="mt-md">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
               <h3 class="card-title">Recent Comics</h3>
               <button class="btn btn-sm btn-secondary" onclick="App.navigate('library')">View All</button>
             </div>
-            ${recentComics.map(c => `
+            ${recentComics
+              .map(
+                (c) => `
               <div class="list-item" onclick="App.navigate('library', '${c.id}')">
                 <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
                 <div class="list-item-info">
@@ -68,25 +72,31 @@ const HomePage = (() => {
                   <div class="list-item-desc">${escHtml(c.genre)} &middot; ${c.pageCount || 0} pages &middot; ${timeAgo(c.updatedAt || c.createdAt)}</div>
                 </div>
               </div>
-            `).join('')}
+            `,
+              )
+              .join('')}
           </div>
-        ` : `
+        `
+            : `
           <div class="empty-state mt-md">
             <div class="empty-state-icon">&#128214;</div>
             <div class="empty-state-text">No comics yet. Create your first one!</div>
           </div>
-        `}
+        `
+        }
 
         <!-- Genre Showcase -->
         <div class="mt-md">
           <h3 class="card-title mb-sm">Available Genres</h3>
           <div class="genre-grid">
-            ${GENRES.map(g => `
+            ${GENRES.map(
+              (g) => `
               <div class="genre-card" onclick="App.navigate('create', '${g.id}')">
                 <span class="genre-emoji">${g.emoji}</span>
                 ${g.name}
               </div>
-            `).join('')}
+            `,
+            ).join('')}
           </div>
         </div>
       </div>

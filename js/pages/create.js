@@ -14,9 +14,9 @@ const CreatePage = (() => {
     title: '',
     storyPrompt: '',
     pages: [],
-    pageIds: [],    // DB ids parallel to pages[], used for re-roll / undo
+    pageIds: [], // DB ids parallel to pages[], used for re-roll / undo
     conversationHistory: [],
-    referenceImages: [],      // world ref images [{dataUrl, label, type}]
+    referenceImages: [], // world ref images [{dataUrl, label, type}]
     characterImagesByName: {}, // name → images[] from multi-image gallery
     characters: [],
     isGenerating: false,
@@ -33,15 +33,54 @@ const CreatePage = (() => {
 
   // Keyword-to-tag affinity map used for fallback ref image selection when embeddings are unavailable
   const TAG_KEYWORDS = {
-    'front-view':           ['front', 'facing', 'standing', 'full body', 'looking at'],
-    'side-view':            ['profile', 'side view', 'side-on', 'looking away'],
-    'back-view':            ['behind', 'back view', 'from behind', 'walking away', 'rear'],
-    'close-up':             ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
-    'action-pose':          ['doing', 'performing', 'reaching', 'picking up', 'working', 'walking', 'moving', 'gesturing', 'carrying', 'running', 'jumping', 'sitting', 'turning', 'action', 'activity', 'task', 'mid-action'],
-    'alternate-outfit':     ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
-    'expression':           ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
-    'character-sheet':      ['character sheet', 'turnaround', 'model sheet', 'reference sheet', 'multiple angles', 'multiple poses', 'multi-angle', 'multi-pose', 'full rotation', '360', 'orthographic'],
-    'character-in-world':   ['in the world', 'in the city', 'in the setting', 'environment', 'landscape', 'outdoors', 'indoors', 'location'],
+    'front-view': ['front', 'facing', 'standing', 'full body', 'looking at'],
+    'side-view': ['profile', 'side view', 'side-on', 'looking away'],
+    'back-view': ['behind', 'back view', 'from behind', 'walking away', 'rear'],
+    'close-up': ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
+    'action-pose': [
+      'doing',
+      'performing',
+      'reaching',
+      'picking up',
+      'working',
+      'walking',
+      'moving',
+      'gesturing',
+      'carrying',
+      'running',
+      'jumping',
+      'sitting',
+      'turning',
+      'action',
+      'activity',
+      'task',
+      'mid-action',
+    ],
+    'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
+    expression: ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
+    'character-sheet': [
+      'character sheet',
+      'turnaround',
+      'model sheet',
+      'reference sheet',
+      'multiple angles',
+      'multiple poses',
+      'multi-angle',
+      'multi-pose',
+      'full rotation',
+      '360',
+      'orthographic',
+    ],
+    'character-in-world': [
+      'in the world',
+      'in the city',
+      'in the setting',
+      'environment',
+      'landscape',
+      'outdoors',
+      'indoors',
+      'location',
+    ],
   };
 
   async function render(param) {
@@ -54,7 +93,7 @@ const CreatePage = (() => {
     }
 
     // If param is a genre id, pre-select it
-    if (param && GENRES.find(g => g.id === param)) {
+    if (param && GENRES.find((g) => g.id === param)) {
       state.genre = param;
     }
     // If param is a comic id, resume that comic
@@ -75,8 +114,14 @@ const CreatePage = (() => {
     const worlds = await DB.getAll(DB.STORES.worlds);
     const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
     const imagePresets = dedupeByNameLatest(await DB.getAll(DB.STORES.imagePresets));
-    const hasDraft = state.genre || state.title || state.storyPrompt ||
-      (state.selectedCharacters?.length > 0) || state.selectedWorld || state.selectedPreset || state.selectedImagePreset;
+    const hasDraft =
+      state.genre ||
+      state.title ||
+      state.storyPrompt ||
+      state.selectedCharacters?.length > 0 ||
+      state.selectedWorld ||
+      state.selectedPreset ||
+      state.selectedImagePreset;
 
     return `
       <div class="slide-up">
@@ -89,53 +134,75 @@ const CreatePage = (() => {
         <div class="card">
           <h3 class="card-title mb-sm">1. Choose Genre</h3>
           <div class="genre-grid" id="genre-grid">
-            ${GENRES.map(g => `
+            ${GENRES.map(
+              (g) => `
               <div class="genre-card ${state.genre === g.id ? 'active' : ''}" data-genre="${g.id}" onclick="CreatePage.selectGenre('${g.id}')">
                 <span class="genre-emoji">${g.emoji}</span>
                 ${g.name}
               </div>
-            `).join('')}
+            `,
+            ).join('')}
           </div>
-          ${state.genre === 'custom' ? `
+          ${
+            state.genre === 'custom'
+              ? `
             <div class="form-group mt-sm">
               <input type="text" id="custom-genre" value="${escHtml(state.customGenre)}" placeholder="Enter your custom genre..." onchange="CreatePage.setCustomGenre(this.value)">
             </div>
-          ` : ''}
+          `
+              : ''
+          }
         </div>
 
         <!-- Step 2: Characters -->
         <div class="card">
           <h3 class="card-title mb-sm">2. Select Characters</h3>
-          ${characters.length === 0 ? `
+          ${
+            characters.length === 0
+              ? `
             <p class="text-sm text-muted mb-sm">No characters created yet.</p>
             <button class="btn btn-sm btn-secondary" onclick="App.navigate('characters', 'new')">Create Character</button>
-          ` : `
+          `
+              : `
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              ${characters.map(c => `
+              ${characters
+                .map(
+                  (c) => `
                 <div class="chip ${state.selectedCharacters.includes(c.id) ? 'active' : ''}" onclick="CreatePage.toggleCharacter('${c.id}')">
                   ${escHtml(c.name)}
                 </div>
-              `).join('')}
+              `,
+                )
+                .join('')}
             </div>
-          `}
+          `
+          }
         </div>
 
         <!-- Step 3: World -->
         <div class="card">
           <h3 class="card-title mb-sm">3. Select World (optional)</h3>
-          ${worlds.length === 0 ? `
+          ${
+            worlds.length === 0
+              ? `
             <p class="text-sm text-muted mb-sm">No worlds created yet.</p>
             <button class="btn btn-sm btn-secondary" onclick="App.navigate('worlds', 'new')">Create World</button>
-          ` : `
+          `
+              : `
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
               <div class="chip ${!state.selectedWorld ? 'active' : ''}" onclick="CreatePage.selectWorld(null)">None</div>
-              ${worlds.map(w => `
+              ${worlds
+                .map(
+                  (w) => `
                 <div class="chip ${state.selectedWorld === w.id ? 'active' : ''}" onclick="CreatePage.selectWorld('${w.id}')">
                   ${escHtml(w.name)}
                 </div>
-              `).join('')}
+              `,
+                )
+                .join('')}
             </div>
-          `}
+          `
+          }
         </div>
 
         <!-- Step 4: Preset -->
@@ -143,11 +210,15 @@ const CreatePage = (() => {
           <h3 class="card-title mb-sm">4. Prompt Preset (optional)</h3>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             <div class="chip ${!state.selectedPreset ? 'active' : ''}" onclick="CreatePage.selectPreset(null)">Default</div>
-            ${presets.map(p => `
+            ${presets
+              .map(
+                (p) => `
               <div class="chip ${state.selectedPreset === p.id ? 'active' : ''}" onclick="CreatePage.selectPreset('${p.id}')">
                 ${escHtml(p.name)}
               </div>
-            `).join('')}
+            `,
+              )
+              .join('')}
           </div>
         </div>
 
@@ -156,11 +227,15 @@ const CreatePage = (() => {
           <h3 class="card-title mb-sm">5. Image Style Preset (optional)</h3>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             <div class="chip ${!state.selectedImagePreset ? 'active' : ''}" onclick="CreatePage.selectImagePreset(null)">Default</div>
-            ${imagePresets.map(p => `
+            ${imagePresets
+              .map(
+                (p) => `
               <div class="chip ${state.selectedImagePreset === p.id ? 'active' : ''}" onclick="CreatePage.selectImagePreset('${p.id}')">
                 ${escHtml(p.name)}
               </div>
-            `).join('')}
+            `,
+              )
+              .join('')}
           </div>
           <div class="form-hint" style="margin-top:8px;">
             <a href="#" onclick="event.preventDefault();App.navigate('image-presets')">Manage image style presets</a>
@@ -190,10 +265,13 @@ const CreatePage = (() => {
 
   function renderGenerating() {
     const contextMsg =
-      state.generatingContext === 'reroll'   ? 'Re-rolling page...' :
-      state.generatingContext === 'continue' ? 'Continuing story...' :
-      state.generatingContext === 'reimage'  ? 'Regenerating images...' :
-      'Generating your comic page...';
+      state.generatingContext === 'reroll'
+        ? 'Re-rolling page...'
+        : state.generatingContext === 'continue'
+          ? 'Continuing story...'
+          : state.generatingContext === 'reimage'
+            ? 'Regenerating images...'
+            : 'Generating your comic page...';
     return `
       <div class="slide-up">
         <div class="loading-overlay" id="gen-loading">
@@ -236,18 +314,26 @@ const CreatePage = (() => {
         </div>
 
         <!-- Choices -->
-        ${currentPage && currentPage.choices && currentPage.choices.length > 0 ? `
+        ${
+          currentPage && currentPage.choices && currentPage.choices.length > 0
+            ? `
           <div class="card">
             <h3 class="card-title mb-sm">What happens next?</h3>
             <div class="choices-container">
-              ${currentPage.choices.map((choice, i) => `
+              ${currentPage.choices
+                .map(
+                  (choice, i) => `
                 <button class="choice-btn" onclick="CreatePage.makeChoice(${i})" ${state.isGenerating ? 'disabled' : ''}>
                   <strong>Option ${i + 1}:</strong> ${escHtml(choice.text)}
                 </button>
-              `).join('')}
+              `,
+                )
+                .join('')}
             </div>
           </div>
-        ` : ''}
+        `
+            : ''
+        }
 
         <!-- Custom continuation -->
         <div class="card">
@@ -264,21 +350,30 @@ const CreatePage = (() => {
         </div>
 
         <!-- Page History -->
-        ${pages.length > 1 ? `
+        ${
+          pages.length > 1
+            ? `
           <div class="card">
             <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
               <h3 class="card-title" style="margin:0;">Previous Pages (${pages.length - 1})</h3>
             </div>
             <div class="collapsible-body collapsed">
-              ${pages.slice(0, -1).map((p, i) => `
+              ${pages
+                .slice(0, -1)
+                .map(
+                  (p, i) => `
                 <div style="border-bottom:1px solid var(--border);padding:12px 0;">
                   <div class="text-sm" style="font-weight:600;">Page ${i + 1}: ${escHtml(p.title || '')}</div>
                   <div class="text-sm text-muted mt-sm">${p.panels ? p.panels.length : 0} panels</div>
                 </div>
-              `).join('')}
+              `,
+                )
+                .join('')}
             </div>
           </div>
-        ` : ''}
+        `
+            : ''
+        }
       </div>
     `;
   }
@@ -286,20 +381,32 @@ const CreatePage = (() => {
   function renderComicPage(page) {
     if (!page || !page.panels) return '<p class="text-muted">Empty page</p>';
 
-    return page.panels.map((panel, i) => `
+    return page.panels
+      .map(
+        (panel, i) => `
       <div class="comic-panel">
-        ${panel.imageUrl ? `<img src="${panel.imageUrl}" alt="Panel ${i+1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;" onclick="CreatePage.zoomPanel(${i})">` :
-          panel.imagePrompt ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:180px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted text-center" style="font-style:italic;">${escHtml(panel.imagePrompt).slice(0, 150)}...</p></div>` :
-          ''}
+        ${
+          panel.imageUrl
+            ? `<img src="${panel.imageUrl}" alt="Panel ${i + 1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;" onclick="CreatePage.zoomPanel(${i})">`
+            : panel.imagePrompt
+              ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:180px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted text-center" style="font-style:italic;">${escHtml(panel.imagePrompt).slice(0, 150)}...</p></div>`
+              : ''
+        }
         ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
-        ${(panel.dialogue || []).map(d => `
+        ${(panel.dialogue || [])
+          .map(
+            (d) => `
           <div class="comic-dialogue">
             <div class="speaker-name">${escHtml(d.speaker)}</div>
             <div>${escHtml(d.text)}</div>
           </div>
-        `).join('')}
+        `,
+          )
+          .join('')}
       </div>
-    `).join('');
+    `,
+      )
+      .join('');
   }
 
   async function renderResume(comicId) {
@@ -316,8 +423,8 @@ const CreatePage = (() => {
     state.selectedWorld = comic.worldId || null;
     state.selectedPreset = comic.presetId || null;
     state.selectedImagePreset = comic.imagePresetId || null;
-    state.pages = pages.map(p => p.data);
-    state.pageIds = pages.map(p => p.id);   // restore ids for re-roll/undo
+    state.pages = pages.map((p) => p.data);
+    state.pageIds = pages.map((p) => p.id); // restore ids for re-roll/undo
     state.conversationHistory = comic.conversationHistory || [];
     state.step = 'reading';
     state.isGenerating = false;
@@ -348,7 +455,14 @@ const CreatePage = (() => {
         if (world) {
           const migratedWorld = DB.migrateWorld(world);
           for (const img of migratedWorld.images || []) {
-            if (img?.dataUrl) refImages.push({ dataUrl: img.dataUrl, label: world.name, tag: img.tag || '', description: img.description || '', type: 'world' });
+            if (img?.dataUrl)
+              refImages.push({
+                dataUrl: img.dataUrl,
+                label: world.name,
+                tag: img.tag || '',
+                description: img.description || '',
+                type: 'world',
+              });
           }
         }
       }
@@ -436,7 +550,7 @@ const CreatePage = (() => {
 
   function selectGenre(id) {
     state.genre = id;
-    document.querySelectorAll('.genre-card').forEach(el => {
+    document.querySelectorAll('.genre-card').forEach((el) => {
       el.classList.toggle('active', el.dataset.genre === id);
     });
     scheduleDraftSave();
@@ -522,7 +636,14 @@ const CreatePage = (() => {
       if (world) {
         const migratedWorld = DB.migrateWorld(world);
         for (const img of migratedWorld.images || []) {
-          if (img?.dataUrl) refImages.push({ dataUrl: img.dataUrl, label: world.name, tag: img.tag || '', description: img.description || '', type: 'world' });
+          if (img?.dataUrl)
+            refImages.push({
+              dataUrl: img.dataUrl,
+              label: world.name,
+              tag: img.tag || '',
+              description: img.description || '',
+              type: 'world',
+            });
         }
       }
     }
@@ -534,8 +655,10 @@ const CreatePage = (() => {
       presetData = await DB.get(DB.STORES.presets, state.selectedPreset);
     }
 
-    const genreName = state.genre === 'custom' ? (state.customGenre || 'Custom') :
-      GENRES.find(g => g.id === state.genre)?.name || state.genre;
+    const genreName =
+      state.genre === 'custom'
+        ? state.customGenre || 'Custom'
+        : GENRES.find((g) => g.id === state.genre)?.name || state.genre;
 
     // Fetch available image sizes for dynamic per-panel sizing
     const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
@@ -561,12 +684,12 @@ const CreatePage = (() => {
       characters,
       world,
       presetData?.systemPrompt || null,
-      systemPromptOpts
+      systemPromptOpts,
     );
 
-    const userMessage = state.storyPrompt ?
-      `Create the first page of a ${genreName} comic titled "${state.title}". Opening scene: ${state.storyPrompt}` :
-      `Create the first page of a ${genreName} comic titled "${state.title}". Begin with an engaging opening scene.`;
+    const userMessage = state.storyPrompt
+      ? `Create the first page of a ${genreName} comic titled "${state.title}". Opening scene: ${state.storyPrompt}`
+      : `Create the first page of a ${genreName} comic titled "${state.title}". Begin with an engaging opening scene.`;
 
     state.conversationHistory = [
       { role: 'system', content: systemPrompt },
@@ -626,7 +749,7 @@ const CreatePage = (() => {
     const imagePresetData = state.selectedImagePreset
       ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
       : null;
-    const imagePromptPrefix = imagePresetData?.promptPrefix || await DB.getSetting('imagePromptPrefix', '');
+    const imagePromptPrefix = imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', ''));
     const charRefMode = await DB.getSetting('charRefMode', 'auto');
     const maxRefImages = await DB.getSetting('maxRefImages', 4);
     const enrichEnabled = await DB.getSetting('enrichImagePrompts', false);
@@ -634,8 +757,8 @@ const CreatePage = (() => {
 
     // Normalize world refs (plain strings and labeled objects)
     const worldRefs = state.referenceImages
-      .map(item => typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item)
-      .filter(r => r.type === 'world');
+      .map((item) => (typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item))
+      .filter((r) => r.type === 'world');
 
     // Cache panel prompt embeddings within this page generation
     const promptEmbeddingCache = new Map();
@@ -658,7 +781,7 @@ const CreatePage = (() => {
 
     // Select the best image from a character's images[] using hybrid cascading strategy
     async function selectBestImage(charImages, panelPromptText, charName, primaryImageIndex) {
-      const valid = (charImages || []).filter(img => img && img.dataUrl);
+      const valid = (charImages || []).filter((img) => img && img.dataUrl);
       if (!valid.length) return null;
       if (valid.length === 1) return valid[0];
 
@@ -667,7 +790,7 @@ const CreatePage = (() => {
 
       // 1. Embedding-based selection (unless mode is 'keyword')
       if (charRefMode !== 'keyword') {
-        const withEmb = valid.filter(img => img.embedding?.length);
+        const withEmb = valid.filter((img) => img.embedding?.length);
         if (withEmb.length > 0) {
           const panelEmb = await getPromptEmbedding(panelPromptText);
           if (panelEmb) {
@@ -675,35 +798,54 @@ const CreatePage = (() => {
             let bestScore = cosineSimilarity(panelEmb, withEmb[0].embedding);
             for (let i = 1; i < withEmb.length; i++) {
               const score = cosineSimilarity(panelEmb, withEmb[i].embedding);
-              if (score > bestScore) { bestScore = score; best = withEmb[i]; }
+              if (score > bestScore) {
+                bestScore = score;
+                best = withEmb[i];
+              }
             }
             return best;
           }
           // Embedding fetch failed — fall through to keyword
-          App.logError('selectBestImage', new Error('Embedding fallback'), `Embedding unavailable for panel prompt, falling back to keyword matching. Character: ${charName}, prompt: "${promptSnippet}..."`);
+          App.logError(
+            'selectBestImage',
+            new Error('Embedding fallback'),
+            `Embedding unavailable for panel prompt, falling back to keyword matching. Character: ${charName}, prompt: "${promptSnippet}..."`,
+          );
         } else {
           // No stored embeddings — fall through to keyword
-          App.logError('selectBestImage', new Error('Embedding fallback'), `No stored embeddings for character "${charName}", falling back to keyword matching. Prompt: "${promptSnippet}..."`);
+          App.logError(
+            'selectBestImage',
+            new Error('Embedding fallback'),
+            `No stored embeddings for character "${charName}", falling back to keyword matching. Prompt: "${promptSnippet}..."`,
+          );
         }
       }
 
       // 2. Keyword tag matching (unless mode is 'semantic')
       if (charRefMode !== 'semantic') {
-        let bestScore = 0, bestImg = null;
+        let bestScore = 0,
+          bestImg = null;
         for (const img of valid) {
           const keywords = TAG_KEYWORDS[img.tag] || [];
-          const score = keywords.filter(kw => panelLower.includes(kw)).length;
-          if (score > bestScore) { bestScore = score; bestImg = img; }
+          const score = keywords.filter((kw) => panelLower.includes(kw)).length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestImg = img;
+          }
         }
         if (bestScore > 0 && bestImg) return bestImg;
         // No keyword match — fall through to primary
-        App.logError('selectBestImage', new Error('Keyword fallback'), `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`);
+        App.logError(
+          'selectBestImage',
+          new Error('Keyword fallback'),
+          `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`,
+        );
       }
 
       // 3. Fall back to primary image using configured primaryImageIndex
       const primaryIdx = typeof primaryImageIndex === 'number' ? primaryImageIndex : 0;
       const primary = (charImages || [])[primaryIdx];
-      return (primary && primary.dataUrl) ? primary : valid[0];
+      return primary && primary.dataUrl ? primary : valid[0];
     }
 
     // Build a composite character sheet canvas when multiple chars share budget
@@ -721,28 +863,36 @@ const CreatePage = (() => {
       ctx.fillStyle = '#1a1a2e';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      await Promise.all(charMatches.map(({ name, img }, i) => new Promise(resolve => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = col * cellSize;
-        const y = row * cellSize;
-        const drawLabel = () => {
-          ctx.fillStyle = 'rgba(0,0,0,0.75)';
-          ctx.fillRect(x, y + cellSize - 22, cellSize, 22);
-          ctx.fillStyle = '#fff';
-          ctx.font = '12px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(name, x + cellSize / 2, y + cellSize - 7);
-        };
-        const image = new Image();
-        image.onload = () => {
-          ctx.drawImage(image, x, y, cellSize, cellSize - 22);
-          drawLabel();
-          resolve();
-        };
-        image.onerror = () => { drawLabel(); resolve(); };
-        image.src = img.dataUrl;
-      })));
+      await Promise.all(
+        charMatches.map(
+          ({ name, img }, i) =>
+            new Promise((resolve) => {
+              const col = i % cols;
+              const row = Math.floor(i / cols);
+              const x = col * cellSize;
+              const y = row * cellSize;
+              const drawLabel = () => {
+                ctx.fillStyle = 'rgba(0,0,0,0.75)';
+                ctx.fillRect(x, y + cellSize - 22, cellSize, 22);
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(name, x + cellSize / 2, y + cellSize - 7);
+              };
+              const image = new Image();
+              image.onload = () => {
+                ctx.drawImage(image, x, y, cellSize, cellSize - 22);
+                drawLabel();
+                resolve();
+              };
+              image.onerror = () => {
+                drawLabel();
+                resolve();
+              };
+              image.src = img.dataUrl;
+            }),
+        ),
+      );
 
       const posLabels = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
       const legendParts = charMatches.map(({ name, img }, i) => {
@@ -766,8 +916,9 @@ const CreatePage = (() => {
       }
       const opts = { resolution };
       if (negativePrompt) opts.negativePrompt = negativePrompt;
-      const charNamesInPanel = Object.keys(state.characterImagesByName)
-        .filter(name => nameInPrompt(name, panel.imagePrompt));
+      const charNamesInPanel = Object.keys(state.characterImagesByName).filter((name) =>
+        nameInPrompt(name, panel.imagePrompt),
+      );
 
       // Select best image per character in this panel
       const charMatches = [];
@@ -784,10 +935,16 @@ const CreatePage = (() => {
         const sheet = await buildCompositeSheet(charMatches);
         if (sheet) {
           const panelRefs = [
-            { dataUrl: sheet.dataUrl, label: 'Composite character sheet', tag: '', description: sheet.legend, type: 'character' },
+            {
+              dataUrl: sheet.dataUrl,
+              label: 'Composite character sheet',
+              tag: '',
+              description: sheet.legend,
+              type: 'character',
+            },
             ...worldRefs,
           ];
-          opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
+          opts.imageDataUrls = panelRefs.map((r) => r.dataUrl);
           opts.labeledRefs = panelRefs;
           return opts;
         }
@@ -807,7 +964,7 @@ const CreatePage = (() => {
         opts.imageDataUrl = panelRefs[0].dataUrl;
         opts.labeledRefs = panelRefs;
       } else if (panelRefs.length > 1) {
-        opts.imageDataUrls = panelRefs.map(r => r.dataUrl);
+        opts.imageDataUrls = panelRefs.map((r) => r.dataUrl);
         opts.labeledRefs = panelRefs;
       }
       return opts;
@@ -824,8 +981,8 @@ const CreatePage = (() => {
       }
       if (includeAppearance) {
         const panelAppearances = state.characters
-          .filter(c => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
-          .map(c => `${c.name}: ${c.appearance.trim()}`)
+          .filter((c) => c.appearance && c.appearance.trim() && nameInPrompt(c.name, panel.imagePrompt))
+          .map((c) => `${c.name}: ${c.appearance.trim()}`)
           .join('; ');
         if (panelAppearances) prompt = `${prompt}. Characters in scene: ${panelAppearances}`;
       }
@@ -833,7 +990,7 @@ const CreatePage = (() => {
         // promptEnrichmentCache is scoped to this generatePanelImages() call and
         // cleared on each invocation, so enrichEnabled is stable for its lifetime.
         if (promptEnrichmentCache.has(prompt)) return promptEnrichmentCache.get(prompt);
-        const genre = state.genre === 'custom' ? (state.customGenre || '') : (state.genre || '');
+        const genre = state.genre === 'custom' ? state.customGenre || '' : state.genre || '';
         const enriched = await API.enrichImagePrompt(prompt, { genre });
         promptEnrichmentCache.set(prompt, enriched);
         return enriched;
@@ -841,41 +998,43 @@ const CreatePage = (() => {
       return prompt;
     }
 
-    const panelsWithImages = pageData.panels.filter(p => p.imagePrompt).length;
+    const panelsWithImages = pageData.panels.filter((p) => p.imagePrompt).length;
     let doneCount = 0;
-    await Promise.all(pageData.panels.map(async (panel) => {
-      if (!panel.imagePrompt) return;
-      try {
-        const panelOpts = await buildPanelImageOpts(panel);
-        const enhancedPrompt = await buildEnhancedImagePrompt(panel);
-        const imageData = await API.generateImage(enhancedPrompt, panelOpts);
-        if (imageData) {
-          if (imageData.startsWith('http')) {
-            // URL response — try to fetch for offline storage
-            try {
-              const resp = await fetch(imageData);
-              const blob = await resp.blob();
-              panel.imageUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(blob);
-              });
-            } catch {
-              panel.imageUrl = imageData; // fallback to direct URL
+    await Promise.all(
+      pageData.panels.map(async (panel) => {
+        if (!panel.imagePrompt) return;
+        try {
+          const panelOpts = await buildPanelImageOpts(panel);
+          const enhancedPrompt = await buildEnhancedImagePrompt(panel);
+          const imageData = await API.generateImage(enhancedPrompt, panelOpts);
+          if (imageData) {
+            if (imageData.startsWith('http')) {
+              // URL response — try to fetch for offline storage
+              try {
+                const resp = await fetch(imageData);
+                const blob = await resp.blob();
+                panel.imageUrl = await new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result);
+                  reader.readAsDataURL(blob);
+                });
+              } catch {
+                panel.imageUrl = imageData; // fallback to direct URL
+              }
+            } else if (imageData.startsWith('data:')) {
+              panel.imageUrl = imageData;
+            } else {
+              panel.imageUrl = `data:image/png;base64,${imageData}`;
             }
-          } else if (imageData.startsWith('data:')) {
-            panel.imageUrl = imageData;
-          } else {
-            panel.imageUrl = `data:image/png;base64,${imageData}`;
           }
+        } catch (imgErr) {
+          App.logError('Image generation (panel)', imgErr);
+          App.toast(`Panel image failed: ${imgErr.message}`, 'error');
         }
-      } catch (imgErr) {
-        App.logError('Image generation (panel)', imgErr);
-        App.toast(`Panel image failed: ${imgErr.message}`, 'error');
-      }
-      doneCount++;
-      if (uiMsg) uiMsg.textContent = `Generating images (${doneCount} / ${panelsWithImages})...`;
-    }));
+        doneCount++;
+        if (uiMsg) uiMsg.textContent = `Generating images (${doneCount} / ${panelsWithImages})...`;
+      }),
+    );
   }
 
   async function generatePage(presetData) {
@@ -908,7 +1067,7 @@ const CreatePage = (() => {
           const el = document.getElementById('stream-output');
           if (el) el.textContent = full;
         },
-        options
+        options,
       );
 
       // Parse the response
@@ -932,9 +1091,10 @@ const CreatePage = (() => {
       // Generate images if enabled — all panels in parallel
       const enableImages = await DB.getSetting('enableImages', true);
       if (enableImages) {
-        const panelsWithImages = pageData.panels.filter(p => p.imagePrompt).length;
+        const panelsWithImages = pageData.panels.filter((p) => p.imagePrompt).length;
         if (panelsWithImages > 0) {
-          if (streamTitle) streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
+          if (streamTitle)
+            streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
           if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
         }
         await generatePanelImages(pageData, statusMsg);
@@ -974,7 +1134,6 @@ const CreatePage = (() => {
       state.isGenerating = false;
       App.toast(`Page ${pageNum} ready!`, 'success');
       await App.refreshPage();
-
     } catch (err) {
       App.logError('Comic generation', err);
       if (err.name === 'AbortError') {
@@ -1021,9 +1180,9 @@ const CreatePage = (() => {
   async function continueStory() {
     if (state.isGenerating) return;
     const customDir = document.getElementById('custom-direction')?.value?.trim();
-    const userMsg = customDir ?
-      `Continue the story with this direction: ${customDir}. Generate the next comic page.` :
-      'Continue the story naturally. Generate the next comic page.';
+    const userMsg = customDir
+      ? `Continue the story with this direction: ${customDir}. Generate the next comic page.`
+      : 'Continue the story naturally. Generate the next comic page.';
 
     state.conversationHistory.push({ role: 'user', content: userMsg });
     state.isGenerating = true;
@@ -1066,14 +1225,16 @@ const CreatePage = (() => {
       createdAt: _rerollBackup.createdAt,
     }).catch(() => {});
     // Restore comic record to reflect the re-appended page
-    DB.get(DB.STORES.comics, state.comicId).then(comic => {
-      if (comic) {
-        comic.pageCount = state.pages.length;
-        comic.conversationHistory = state.conversationHistory;
-        comic.updatedAt = Date.now();
-        DB.put(DB.STORES.comics, comic).catch(() => {});
-      }
-    }).catch(() => {});
+    DB.get(DB.STORES.comics, state.comicId)
+      .then((comic) => {
+        if (comic) {
+          comic.pageCount = state.pages.length;
+          comic.conversationHistory = state.conversationHistory;
+          comic.updatedAt = Date.now();
+          DB.put(DB.STORES.comics, comic).catch(() => {});
+        }
+      })
+      .catch(() => {});
     _rerollBackup = null;
   }
 
@@ -1116,13 +1277,15 @@ const CreatePage = (() => {
 
     // Fetch the persisted record before deleting so we preserve ordering metadata
     let originalRecord = null;
-    try { originalRecord = await DB.get(DB.STORES.pages, lastPageId); } catch (_) {}
+    try {
+      originalRecord = await DB.get(DB.STORES.pages, lastPageId);
+    } catch (_) {}
 
     // Deep-clone the backup so it can't be mutated while generation is in progress
     _rerollBackup = {
       page: structuredClone(state.pages[lastPageIdx]),
       pageId: lastPageId,
-      pageNum: originalRecord?.pageNum ?? (lastPageIdx + 1),
+      pageNum: originalRecord?.pageNum ?? lastPageIdx + 1,
       createdAt: originalRecord?.createdAt ?? Date.now(),
       conversationHistory: structuredClone(state.conversationHistory),
     };
@@ -1217,10 +1380,12 @@ const CreatePage = (() => {
     const currentPage = state.pages[currentPageIdx];
 
     // Back up prior image URLs so they can be restored on failure or cancel
-    const priorImageUrls = currentPage.panels.map(p => p.imageUrl || '');
+    const priorImageUrls = currentPage.panels.map((p) => p.imageUrl || '');
 
     // Clear existing image URLs so the user sees progress
-    currentPage.panels.forEach(p => { p.imageUrl = ''; });
+    currentPage.panels.forEach((p) => {
+      p.imageUrl = '';
+    });
 
     // Set up abort controller for cancellation
     abortController = new AbortController();
@@ -1232,14 +1397,16 @@ const CreatePage = (() => {
 
     try {
       const statusMsg = document.getElementById('gen-status-msg');
-      const panelsWithImages = currentPage.panels.filter(p => p.imagePrompt).length;
+      const panelsWithImages = currentPage.panels.filter((p) => p.imagePrompt).length;
       if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
 
       await generatePanelImages(currentPage, statusMsg);
 
       // If aborted during generatePanelImages, restore backup and return
       if (abortController?.signal.aborted) {
-        currentPage.panels.forEach((p, i) => { p.imageUrl = priorImageUrls[i]; });
+        currentPage.panels.forEach((p, i) => {
+          p.imageUrl = priorImageUrls[i];
+        });
         abortController = null;
         return;
       }
@@ -1250,7 +1417,7 @@ const CreatePage = (() => {
       await DB.put(DB.STORES.pages, {
         id: currentPageId,
         comicId: state.comicId,
-        pageNum: existingRecord?.pageNum ?? (currentPageIdx + 1),
+        pageNum: existingRecord?.pageNum ?? currentPageIdx + 1,
         data: currentPage,
         createdAt: existingRecord?.createdAt ?? Date.now(),
       });
@@ -1269,7 +1436,9 @@ const CreatePage = (() => {
       await App.refreshPage();
     } catch (err) {
       // Restore prior images on any failure
-      currentPage.panels.forEach((p, i) => { p.imageUrl = priorImageUrls[i]; });
+      currentPage.panels.forEach((p, i) => {
+        p.imageUrl = priorImageUrls[i];
+      });
       abortController = null;
       App.logError('Image regeneration', err);
       state.isGenerating = false;
@@ -1345,9 +1514,27 @@ const CreatePage = (() => {
   }
 
   return {
-    render, onUnmount, selectGenre, setCustomGenre, toggleCharacter, selectWorld, selectPreset, selectImagePreset,
-    toggleAdvanced, startGenerating, makeChoice, continueStory, finishComic, cancelGeneration,
-    rerollPage, rerollImages, undoChoice, zoomPanel, resetState,
-    setTitle, setStoryPrompt, resetSetup,
+    render,
+    onUnmount,
+    selectGenre,
+    setCustomGenre,
+    toggleCharacter,
+    selectWorld,
+    selectPreset,
+    selectImagePreset,
+    toggleAdvanced,
+    startGenerating,
+    makeChoice,
+    continueStory,
+    finishComic,
+    cancelGeneration,
+    rerollPage,
+    rerollImages,
+    undoChoice,
+    zoomPanel,
+    resetState,
+    setTitle,
+    setStoryPrompt,
+    resetSetup,
   };
 })();

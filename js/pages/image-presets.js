@@ -34,13 +34,18 @@ const ImagePresetsPage = (() => {
           <button class="btn btn-primary btn-sm" onclick="ImagePresetsPage.newPreset()">+ New</button>
         </div>
 
-        ${presets.length === 0 ? `
+        ${
+          presets.length === 0
+            ? `
           <div class="empty-state">
             <div class="empty-state-icon">&#127912;</div>
             <div class="empty-state-text">No image presets yet.</div>
             <button class="btn btn-primary" onclick="ImagePresetsPage.newPreset()">Create Preset</button>
           </div>
-        ` : presets.map(p => `
+        `
+            : presets
+                .map(
+                  (p) => `
           <div class="preset-card" onclick="ImagePresetsPage.editPreset('${p.id}')">
             <div style="display:flex;justify-content:space-between;align-items:start;">
               <div>
@@ -51,7 +56,10 @@ const ImagePresetsPage = (() => {
             </div>
             <div class="preset-card-preview mt-sm">${escHtml((p.promptPrefix || '').slice(0, 120))}${(p.promptPrefix || '').length > 120 ? '...' : ''}</div>
           </div>
-        `).join('')}
+        `,
+                )
+                .join('')
+        }
       </div>
     `;
   }

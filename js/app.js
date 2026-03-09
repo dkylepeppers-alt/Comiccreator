@@ -61,7 +61,7 @@ const App = (() => {
     document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
 
     // Sidebar links
-    document.querySelectorAll('.nav-link').forEach(link => {
+    document.querySelectorAll('.nav-link').forEach((link) => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         navigate(link.dataset.page);
@@ -70,7 +70,7 @@ const App = (() => {
     });
 
     // Bottom nav
-    document.querySelectorAll('.bnav-btn').forEach(btn => {
+    document.querySelectorAll('.bnav-btn').forEach((btn) => {
       btn.addEventListener('click', () => navigate(btn.dataset.page));
     });
 
@@ -103,7 +103,11 @@ const App = (() => {
 
     // Call onUnmount on the previous page if it has one
     if (previousPageModule && typeof previousPageModule.onUnmount === 'function') {
-      try { previousPageModule.onUnmount(); } catch (e) { logError('onUnmount', e); }
+      try {
+        previousPageModule.onUnmount();
+      } catch (e) {
+        logError('onUnmount', e);
+      }
     }
 
     currentPage = page;
@@ -117,10 +121,10 @@ const App = (() => {
     document.getElementById('page-title').textContent = pageTitles[page] || page;
 
     // Update active states
-    document.querySelectorAll('.nav-link').forEach(l => {
+    document.querySelectorAll('.nav-link').forEach((l) => {
       l.classList.toggle('active', l.dataset.page === page);
     });
-    document.querySelectorAll('.bnav-btn').forEach(b => {
+    document.querySelectorAll('.bnav-btn').forEach((b) => {
       b.classList.toggle('active', b.dataset.page === page);
     });
 
@@ -249,13 +253,18 @@ const App = (() => {
   }
 
   async function copyErrorLog() {
-    if (errorLog.length === 0) { toast('No errors to copy', 'info'); return; }
-    const text = errorLog.map(e => {
-      const lines = [`[${e.timestamp}] ${e.context}`, `Message: ${e.message}`];
-      if (e.details) lines.push(`Details: ${e.details}`);
-      if (e.stack) lines.push(`Stack:\n${e.stack}`);
-      return lines.join('\n');
-    }).join('\n\n---\n\n');
+    if (errorLog.length === 0) {
+      toast('No errors to copy', 'info');
+      return;
+    }
+    const text = errorLog
+      .map((e) => {
+        const lines = [`[${e.timestamp}] ${e.context}`, `Message: ${e.message}`];
+        if (e.details) lines.push(`Details: ${e.details}`);
+        if (e.stack) lines.push(`Stack:\n${e.stack}`);
+        return lines.join('\n');
+      })
+      .join('\n\n---\n\n');
     try {
       await navigator.clipboard.writeText(text);
       toast('Error log copied!', 'success');
@@ -309,23 +318,26 @@ const App = (() => {
         });
       }
 
-      navigator.serviceWorker.register('sw.js').then(reg => {
-        console.log('SW registered:', reg.scope);
+      navigator.serviceWorker
+        .register('sw.js')
+        .then((reg) => {
+          console.log('SW registered:', reg.scope);
 
-        // Detect when a new service worker is installed and waiting to activate
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          if (!newWorker) return;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // A new version has been cached and is ready — show persistent tap-to-reload prompt
-              showUpdateToast();
-            }
+          // Detect when a new service worker is installed and waiting to activate
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // A new version has been cached and is ready — show persistent tap-to-reload prompt
+                showUpdateToast();
+              }
+            });
           });
+        })
+        .catch((err) => {
+          logError('SW registration', err);
         });
-      }).catch(err => {
-        logError('SW registration', err);
-      });
 
       // Also listen for the controller changing (fires after skipWaiting + clients.claim).
       // This is a reliable second trigger in case the statechange fires too fast.
@@ -343,9 +355,12 @@ const App = (() => {
         _swVisibilityListenerAdded = true;
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') {
-            navigator.serviceWorker.getRegistration().then(reg => {
-              if (reg) reg.update().catch(() => {});
-            }).catch(() => {});
+            navigator.serviceWorker
+              .getRegistration()
+              .then((reg) => {
+                if (reg) reg.update().catch(() => {});
+              })
+              .catch(() => {});
           }
         });
       }
@@ -364,5 +379,16 @@ const App = (() => {
     init();
   }
 
-  return { navigate, refreshPage, showModal, hideModal, toast, logError, toggleErrorPanel, copyErrorLog, clearErrorLog, getErrorLog };
+  return {
+    navigate,
+    refreshPage,
+    showModal,
+    hideModal,
+    toast,
+    logError,
+    toggleErrorPanel,
+    copyErrorLog,
+    clearErrorLog,
+    getErrorLog,
+  };
 })();

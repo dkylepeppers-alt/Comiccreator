@@ -35,13 +35,18 @@ const PresetsPage = (() => {
           <button class="btn btn-primary btn-sm" onclick="PresetsPage.newPreset()">+ New</button>
         </div>
 
-        ${presets.length === 0 ? `
+        ${
+          presets.length === 0
+            ? `
           <div class="empty-state">
             <div class="empty-state-icon">&#9881;</div>
             <div class="empty-state-text">No presets yet.</div>
             <button class="btn btn-primary" onclick="PresetsPage.newPreset()">Create Preset</button>
           </div>
-        ` : presets.map(p => `
+        `
+            : presets
+                .map(
+                  (p) => `
           <div class="preset-card" onclick="PresetsPage.editPreset('${p.id}')">
             <div style="display:flex;justify-content:space-between;align-items:start;">
               <div>
@@ -57,13 +62,25 @@ const PresetsPage = (() => {
             </div>
             <div class="preset-card-preview mt-sm">${escHtml((p.systemPrompt || '').slice(0, 120))}${(p.systemPrompt || '').length > 120 ? '...' : ''}</div>
           </div>
-        `).join('')}
+        `,
+                )
+                .join('')
+        }
       </div>
     `;
   }
 
   async function renderEditor() {
-    let preset = { name: '', description: '', temperature: 0.7, topP: 0.9, maxTokens: 2048, systemPrompt: '', frequencyPenalty: 0, presencePenalty: 0 };
+    let preset = {
+      name: '',
+      description: '',
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 2048,
+      systemPrompt: '',
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+    };
     if (editingId) {
       const saved = await DB.get(DB.STORES.presets, editingId);
       if (saved) preset = { ...preset, ...saved };

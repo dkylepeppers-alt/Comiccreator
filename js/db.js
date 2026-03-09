@@ -47,7 +47,10 @@ const DB = (() => {
           d.createObjectStore(STORES.settings, { keyPath: 'key' });
         }
       };
-      req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+      req.onsuccess = (e) => {
+        db = e.target.result;
+        resolve(db);
+      };
       req.onerror = (e) => reject(e.target.error);
     });
   }
@@ -93,11 +96,12 @@ const DB = (() => {
   }
 
   function uuid() {
-    return crypto.randomUUID ? crypto.randomUUID() :
-      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-      });
+    return crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
   }
 
   // Settings helpers
@@ -145,10 +149,12 @@ const DB = (() => {
   function migrateWorld(world) {
     if (!world) return world;
     const images = (world.images || [])
-      .filter(img => img)
-      .map(img => typeof img === 'string'
-        ? { dataUrl: img, tag: 'establishing', description: '', embedding: null }
-        : Object.assign({ embedding: null }, img));
+      .filter((img) => img)
+      .map((img) =>
+        typeof img === 'string'
+          ? { dataUrl: img, tag: 'establishing', description: '', embedding: null }
+          : Object.assign({ embedding: null }, img),
+      );
     return Object.assign({}, world, { images, primaryImageIndex: world.primaryImageIndex ?? 0 });
   }
 
@@ -162,7 +168,8 @@ const DB = (() => {
       temperature: 0.7,
       topP: 0.9,
       maxTokens: 2048,
-      systemPrompt: 'You are a creative comic book writer. Create vivid, engaging comic panels with narration and dialogue.',
+      systemPrompt:
+        'You are a creative comic book writer. Create vivid, engaging comic panels with narration and dialogue.',
       createdAt: 1000000000000,
     },
     {
@@ -172,7 +179,8 @@ const DB = (() => {
       temperature: 1.0,
       topP: 0.95,
       maxTokens: 3000,
-      systemPrompt: 'You are an avant-garde comic book creator. Push boundaries with unexpected plot twists and unique artistic descriptions.',
+      systemPrompt:
+        'You are an avant-garde comic book creator. Push boundaries with unexpected plot twists and unique artistic descriptions.',
       createdAt: 1000000000001,
     },
     {
@@ -182,7 +190,8 @@ const DB = (() => {
       temperature: 0.3,
       topP: 0.8,
       maxTokens: 1500,
-      systemPrompt: 'You are a disciplined comic book writer. Create clear, well-structured panels with consistent characterization.',
+      systemPrompt:
+        'You are a disciplined comic book writer. Create clear, well-structured panels with consistent characterization.',
       createdAt: 1000000000002,
     },
   ];
@@ -243,13 +252,13 @@ const DB = (() => {
     const seen = new Set();
     const unique = [];
     for (const item of sorted) {
-      const key = ((item?.name || '').trim().toLowerCase()) || item?.id || '';
+      const key = (item?.name || '').trim().toLowerCase() || item?.id || '';
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(item);
     }
     if (unique.length !== all.length) {
-      const keepIds = new Set(unique.map(p => p.id));
+      const keepIds = new Set(unique.map((p) => p.id));
       for (const row of all) {
         if (!keepIds.has(row.id)) await del(STORES.presets, row.id);
       }

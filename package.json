@@ -10,6 +10,8 @@
     "format": "prettier --write 'js/**/*.js' 'css/**/*.css'",
     "format:check": "prettier --check 'js/**/*.js' 'css/**/*.css'",
     "test": "node --test test/*.test.js",
+    "coverage": "npx c8 --reporter=text --reporter=lcov node --test test/*.test.js",
+    "coverage:ci": "npx c8 --reporter=text --reporter=lcov node --test test/*.test.js",
     "test:e2e": "playwright test",
     "check-syntax": "for f in js/*.js js/pages/*.js; do node --check \"$f\" || exit 1; done",
     "update-docs": "bash scripts/update-docs.sh",
@@ -20,6 +22,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "c8": "^11.0.0",
     "eslint": "^10.0.2",
     "fake-indexeddb": "^6.2.5",
     "nanogptjs": "^1.0.4",

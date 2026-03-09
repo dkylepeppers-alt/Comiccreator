@@ -12,7 +12,19 @@ const CharactersPage = (() => {
   // Index of the image slot currently being filled (for file picker)
   let _pendingSlotIdx = -1;
 
-  const IMAGE_TAGS = ['default', 'front-view', 'side-view', 'back-view', 'close-up', 'action-pose', 'alternate-outfit', 'expression', 'character-sheet', 'character-in-world', 'custom'];
+  const IMAGE_TAGS = [
+    'default',
+    'front-view',
+    'side-view',
+    'back-view',
+    'close-up',
+    'action-pose',
+    'alternate-outfit',
+    'expression',
+    'character-sheet',
+    'character-in-world',
+    'custom',
+  ];
   const MAX_IMAGES = 20;
 
   async function render(param) {
@@ -44,16 +56,20 @@ const CharactersPage = (() => {
           <button class="btn btn-primary btn-sm" onclick="CharactersPage.newCharacter()">+ New</button>
         </div>
 
-        ${characters.length === 0 ? `
+        ${
+          characters.length === 0
+            ? `
           <div class="empty-state">
             <div class="empty-state-icon">&#129464;</div>
             <div class="empty-state-text">No characters yet. Create your first hero!</div>
             <button class="btn btn-primary" onclick="CharactersPage.newCharacter()">Create Character</button>
           </div>
-        ` : characters.map(c => {
-          const migrated = DB.migrateCharacter(c);
-          const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || migrated.imageData || '';
-          return `
+        `
+            : characters
+                .map((c) => {
+                  const migrated = DB.migrateCharacter(c);
+                  const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || migrated.imageData || '';
+                  return `
           <div class="list-item" onclick="CharactersPage.editCharacter('${c.id}')">
             <div class="list-item-avatar">
               ${thumb ? `<img src="${thumb}" alt="${escHtml(c.name)}">` : '&#129464;'}
@@ -67,18 +83,31 @@ const CharactersPage = (() => {
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();CharactersPage.deleteCharacter('${c.id}','${escHtml(c.name)}')">&#128465;</button>
             </div>
           </div>
-        `}).join('')}
+        `;
+                })
+                .join('')
+        }
       </div>
     `;
   }
 
   async function renderEditor() {
-    let char = { name: '', role: 'hero', description: '', appearance: '', backstory: '', powers: '', images: [], primaryImageIndex: 0, linkedWorldId: '' };
+    let char = {
+      name: '',
+      role: 'hero',
+      description: '',
+      appearance: '',
+      backstory: '',
+      powers: '',
+      images: [],
+      primaryImageIndex: 0,
+      linkedWorldId: '',
+    };
     if (editingId) {
       const saved = await DB.get(DB.STORES.characters, editingId);
       if (saved) char = DB.migrateCharacter(saved);
     }
-    editorImages = (char.images || []).map(img => Object.assign({}, img));
+    editorImages = (char.images || []).map((img) => Object.assign({}, img));
     editorPrimaryIndex = char.primaryImageIndex ?? 0;
     editorName = char.name || '';
 
@@ -102,9 +131,9 @@ const CharactersPage = (() => {
             <input type="file" id="char-img-input" accept="image/*" class="hidden" onchange="CharactersPage.handleImage(event)">
             <div class="char-img-toolbar" id="char-img-toolbar">
               ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>` : ''}
-              <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
-              <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
-              ${editorImages.some(img => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
+              <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+              <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
+              ${editorImages.some((img) => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
             </div>
           </div>
 
@@ -116,9 +145,12 @@ const CharactersPage = (() => {
           <div class="form-group">
             <label class="form-label">Role</label>
             <select id="char-role">
-              ${['hero', 'sidekick', 'villain', 'antihero', 'mentor', 'support', 'other'].map(r =>
-                `<option value="${r}" ${char.role === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
-              ).join('')}
+              ${['hero', 'sidekick', 'villain', 'antihero', 'mentor', 'support', 'other']
+                .map(
+                  (r) =>
+                    `<option value="${r}" ${char.role === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`,
+                )
+                .join('')}
             </select>
           </div>
 
@@ -126,7 +158,7 @@ const CharactersPage = (() => {
             <label class="form-label">Linked World</label>
             <select id="char-linked-world" onchange="CharactersPage.refreshGallery()">
               <option value="">— None —</option>
-              ${worlds.map(w => `<option value="${w.id}" ${char.linkedWorldId === w.id ? 'selected' : ''}>${escHtml(w.name)}</option>`).join('')}
+              ${worlds.map((w) => `<option value="${w.id}" ${char.linkedWorldId === w.id ? 'selected' : ''}>${escHtml(w.name)}</option>`).join('')}
             </select>
             <div class="form-hint">Link this character to a world to enable character-in-world reference images and interaction shots</div>
           </div>
@@ -161,30 +193,35 @@ const CharactersPage = (() => {
 
   function renderGallerySlots(images, primaryIdx) {
     const charName = editorName;
-    return images.map((img, i) => {
-      // Embedding status badge
-      let embBadge = '';
-      if (img.dataUrl) {
-        if (img.embedding && img.embeddingText) {
-          const enriched = (typeof buildImageEmbeddingText === 'function') ? buildImageEmbeddingText(img, charName) : '';
-          if (enriched && img.embeddingText === enriched) {
-            embBadge = '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
-          } else {
-            embBadge = '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
+    return images
+      .map((img, i) => {
+        // Embedding status badge
+        let embBadge = '';
+        if (img.dataUrl) {
+          if (img.embedding && img.embeddingText) {
+            const enriched =
+              typeof buildImageEmbeddingText === 'function' ? buildImageEmbeddingText(img, charName) : '';
+            if (enriched && img.embeddingText === enriched) {
+              embBadge =
+                '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
+            } else {
+              embBadge =
+                '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
+            }
+          } else if (img.description?.trim()) {
+            embBadge =
+              '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
           }
-        } else if (img.description?.trim()) {
-          embBadge = '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
         }
-      }
-      return `
+        return `
       <div class="char-img-slot" data-idx="${i}">
         <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="CharactersPage.pickImageForSlot(${i})">
-          ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
+          ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i + 1}">` : '<span>&#128247; Upload</span>'}
         </div>
         <div class="char-img-meta">
           <div style="display:flex;align-items:center;gap:6px;">
             <select class="char-img-tag" data-idx="${i}" onchange="CharactersPage.updateTag(${i},this.value)" style="flex:1;">
-              ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+              ${IMAGE_TAGS.map((t) => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
             </select>
             ${embBadge}
           </div>
@@ -197,7 +234,9 @@ const CharactersPage = (() => {
           </div>
         </div>
       </div>
-    `;}).join('');
+    `;
+      })
+      .join('');
   }
 
   function refreshGallery() {
@@ -210,7 +249,7 @@ const CharactersPage = (() => {
     // Update toolbar button visibility
     const toolbar = document.getElementById('char-img-toolbar');
     if (toolbar) {
-      const hasImages = editorImages.some(img => img.dataUrl);
+      const hasImages = editorImages.some((img) => img.dataUrl);
       const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
       // Rebuild toolbar contents to reflect current state
       let btns = '';
@@ -218,16 +257,19 @@ const CharactersPage = (() => {
         btns += '<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>';
       }
       if (hasImages) {
-        btns += '<button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()">&#128221; Caption All</button>';
-        btns += '<button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
+        btns +=
+          '<button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()">&#128221; Caption All</button>';
+        btns +=
+          '<button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
         if (linkedWorldId) {
-          btns += '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>';
+          btns +=
+            '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>';
         }
       }
       toolbar.innerHTML = btns;
     }
     // Keep slot-count hints in any open dropdown panels in sync
-    const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     const slotText = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
     const charRefSlots = document.getElementById('char-ref-slots');
     if (charRefSlots) charRefSlots.textContent = slotText;
@@ -326,7 +368,10 @@ const CharactersPage = (() => {
 
     const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
     const captionBtn = document.querySelector(`.char-img-caption[onclick*="recaptionImage(${idx})"]`);
-    if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+    if (descInput) {
+      descInput.disabled = true;
+      descInput.placeholder = 'Generating caption\u2026';
+    }
     if (captionBtn) captionBtn.disabled = true;
 
     const name = document.getElementById('char-name')?.value.trim() || '';
@@ -357,11 +402,14 @@ const CharactersPage = (() => {
   }
 
   async function recaptionAll() {
-    const imagesWithData = editorImages.filter(img => img.dataUrl);
+    const imagesWithData = editorImages.filter((img) => img.dataUrl);
     if (!imagesWithData.length) return App.toast('No images to caption', 'error');
 
     const captionAllBtn = document.getElementById('char-caption-all-btn');
-    if (captionAllBtn) { captionAllBtn.disabled = true; captionAllBtn.textContent = 'Captioning\u2026'; }
+    if (captionAllBtn) {
+      captionAllBtn.disabled = true;
+      captionAllBtn.textContent = 'Captioning\u2026';
+    }
 
     const name = document.getElementById('char-name')?.value.trim() || '';
     const role = document.getElementById('char-role')?.value || '';
@@ -376,10 +424,17 @@ const CharactersPage = (() => {
       if (captionAllBtn) captionAllBtn.textContent = `Captioning ${done}/${imagesWithData.length}\u2026`;
 
       const descInput = document.querySelector(`.char-img-desc[data-idx="${i}"]`);
-      if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+      if (descInput) {
+        descInput.disabled = true;
+        descInput.placeholder = 'Generating caption\u2026';
+      }
 
       const caption = await API.generateImageCaption(img.dataUrl, {
-        type: 'character', name, role, tag: img.tag, appearance,
+        type: 'character',
+        name,
+        role,
+        tag: img.tag,
+        appearance,
       }).catch(() => null);
 
       if (caption && editorImages[i] === img) {
@@ -390,10 +445,16 @@ const CharactersPage = (() => {
       } else {
         failed++;
       }
-      if (descInput) { descInput.disabled = false; descInput.placeholder = 'e.g. Battle armor with sword drawn'; }
+      if (descInput) {
+        descInput.disabled = false;
+        descInput.placeholder = 'e.g. Battle armor with sword drawn';
+      }
     }
 
-    if (captionAllBtn) { captionAllBtn.disabled = false; captionAllBtn.textContent = '\u{1F4DD} Caption All'; }
+    if (captionAllBtn) {
+      captionAllBtn.disabled = false;
+      captionAllBtn.textContent = '\u{1F4DD} Caption All';
+    }
     if (failed > 0) {
       App.toast(`Captioned ${done - failed}/${done} images (${failed} failed)`, 'info');
     } else {
@@ -410,23 +471,25 @@ const CharactersPage = (() => {
   function generateReferences() {
     // Toggle: close if already open
     const existing = document.getElementById('char-ref-dropdown');
-    if (existing) { existing.remove(); return; }
+    if (existing) {
+      existing.remove();
+      return;
+    }
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const primaryImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const variations = API.CHARACTER_REF_VARIATIONS;
 
     // Build <option> list from predefined variations + a custom option
-    const options = variations.map((v, i) =>
-      `<option value="${i}">${escHtml(v.tag)} — ${escHtml(v.desc)}</option>`
-    ).join('');
+    const options = variations
+      .map((v, i) => `<option value="${i}">${escHtml(v.tag)} — ${escHtml(v.desc)}</option>`)
+      .join('');
 
     const toolbar = document.getElementById('char-img-toolbar');
     if (!toolbar) return;
@@ -466,7 +529,7 @@ const CharactersPage = (() => {
     const promptEl = document.getElementById('char-ref-prompt');
     if (!typeSelect || !promptEl) return;
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const prompt = promptEl.value.trim();
@@ -478,16 +541,18 @@ const CharactersPage = (() => {
     const tag = variation ? variation.tag : 'custom';
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const primaryImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
     const name = document.getElementById('char-name')?.value.trim() || 'the character';
     const appearance = document.getElementById('char-appearance')?.value.trim() || '';
 
     const goBtn = document.getElementById('char-ref-go-btn');
-    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Generating\u2026'; }
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = 'Generating\u2026';
+    }
 
     const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
 
@@ -506,7 +571,11 @@ const CharactersPage = (() => {
 
       // Auto-caption the generated image
       const caption = await API.generateImageCaption(dataUrl, {
-        type: 'character', name, role: document.getElementById('char-role')?.value || '', tag, appearance,
+        type: 'character',
+        name,
+        role: document.getElementById('char-role')?.value || '',
+        tag,
+        appearance,
       }).catch(() => null);
       if (caption) {
         newImg.description = caption;
@@ -519,11 +588,14 @@ const CharactersPage = (() => {
       App.toast('Generation failed — try again or adjust the prompt', 'error');
     }
 
-    if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Generate'; }
+    if (goBtn) {
+      goBtn.disabled = false;
+      goBtn.textContent = 'Generate';
+    }
     // Update slot count in dropdown
     const slotsEl = document.getElementById('char-ref-slots');
     if (slotsEl) {
-      const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+      const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
       slotsEl.textContent = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
     }
   }
@@ -536,7 +608,7 @@ const CharactersPage = (() => {
     const img = editorImages[idx];
     if (!img || !img.aiGenerated) return App.toast('This image was not AI-generated', 'error');
 
-    const primaryImg = editorImages.find(src => src.dataUrl && !src.aiGenerated);
+    const primaryImg = editorImages.find((src) => src.dataUrl && !src.aiGenerated);
     if (!primaryImg) return App.toast('No source image found for regeneration', 'error');
 
     const name = document.getElementById('char-name')?.value.trim() || 'the character';
@@ -545,7 +617,7 @@ const CharactersPage = (() => {
     // Re-derive the prompt from the tag variation or use stored prompt
     let prompt = img.generationPrompt;
     if (!prompt) {
-      const variation = API.CHARACTER_REF_VARIATIONS.find(v => v.tag === img.tag);
+      const variation = API.CHARACTER_REF_VARIATIONS.find((v) => v.tag === img.tag);
       if (variation) {
         prompt = variation.prompt;
       } else {
@@ -568,7 +640,11 @@ const CharactersPage = (() => {
 
       // Re-caption
       const caption = await API.generateImageCaption(dataUrl, {
-        type: 'character', name, role: document.getElementById('char-role')?.value || '', tag: img.tag, appearance,
+        type: 'character',
+        name,
+        role: document.getElementById('char-role')?.value || '',
+        tag: img.tag,
+        appearance,
       }).catch(() => null);
       if (caption) {
         img.description = caption;
@@ -591,12 +667,14 @@ const CharactersPage = (() => {
   async function generateWorldInteractions() {
     // Toggle: close if already open
     const existing = document.getElementById('char-world-dropdown');
-    if (existing) { existing.remove(); return; }
+    if (existing) {
+      existing.remove();
+      return;
+    }
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const primaryImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one character image first', 'error');
 
     const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
@@ -607,7 +685,7 @@ const CharactersPage = (() => {
 
     const name = document.getElementById('char-name')?.value.trim() || 'the character';
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const variations = API.CHARACTER_WORLD_VARIATIONS;
@@ -615,12 +693,12 @@ const CharactersPage = (() => {
     const charAppearanceNote = appearance ? ` (${appearance})` : '';
 
     // Build <option> list with placeholders resolved for display
-    const options = variations.map((v, i) => {
-      const label = v.desc
-        .replace(/\{charName\}/g, name)
-        .replace(/\{worldName\}/g, world.name);
-      return `<option value="${i}">${escHtml(v.tag)} — ${escHtml(label)}</option>`;
-    }).join('');
+    const options = variations
+      .map((v, i) => {
+        const label = v.desc.replace(/\{charName\}/g, name).replace(/\{worldName\}/g, world.name);
+        return `<option value="${i}">${escHtml(v.tag)} — ${escHtml(label)}</option>`;
+      })
+      .join('');
 
     // Build initial prompt with placeholders resolved
     const initialPrompt = variations[0].prompt
@@ -680,7 +758,7 @@ const CharactersPage = (() => {
     const promptEl = document.getElementById('char-world-prompt');
     if (!typeSelect || !promptEl) return;
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const prompt = promptEl.value.trim();
@@ -698,9 +776,8 @@ const CharactersPage = (() => {
     const name = document.getElementById('char-name')?.value.trim() || 'the character';
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const primaryImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one character image first', 'error');
 
     const appearance = document.getElementById('char-appearance')?.value.trim() || '';
@@ -708,12 +785,13 @@ const CharactersPage = (() => {
     const migratedWorld = DB.migrateWorld(world);
     const worldPrimaryImg = migratedWorld.images?.[migratedWorld.primaryImageIndex ?? 0] || migratedWorld.images?.[0];
 
-    const refUrls = worldPrimaryImg?.dataUrl
-      ? [primaryImg.dataUrl, worldPrimaryImg.dataUrl]
-      : [primaryImg.dataUrl];
+    const refUrls = worldPrimaryImg?.dataUrl ? [primaryImg.dataUrl, worldPrimaryImg.dataUrl] : [primaryImg.dataUrl];
 
     const goBtn = document.getElementById('char-world-go-btn');
-    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Generating\u2026'; }
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = 'Generating\u2026';
+    }
 
     const dataUrl = await API.generateRefVariation(null, prompt, { imageDataUrls: refUrls }).catch(() => null);
 
@@ -734,7 +812,10 @@ const CharactersPage = (() => {
       refreshGallery();
 
       const caption = await API.generateImageCaption(dataUrl, {
-        type: 'character-in-world', name, tag, appearance,
+        type: 'character-in-world',
+        name,
+        tag,
+        appearance,
         worldName: world.name,
       }).catch(() => null);
       if (caption) {
@@ -748,15 +829,17 @@ const CharactersPage = (() => {
       App.toast('Generation failed — try again or adjust the prompt', 'error');
     }
 
-    if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Generate'; }
+    if (goBtn) {
+      goBtn.disabled = false;
+      goBtn.textContent = 'Generate';
+    }
     // Update slot count
     const slotsEl = document.getElementById('char-world-slots');
     if (slotsEl) {
-      const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+      const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
       slotsEl.textContent = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
     }
   }
-
 
   function updateTag(idx, value) {
     if (editorImages[idx]) {
@@ -776,7 +859,7 @@ const CharactersPage = (() => {
 
   function setPrimary(idx) {
     // Toggle: clicking the already-active star deselects it
-    editorPrimaryIndex = (idx === editorPrimaryIndex) ? -1 : idx;
+    editorPrimaryIndex = idx === editorPrimaryIndex ? -1 : idx;
     // Update star button states in place
     document.querySelectorAll('.char-img-primary').forEach((btn, i) => {
       btn.classList.toggle('active', i === editorPrimaryIndex);
@@ -796,12 +879,12 @@ const CharactersPage = (() => {
     if (!description) return App.toast('Description is required', 'error');
 
     // Filter out empty slots (no dataUrl)
-    const validImages = editorImages.filter(img => img.dataUrl);
+    const validImages = editorImages.filter((img) => img.dataUrl);
     let primaryIdx = editorPrimaryIndex;
     if (primaryIdx >= validImages.length) primaryIdx = validImages.length > 0 ? 0 : -1;
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
-    const needsEmbedding = validImages.filter(img => {
+    const needsEmbedding = validImages.filter((img) => {
       if (!img.description?.trim()) return false;
       const enriched = buildImageEmbeddingText(img, name);
       // Re-embed if text changed (new description, tag change, name change, or first-time)
@@ -810,16 +893,20 @@ const CharactersPage = (() => {
     if (needsEmbedding.length > 0) {
       const saveBtn = document.getElementById('char-save-btn');
       if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
-      await Promise.all(needsEmbedding.map(async (img) => {
-        const enriched = buildImageEmbeddingText(img, name);
-        try {
-          const emb = await API.generateEmbedding(enriched);
-          if (emb) {
-            img.embedding = emb;
-            img.embeddingText = enriched;
+      await Promise.all(
+        needsEmbedding.map(async (img) => {
+          const enriched = buildImageEmbeddingText(img, name);
+          try {
+            const emb = await API.generateEmbedding(enriched);
+            if (emb) {
+              img.embedding = emb;
+              img.embeddingText = enriched;
+            }
+          } catch {
+            /* skip on error */
           }
-        } catch { /* skip on error */ }
-      }));
+        }),
+      );
       if (saveBtn) saveBtn.textContent = editingId ? 'Update Character' : 'Create Character';
     }
 
@@ -836,7 +923,7 @@ const CharactersPage = (() => {
       linkedWorldId: document.getElementById('char-linked-world')?.value || '',
       images: validImages,
       primaryImageIndex: primaryIdx,
-      imageData: '',  // clear legacy field when images[] is present
+      imageData: '', // clear legacy field when images[] is present
       createdAt: existingChar?.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
@@ -885,12 +972,28 @@ const CharactersPage = (() => {
   return {
     render,
     refreshGallery,
-    newCharacter, editCharacter, backToList,
-    pickImage, pickImageForSlot, handleImage, addImageSlot,
-    updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
-    generateReferences, _doGenerateReferences, regenerateImage,
-    generateWorldInteractions, _doGenerateWorldInteractions,
+    newCharacter,
+    editCharacter,
+    backToList,
+    pickImage,
+    pickImageForSlot,
+    handleImage,
+    addImageSlot,
+    updateTag,
+    updateDesc,
+    setPrimary,
+    removeImage,
+    recaptionImage,
+    recaptionAll,
+    generateReferences,
+    _doGenerateReferences,
+    regenerateImage,
+    generateWorldInteractions,
+    _doGenerateWorldInteractions,
     _pendingWorldData: null,
-    saveCharacter, exportCharacter, deleteCharacter, confirmDelete,
+    saveCharacter,
+    exportCharacter,
+    deleteCharacter,
+    confirmDelete,
   };
 })();

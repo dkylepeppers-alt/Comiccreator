@@ -2,5 +2,6 @@
 node_modules/
 test-results/
 playwright-report/
+coverage/
 cloud-sync-*.png
 dropdown-panel-preview.png

@@ -12,7 +12,18 @@ const WorldsPage = (() => {
   // Index of the image slot currently being filled (for file picker)
   let _pendingSlotIdx = -1;
 
-  const IMAGE_TAGS = ['establishing', 'interior', 'exterior', 'aerial', 'night', 'day', 'detail', 'landmark', 'character-interaction', 'custom'];
+  const IMAGE_TAGS = [
+    'establishing',
+    'interior',
+    'exterior',
+    'aerial',
+    'night',
+    'day',
+    'detail',
+    'landmark',
+    'character-interaction',
+    'custom',
+  ];
   const MAX_IMAGES = 20;
 
   async function render(param) {
@@ -46,16 +57,20 @@ const WorldsPage = (() => {
           <button class="btn btn-primary btn-sm" onclick="WorldsPage.newWorld()">+ New</button>
         </div>
 
-        ${worlds.length === 0 ? `
+        ${
+          worlds.length === 0
+            ? `
           <div class="empty-state">
             <div class="empty-state-icon">&#127758;</div>
             <div class="empty-state-text">No worlds yet. Build your first setting!</div>
             <button class="btn btn-primary" onclick="WorldsPage.newWorld()">Create World</button>
           </div>
-        ` : worlds.map(w => {
-          const migrated = DB.migrateWorld(w);
-          const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || '';
-          return `
+        `
+            : worlds
+                .map((w) => {
+                  const migrated = DB.migrateWorld(w);
+                  const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || '';
+                  return `
           <div class="list-item" onclick="WorldsPage.editWorld('${w.id}')">
             <div class="list-item-avatar">
               ${thumb ? `<img src="${escHtml(thumb)}" alt="${escHtml(w.name)}">` : '&#127758;'}
@@ -69,7 +84,10 @@ const WorldsPage = (() => {
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();WorldsPage.deleteWorld('${w.id}','${escHtml(w.name)}')">&#128465;</button>
             </div>
           </div>
-        `}).join('')}
+        `;
+                })
+                .join('')
+        }
       </div>
     `;
   }
@@ -80,13 +98,13 @@ const WorldsPage = (() => {
       const saved = await DB.get(DB.STORES.worlds, editingId);
       if (saved) world = DB.migrateWorld(saved);
     }
-    editorImages = (world.images || []).map(img => Object.assign({}, img));
+    editorImages = (world.images || []).map((img) => Object.assign({}, img));
     editorPrimaryIndex = world.primaryImageIndex ?? 0;
     editorName = world.name || '';
 
     // Find characters linked to this world
     const linkedChars = editingId
-      ? (await DB.getAll(DB.STORES.characters)).filter(c => c.linkedWorldId === editingId)
+      ? (await DB.getAll(DB.STORES.characters)).filter((c) => c.linkedWorldId === editingId)
       : [];
 
     return `
@@ -107,9 +125,9 @@ const WorldsPage = (() => {
             <input type="file" id="world-img-input" accept="image/*" class="hidden" onchange="WorldsPage.handleImage(event)">
             <div class="char-img-toolbar" id="world-img-toolbar">
               ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
-              <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
-              <button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" style="${editorImages.some(img => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
-              ${editorImages.some(img => img.dataUrl) && linkedChars.length >= 2 ? `<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>` : ''}
+              <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+              <button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
+              ${editorImages.some((img) => img.dataUrl) && linkedChars.length >= 2 ? `<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>` : ''}
             </div>
           </div>
 
@@ -138,19 +156,27 @@ const WorldsPage = (() => {
             <textarea id="world-details" rows="3" placeholder="Key locations, technology level, magic systems, factions...">${escHtml(world.details || '')}</textarea>
           </div>
 
-          ${linkedChars.length > 0 ? `
+          ${
+            linkedChars.length > 0
+              ? `
           <div class="form-group">
             <label class="form-label">Linked Characters (${linkedChars.length})</label>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">
-              ${linkedChars.map(c => `
+              ${linkedChars
+                .map(
+                  (c) => `
                 <div class="chip" onclick="App.navigate('characters','${c.id}')" style="cursor:pointer;" title="Edit ${escHtml(c.name)}">
                   ${escHtml(c.name)}${c.role ? ` <span class="text-muted" style="font-size:0.75em;">(${escHtml(c.role)})</span>` : ''}
                 </div>
-              `).join('')}
+              `,
+                )
+                .join('')}
             </div>
             <div class="form-hint">Characters linked to this world. Click a character to edit them.</div>
           </div>
-          ` : ''}
+          `
+              : ''
+          }
         </div>
 
         <button class="btn btn-primary btn-block mt-sm" id="world-save-btn" onclick="WorldsPage.saveWorld()">
@@ -162,30 +188,35 @@ const WorldsPage = (() => {
 
   function renderGallerySlots(images, primaryIdx) {
     const worldName = editorName;
-    return images.map((img, i) => {
-      // Embedding status badge
-      let embBadge = '';
-      if (img.dataUrl) {
-        if (img.embedding && img.embeddingText) {
-          const enriched = (typeof buildImageEmbeddingText === 'function') ? buildImageEmbeddingText(img, worldName) : '';
-          if (enriched && img.embeddingText === enriched) {
-            embBadge = '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
-          } else {
-            embBadge = '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
+    return images
+      .map((img, i) => {
+        // Embedding status badge
+        let embBadge = '';
+        if (img.dataUrl) {
+          if (img.embedding && img.embeddingText) {
+            const enriched =
+              typeof buildImageEmbeddingText === 'function' ? buildImageEmbeddingText(img, worldName) : '';
+            if (enriched && img.embeddingText === enriched) {
+              embBadge =
+                '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
+            } else {
+              embBadge =
+                '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
+            }
+          } else if (img.description?.trim()) {
+            embBadge =
+              '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
           }
-        } else if (img.description?.trim()) {
-          embBadge = '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
         }
-      }
-      return `
+        return `
       <div class="char-img-slot" data-idx="${i}">
         <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="WorldsPage.pickImageForSlot(${i})">
-          ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i+1}">` : '<span>&#128247; Upload</span>'}
+          ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i + 1}">` : '<span>&#128247; Upload</span>'}
         </div>
         <div class="char-img-meta">
           <div style="display:flex;align-items:center;gap:6px;">
             <select class="char-img-tag" data-idx="${i}" onchange="WorldsPage.updateTag(${i},this.value)" style="flex:1;">
-              ${IMAGE_TAGS.map(t => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
+              ${IMAGE_TAGS.map((t) => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
             </select>
             ${embBadge}
           </div>
@@ -198,7 +229,9 @@ const WorldsPage = (() => {
           </div>
         </div>
       </div>
-    `;}).join('');
+    `;
+      })
+      .join('');
   }
 
   function refreshGallery() {
@@ -211,18 +244,20 @@ const WorldsPage = (() => {
     // Update toolbar button visibility — async check for linked characters
     const toolbar = document.getElementById('world-img-toolbar');
     if (toolbar) {
-      const hasImages = editorImages.some(img => img.dataUrl);
+      const hasImages = editorImages.some((img) => img.dataUrl);
       let btns = '';
       if (editorImages.length < MAX_IMAGES) {
         btns += '<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>';
       }
       if (hasImages) {
-        btns += '<button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()">&#128221; Caption All</button>';
-        btns += '<button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
+        btns +=
+          '<button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()">&#128221; Caption All</button>';
+        btns +=
+          '<button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
       }
       toolbar.innerHTML = btns;
       // Keep slot-count hints in any open dropdown panels in sync
-      const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+      const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
       const slotText = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
       const worldRefSlots = document.getElementById('world-ref-slots');
       if (worldRefSlots) worldRefSlots.textContent = slotText;
@@ -230,18 +265,21 @@ const WorldsPage = (() => {
       if (worldInterSlots) worldInterSlots.textContent = slotText;
       // Async: add interactions button if 2+ characters are linked
       if (hasImages && editingId) {
-        DB.getAll(DB.STORES.characters).then(chars => {
-          const linked = chars.filter(c => c.linkedWorldId === editingId);
-          if (linked.length >= 2 && toolbar.parentNode) {
-            const interBtn = '<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>';
-            if (!toolbar.querySelector('#world-gen-interactions-btn')) {
-              toolbar.insertAdjacentHTML('beforeend', interBtn);
+        DB.getAll(DB.STORES.characters)
+          .then((chars) => {
+            const linked = chars.filter((c) => c.linkedWorldId === editingId);
+            if (linked.length >= 2 && toolbar.parentNode) {
+              const interBtn =
+                '<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>';
+              if (!toolbar.querySelector('#world-gen-interactions-btn')) {
+                toolbar.insertAdjacentHTML('beforeend', interBtn);
+              }
             }
-          }
-        }).catch(err => {
-          App.logError('WorldsPage.refreshGallery: failed to load characters', err, { worldId: editingId });
-          App.toast('Could not load characters for interaction images. Check the error log for details.', 'error');
-        });
+          })
+          .catch((err) => {
+            App.logError('WorldsPage.refreshGallery: failed to load characters', err, { worldId: editingId });
+            App.toast('Could not load characters for interaction images. Check the error log for details.', 'error');
+          });
       }
     }
   }
@@ -333,7 +371,10 @@ const WorldsPage = (() => {
 
     const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
     const captionBtn = document.querySelector(`.char-img-caption[onclick*="recaptionImage(${idx})"]`);
-    if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+    if (descInput) {
+      descInput.disabled = true;
+      descInput.placeholder = 'Generating caption\u2026';
+    }
     if (captionBtn) captionBtn.disabled = true;
 
     const name = document.getElementById('world-name')?.value.trim() || '';
@@ -362,11 +403,14 @@ const WorldsPage = (() => {
   }
 
   async function recaptionAll() {
-    const imagesWithData = editorImages.filter(img => img.dataUrl);
+    const imagesWithData = editorImages.filter((img) => img.dataUrl);
     if (!imagesWithData.length) return App.toast('No images to caption', 'error');
 
     const captionAllBtn = document.getElementById('world-caption-all-btn');
-    if (captionAllBtn) { captionAllBtn.disabled = true; captionAllBtn.textContent = 'Captioning\u2026'; }
+    if (captionAllBtn) {
+      captionAllBtn.disabled = true;
+      captionAllBtn.textContent = 'Captioning\u2026';
+    }
 
     const name = document.getElementById('world-name')?.value.trim() || '';
     const era = document.getElementById('world-era')?.value.trim() || '';
@@ -380,10 +424,16 @@ const WorldsPage = (() => {
       if (captionAllBtn) captionAllBtn.textContent = `Captioning ${done}/${imagesWithData.length}\u2026`;
 
       const descInput = document.querySelector(`.char-img-desc[data-idx="${i}"]`);
-      if (descInput) { descInput.disabled = true; descInput.placeholder = 'Generating caption\u2026'; }
+      if (descInput) {
+        descInput.disabled = true;
+        descInput.placeholder = 'Generating caption\u2026';
+      }
 
       const caption = await API.generateImageCaption(img.dataUrl, {
-        type: 'world', name, era, tag: img.tag,
+        type: 'world',
+        name,
+        era,
+        tag: img.tag,
       }).catch(() => null);
 
       if (caption && editorImages[i] === img) {
@@ -394,10 +444,16 @@ const WorldsPage = (() => {
       } else {
         failed++;
       }
-      if (descInput) { descInput.disabled = false; descInput.placeholder = 'e.g. Neon-lit alley at night'; }
+      if (descInput) {
+        descInput.disabled = false;
+        descInput.placeholder = 'e.g. Neon-lit alley at night';
+      }
     }
 
-    if (captionAllBtn) { captionAllBtn.disabled = false; captionAllBtn.textContent = '\u{1F4DD} Caption All'; }
+    if (captionAllBtn) {
+      captionAllBtn.disabled = false;
+      captionAllBtn.textContent = '\u{1F4DD} Caption All';
+    }
     if (failed > 0) {
       App.toast(`Captioned ${done - failed}/${done} images (${failed} failed)`, 'info');
     } else {
@@ -413,15 +469,17 @@ const WorldsPage = (() => {
   function generateReferences() {
     // Toggle: close if already open
     const existing = document.getElementById('world-ref-dropdown');
-    if (existing) { existing.remove(); return; }
+    if (existing) {
+      existing.remove();
+      return;
+    }
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const primaryImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const variations = API.WORLD_REF_VARIATIONS;
@@ -429,9 +487,9 @@ const WorldsPage = (() => {
     const description = document.getElementById('world-desc')?.value.trim() || '';
 
     // Build <option> list with placeholders resolved for display
-    const options = variations.map((v, i) =>
-      `<option value="${i}">${escHtml(v.tag)} — ${escHtml(v.desc)}</option>`
-    ).join('');
+    const options = variations
+      .map((v, i) => `<option value="${i}">${escHtml(v.tag)} — ${escHtml(v.desc)}</option>`)
+      .join('');
 
     // Build initial prompt with placeholders resolved
     const initialPrompt = variations[0].prompt
@@ -481,7 +539,7 @@ const WorldsPage = (() => {
     const promptEl = document.getElementById('world-ref-prompt');
     if (!typeSelect || !promptEl) return;
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const prompt = promptEl.value.trim();
@@ -493,15 +551,17 @@ const WorldsPage = (() => {
     const tag = variation ? variation.tag : 'custom';
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const primaryImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!primaryImg) return App.toast('Upload at least one image first', 'error');
 
     const name = document.getElementById('world-name')?.value.trim() || 'the location';
 
     const goBtn = document.getElementById('world-ref-go-btn');
-    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Generating\u2026'; }
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = 'Generating\u2026';
+    }
 
     const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
 
@@ -521,7 +581,10 @@ const WorldsPage = (() => {
       // Auto-caption the generated image
       const era = document.getElementById('world-era')?.value.trim() || '';
       const caption = await API.generateImageCaption(dataUrl, {
-        type: 'world', name, era, tag,
+        type: 'world',
+        name,
+        era,
+        tag,
       }).catch(() => null);
       if (caption) {
         newImg.description = caption;
@@ -534,11 +597,14 @@ const WorldsPage = (() => {
       App.toast('Generation failed — try again or adjust the prompt', 'error');
     }
 
-    if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Generate'; }
+    if (goBtn) {
+      goBtn.disabled = false;
+      goBtn.textContent = 'Generate';
+    }
     // Update slot count
     const slotsEl = document.getElementById('world-ref-slots');
     if (slotsEl) {
-      const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+      const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
       slotsEl.textContent = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
     }
   }
@@ -551,7 +617,7 @@ const WorldsPage = (() => {
     const img = editorImages[idx];
     if (!img || !img.aiGenerated) return App.toast('This image was not AI-generated', 'error');
 
-    const primaryImg = editorImages.find(src => src.dataUrl && !src.aiGenerated);
+    const primaryImg = editorImages.find((src) => src.dataUrl && !src.aiGenerated);
     if (!primaryImg) return App.toast('No source image found for regeneration', 'error');
 
     const name = document.getElementById('world-name')?.value.trim() || 'the location';
@@ -560,7 +626,7 @@ const WorldsPage = (() => {
     // Re-derive the prompt from the tag variation or use stored prompt
     let prompt = img.generationPrompt;
     if (!prompt) {
-      const variation = API.WORLD_REF_VARIATIONS.find(v => v.tag === img.tag);
+      const variation = API.WORLD_REF_VARIATIONS.find((v) => v.tag === img.tag);
       if (variation) {
         prompt = variation.prompt
           .replace(/\{name\}/g, name)
@@ -586,7 +652,10 @@ const WorldsPage = (() => {
       // Re-caption
       const era = document.getElementById('world-era')?.value.trim() || '';
       const caption = await API.generateImageCaption(dataUrl, {
-        type: 'world', name, era, tag: img.tag,
+        type: 'world',
+        name,
+        era,
+        tag: img.tag,
       }).catch(() => null);
       if (caption) {
         img.description = caption;
@@ -609,33 +678,37 @@ const WorldsPage = (() => {
   async function generateCharacterInteractions() {
     // Toggle: close if already open
     const existing = document.getElementById('world-inter-dropdown');
-    if (existing) { existing.remove(); return; }
+    if (existing) {
+      existing.remove();
+      return;
+    }
 
     if (!editingId) return App.toast('Save the world first before generating interactions', 'error');
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
-    const worldImg = (primaryCandidate && primaryCandidate.dataUrl)
-      ? primaryCandidate
-      : editorImages.find(img => img.dataUrl);
+    const worldImg =
+      primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
     if (!worldImg) return App.toast('Upload at least one world image first', 'error');
 
     const allChars = await DB.getAll(DB.STORES.characters);
-    const linkedChars = allChars.filter(c => c.linkedWorldId === editingId);
+    const linkedChars = allChars.filter((c) => c.linkedWorldId === editingId);
     if (linkedChars.length < 2) return App.toast('Link at least 2 characters to this world first', 'error');
 
     const worldName = document.getElementById('world-name')?.value.trim() || 'the world';
     const worldDesc = document.getElementById('world-desc')?.value.trim() || '';
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     // Pick up to 4 characters for the interaction shot
     const castChars = linkedChars.slice(0, 4);
-    const castNames = castChars.map(c => c.name).join(', ');
-    const castDesc = castChars.map(c => {
-      const appearances = c.appearance ? ` (${c.appearance.trim()})` : '';
-      return `${c.name}${appearances}`;
-    }).join('; ');
+    const castNames = castChars.map((c) => c.name).join(', ');
+    const castDesc = castChars
+      .map((c) => {
+        const appearances = c.appearance ? ` (${c.appearance.trim()})` : '';
+        return `${c.name}${appearances}`;
+      })
+      .join('; ');
 
     const interactionPrompts = [
       {
@@ -651,12 +724,15 @@ const WorldsPage = (() => {
     ];
 
     // Build <option> list from predefined interaction prompts + custom
-    const options = interactionPrompts.map((v, i) =>
-      `<option value="${i}">${escHtml(v.desc)}</option>`
-    ).join('');
+    const options = interactionPrompts.map((v, i) => `<option value="${i}">${escHtml(v.desc)}</option>`).join('');
 
     // Build linked characters display
-    const charList = castChars.map(c => `<strong>${escHtml(c.name)}</strong>${c.appearance ? ` <span class="text-muted">(${escHtml(c.appearance.slice(0, 60))})</span>` : ''}`).join(', ');
+    const charList = castChars
+      .map(
+        (c) =>
+          `<strong>${escHtml(c.name)}</strong>${c.appearance ? ` <span class="text-muted">(${escHtml(c.appearance.slice(0, 60))})</span>` : ''}`,
+      )
+      .join(', ');
 
     const toolbar = document.getElementById('world-img-toolbar');
     if (!toolbar) return;
@@ -679,7 +755,15 @@ const WorldsPage = (() => {
     toolbar.insertAdjacentElement('afterend', panel);
 
     // Store context for the generate handler
-    WorldsPage._pendingInteractionData = { prompts: interactionPrompts, castChars, castNames, castDesc, worldName, worldDesc, worldImg };
+    WorldsPage._pendingInteractionData = {
+      prompts: interactionPrompts,
+      castChars,
+      castNames,
+      castDesc,
+      worldName,
+      worldDesc,
+      worldImg,
+    };
 
     // Update prompt textarea when dropdown selection changes
     document.getElementById('world-inter-type').addEventListener('change', (e) => {
@@ -700,7 +784,7 @@ const WorldsPage = (() => {
     const promptEl = document.getElementById('world-inter-prompt');
     if (!typeSelect || !promptEl) return;
 
-    const slotsAvailable = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
     const prompt = promptEl.value.trim();
@@ -716,7 +800,7 @@ const WorldsPage = (() => {
 
     // Collect primary images for each character to use as references
     const charRefUrls = castChars
-      .map(c => {
+      .map((c) => {
         const m = DB.migrateCharacter(c);
         const img = m.images?.[m.primaryImageIndex ?? 0] || m.images?.[0];
         return img?.dataUrl || null;
@@ -726,7 +810,10 @@ const WorldsPage = (() => {
     const refUrls = [worldImg.dataUrl, ...charRefUrls];
 
     const goBtn = document.getElementById('world-inter-go-btn');
-    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Generating\u2026'; }
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = 'Generating\u2026';
+    }
 
     const dataUrl = await API.generateRefVariation(null, prompt, { imageDataUrls: refUrls }).catch(() => null);
 
@@ -745,8 +832,11 @@ const WorldsPage = (() => {
       refreshGallery();
 
       const caption = await API.generateImageCaption(dataUrl, {
-        type: 'character-interaction', name: worldName, tag: 'character-interaction',
-        characterNames: castNames, worldName,
+        type: 'character-interaction',
+        name: worldName,
+        tag: 'character-interaction',
+        characterNames: castNames,
+        worldName,
       }).catch(() => null);
       if (caption) {
         newImg.description = caption;
@@ -759,11 +849,14 @@ const WorldsPage = (() => {
       App.toast('Generation failed — try again or adjust the prompt', 'error');
     }
 
-    if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Generate'; }
+    if (goBtn) {
+      goBtn.disabled = false;
+      goBtn.textContent = 'Generate';
+    }
     // Update slot count
     const slotsEl = document.getElementById('world-inter-slots');
     if (slotsEl) {
-      const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+      const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
       slotsEl.textContent = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
     }
   }
@@ -786,7 +879,7 @@ const WorldsPage = (() => {
 
   function setPrimary(idx) {
     // Toggle: clicking the already-active star deselects it
-    editorPrimaryIndex = (idx === editorPrimaryIndex) ? -1 : idx;
+    editorPrimaryIndex = idx === editorPrimaryIndex ? -1 : idx;
     document.querySelectorAll('#world-img-gallery .char-img-primary').forEach((btn, i) => {
       btn.classList.toggle('active', i === editorPrimaryIndex);
     });
@@ -815,7 +908,7 @@ const WorldsPage = (() => {
     if (primaryIdx >= validImages.length) primaryIdx = validImages.length > 0 ? 0 : -1;
 
     // Generate (or re-generate) embeddings for images whose enriched text has changed
-    const needsEmbedding = validImages.filter(img => {
+    const needsEmbedding = validImages.filter((img) => {
       if (!img.description?.trim()) return false;
       const enriched = buildImageEmbeddingText(img, name);
       // Re-embed if text changed (new description, tag change, name change, or first-time)
@@ -824,16 +917,20 @@ const WorldsPage = (() => {
     if (needsEmbedding.length > 0) {
       const saveBtn = document.getElementById('world-save-btn');
       if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
-      await Promise.all(needsEmbedding.map(async (img) => {
-        const enriched = buildImageEmbeddingText(img, name);
-        try {
-          const emb = await API.generateEmbedding(enriched);
-          if (emb) {
-            img.embedding = emb;
-            img.embeddingText = enriched;
+      await Promise.all(
+        needsEmbedding.map(async (img) => {
+          const enriched = buildImageEmbeddingText(img, name);
+          try {
+            const emb = await API.generateEmbedding(enriched);
+            if (emb) {
+              img.embedding = emb;
+              img.embeddingText = enriched;
+            }
+          } catch {
+            /* skip on error */
           }
-        } catch { /* skip on error */ }
-      }));
+        }),
+      );
       if (saveBtn) saveBtn.textContent = editingId ? 'Update World' : 'Create World';
     }
 
@@ -894,12 +991,29 @@ const WorldsPage = (() => {
   }
 
   return {
-    render, newWorld, editWorld, backToList,
-    pickImage, pickImageForSlot, handleImage, addImageSlot,
-    updateTag, updateDesc, setPrimary, removeImage, recaptionImage, recaptionAll,
-    generateReferences, _doGenerateReferences, regenerateImage,
-    generateCharacterInteractions, _doGenerateCharacterInteractions,
+    render,
+    newWorld,
+    editWorld,
+    backToList,
+    pickImage,
+    pickImageForSlot,
+    handleImage,
+    addImageSlot,
+    updateTag,
+    updateDesc,
+    setPrimary,
+    removeImage,
+    recaptionImage,
+    recaptionAll,
+    generateReferences,
+    _doGenerateReferences,
+    regenerateImage,
+    generateCharacterInteractions,
+    _doGenerateCharacterInteractions,
     _pendingInteractionData: null,
-    saveWorld, exportWorld, deleteWorld, confirmDelete,
+    saveWorld,
+    exportWorld,
+    deleteWorld,
+    confirmDelete,
   };
 })();
