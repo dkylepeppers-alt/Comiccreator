@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "github": {
+      "type": "local",
+      "command": "github-mcp-server",
+      "args": [
+        "--toolsets",
+        "repos,issues,pull_requests,actions,code_security"
+      ],
+      "tools": ["*"]
+    },
+    "fetch": {
+      "type": "local",
+      "command": "fetch-mcp-server",
+      "args": [],
+      "tools": ["*"]
+    }
+  }
+}

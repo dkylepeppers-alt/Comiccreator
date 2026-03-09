@@ -26,6 +26,12 @@ Security Auditing, OWASP Top 10, Secret Detection, PRD Compliance, Requirements 
   - Standard: Secrets, basic OWASP, code quality, logic verification, PRD compliance
   - Lightweight: Syntax, naming, basic security (obvious secrets/hardcoded values), basic PRD alignment
 - Scan: Security audit via grep_search (Secrets/PII/SQLi/XSS) FIRST before semantic search for comprehensive coverage
+- Workflow Security Checklist:
+  - Verify the CodeQL SAST workflow (`codeql-analysis.yml`) is active and covers JavaScript/TypeScript
+  - Verify the PR-triggered security scan (`security-pr.yml`) runs `npm audit --audit-level=high` on every pull request
+  - Confirm all new or modified workflows use SHA-pinned action references (e.g., `actions/checkout@<sha> # v4.x.x`)
+  - Confirm all workflows have explicit `permissions:` blocks (prefer `permissions: {}` at top-level with job-level overrides)
+  - Run `bash scripts/validate-workflows.sh` to verify workflow security conventions
 - Audit: Trace dependencies, verify logic against specification AND PRD compliance
 - Verify: Security audit, code quality, logic verification, PRD compliance per plan
 - Determine Status: Critical=failed, non-critical=needs_revision, none=completed
