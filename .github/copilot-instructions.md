@@ -147,13 +147,15 @@ Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:
 `.github/workflows/playwright.yml` also runs on every push and pull request and executes Playwright E2E tests (`npm run test:e2e`) in Chromium. E2E test artifacts (reports) are uploaded with 14-day retention.
 
 Additional workflows:
-- `.github/workflows/auto-bump.yml` — auto-bumps the patch version on every push to `Main` (skips bot commits)
-- `.github/workflows/auto-update-docs.yml` — regenerates auto-generated README sections on every push to `Main` (skips bot commits); runs `scripts/update-docs.sh`
+- `.github/workflows/post-merge.yml` — consolidated post-merge pipeline triggered on every push to `Main` (skips bot commits); runs two sequential jobs: `bump-version` (runs `scripts/bump-version.sh patch`, commits and pushes the version bump) then `update-docs` (checks out the updated `Main`, runs `scripts/update-docs.sh`, commits and pushes README changes if any). Uses concurrency group `post-merge-main` with `cancel-in-progress: true`.
 - `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `Main` or manual trigger
 - `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs checks, bumps version, tags, creates GitHub Release
 - `.github/workflows/security.yml` — weekly `npm audit --audit-level=high` security scan
-
-`auto-bump.yml` and `auto-update-docs.yml` share a concurrency group (`auto-main-push`). `auto-bump` uses `cancel-in-progress: true` so only the latest push is bumped; `auto-update-docs` uses `cancel-in-progress: false` and retries pushes with rebase to handle non-fast-forward failures.
+- `.github/workflows/security-pr.yml` — runs `npm audit --audit-level=high` on every pull request to catch new vulnerabilities before merge
+- `.github/workflows/codeql-analysis.yml` — CodeQL SAST analysis for JavaScript/TypeScript, runs on push to `Main` and on pull requests
+- `.github/workflows/auto-merge-dependabot.yml` — automatically approves and merges Dependabot minor and patch update PRs; runs on every pull request but only acts when `github.actor == 'dependabot[bot]'`
+- `.github/workflows/pr-labeler.yml` — labels pull requests automatically based on changed file paths (uses `actions/labeler`); runs on every pull request
+- `.github/workflows/stale.yml` — marks issues and PRs as stale after 30 days of inactivity and closes them after a further 7 days; runs daily via cron
 
 All steps must pass before merging. If CI is red, check the workflow run logs.
 
