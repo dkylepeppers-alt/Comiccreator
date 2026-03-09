@@ -162,15 +162,18 @@ Comiccreator/
         my-agent.agent.md
     copilot-instructions.md
     dependabot.yml
+    labeler.yml
     workflows
-        auto-bump.yml
-        auto-update-docs.yml
+        auto-merge-dependabot.yml
         codeql-analysis.yml
         deploy-pages.yml
         playwright.yml
+        post-merge.yml
+        pr-labeler.yml
         release.yml
         security-pr.yml
         security.yml
+        stale.yml
         tests.yml
 .gitignore
 .nojekyll
@@ -209,7 +212,7 @@ manifest.json
 package-lock.json
 package.json
 plan
-    feature-ui-enhancement-1.md
+    feature-reference-image-prompts-world-tags-1.md
     upgrade-actions-automation-1.md
 playwright.config.js
 scripts
@@ -449,14 +452,16 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 <!-- AUTO-GENERATED-CONTENT:START (WORKFLOWS_TABLE) -->
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| `auto-bump.yml` | push | Auto Bump Version |
-| `auto-update-docs.yml` | push | Auto Update Docs |
+| `auto-merge-dependabot.yml` | pull_request | Auto Merge Dependabot |
 | `codeql-analysis.yml` | push, pull_request | CodeQL Analysis |
 | `deploy-pages.yml` | push, workflow_dispatch | Deploy to GitHub Pages |
 | `playwright.yml` | push, pull_request | Playwright E2E Tests |
+| `post-merge.yml` | push | Post-Merge Pipeline |
+| `pr-labeler.yml` | pull_request | PR Labeler |
 | `release.yml` | workflow_dispatch | Release |
 | `security-pr.yml` | pull_request | Security PR Check |
 | `security.yml` | schedule, workflow_dispatch | Security Audit |
+| `stale.yml` | schedule | Stale Issues and PRs |
 | `tests.yml` | push, pull_request | Tests |
 <!-- AUTO-GENERATED-CONTENT:END (WORKFLOWS_TABLE) -->
 
