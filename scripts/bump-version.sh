@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# bump-version.sh — Atomically update version across all 4 version files.
+# bump-version.sh — Atomically update version across all version files.
+#
+# Updates: version.json, sw.js, js/pages/settings.js, package.json,
+#          package-lock.json (root + packages[""].version), and index.html.
 #
 # Usage:
 #   ./scripts/bump-version.sh patch        # 1.2.3 -> 1.2.4
@@ -24,6 +27,7 @@ VERSION_JSON="$REPO_ROOT/version.json"
 SW_JS="$REPO_ROOT/sw.js"
 SETTINGS_JS="$REPO_ROOT/js/pages/settings.js"
 PACKAGE_JSON="$REPO_ROOT/package.json"
+PACKAGE_LOCK_JSON="$REPO_ROOT/package-lock.json"
 INDEX_HTML="$REPO_ROOT/index.html"
 
 # ---------- Read current version ----------
@@ -95,6 +99,14 @@ echo "  Updated: js/pages/settings.js"
 sed_i "s/\"version\":[[:space:]]*\"[^\"]*\"/\"version\": \"$NEW\"/" "$PACKAGE_JSON"
 echo "  Updated: package.json"
 
+# ---------- Update package-lock.json ----------
+# Update root "version" and packages[""].version using jq to avoid touching
+# dependency version fields elsewhere in the lockfile.
+LOCK_TMP="$(mktemp)"
+jq --arg v "$NEW" '.version = $v | .packages[""].version = $v' "$PACKAGE_LOCK_JSON" > "$LOCK_TMP"
+mv "$LOCK_TMP" "$PACKAGE_LOCK_JSON"
+echo "  Updated: package-lock.json"
+
 # ---------- Update index.html footer ----------
 sed_i "s/v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* \&middot; PWA/v$NEW \&middot; PWA/" "$INDEX_HTML"
 echo "  Updated: index.html"
@@ -125,17 +137,18 @@ verify_not_contains() {
 echo ""
 echo "Verifying updates..."
 
-verify_contains "$VERSION_JSON"  "\"version\": \"$NEW\""                      "version.json"
-verify_contains "$SW_JS"         "comic-creator-v$NEW"                         "sw.js"
-verify_contains "$SETTINGS_JS"   "APP_VERSION = '$NEW'"                        "js/pages/settings.js"
-verify_contains "$PACKAGE_JSON"  "\"version\": \"$NEW\""                       "package.json"
-verify_contains "$INDEX_HTML"    "v$NEW &middot; PWA"                          "index.html"
+verify_contains "$VERSION_JSON"       "\"version\": \"$NEW\""                      "version.json"
+verify_contains "$SW_JS"              "comic-creator-v$NEW"                         "sw.js"
+verify_contains "$SETTINGS_JS"        "APP_VERSION = '$NEW'"                        "js/pages/settings.js"
+verify_contains "$PACKAGE_JSON"       "\"version\": \"$NEW\""                       "package.json"
+verify_contains "$PACKAGE_LOCK_JSON"  "\"version\": \"$NEW\""                       "package-lock.json"
+verify_contains "$INDEX_HTML"         "v$NEW &middot; PWA"                          "index.html"
 
-verify_not_contains "$VERSION_JSON"  "\"version\": \"$CURRENT\""               "version.json"
-verify_not_contains "$SW_JS"         "comic-creator-v$CURRENT"                 "sw.js"
-verify_not_contains "$SETTINGS_JS"   "APP_VERSION = '$CURRENT'"                "js/pages/settings.js"
-verify_not_contains "$PACKAGE_JSON"  "\"version\": \"$CURRENT\""               "package.json"
-verify_not_contains "$INDEX_HTML"    "v$CURRENT &middot; PWA"                  "index.html"
+verify_not_contains "$VERSION_JSON"       "\"version\": \"$CURRENT\""               "version.json"
+verify_not_contains "$SW_JS"              "comic-creator-v$CURRENT"                 "sw.js"
+verify_not_contains "$SETTINGS_JS"        "APP_VERSION = '$CURRENT'"                "js/pages/settings.js"
+verify_not_contains "$PACKAGE_JSON"       "\"version\": \"$CURRENT\""               "package.json"
+verify_not_contains "$INDEX_HTML"         "v$CURRENT &middot; PWA"                  "index.html"
 
 if [ "$VERIFY_FAILED" -ne 0 ]; then
   echo "" >&2
@@ -144,7 +157,7 @@ if [ "$VERIFY_FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "  All 5 files verified at version $NEW."
+echo "  All 6 files verified at version $NEW."
 
 # ---------- Stage the changed files ----------
 git -C "$REPO_ROOT" add \
@@ -152,6 +165,7 @@ git -C "$REPO_ROOT" add \
   "$SW_JS" \
   "$SETTINGS_JS" \
   "$PACKAGE_JSON" \
+  "$PACKAGE_LOCK_JSON" \
   "$INDEX_HTML"
 
 echo ""
