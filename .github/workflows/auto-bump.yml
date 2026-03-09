@@ -7,7 +7,7 @@ on:
 
 # Cancel any in-progress bump if a newer commit arrives on Main
 concurrency:
-  group: auto-bump
+  group: auto-main-push
   cancel-in-progress: true
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     # Skip commits already made by the bot to prevent infinite loops.
     # (GITHUB_TOKEN pushes also don't re-trigger workflows, but this adds
     # an explicit safety net for any PAT-based or third-party push scenarios.)
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.actor != 'copilot[bot]'
     permissions:
       contents: write
     steps:
