@@ -216,7 +216,6 @@ scripts
     bump-version.sh
     check-actions.sh
     install-hooks.sh
-    pre-commit
     pre-commit-version-check.sh
     update-docs.sh
     validate-workflows.sh

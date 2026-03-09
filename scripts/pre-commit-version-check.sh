@@ -18,14 +18,22 @@ check_staged_syntax() {
   echo "JS syntax check (staged files):"
   local failed=false
   while IFS= read -r file; do
-    local abs_path="$REPO_ROOT/$file"
-    if [ -f "$abs_path" ]; then
-      if node --check "$abs_path" 2>&1; then
-        echo "  ✓ $file"
+    # Use the staged content from the index, not the working-tree file.
+    if git cat-file -e ":$file" 2>/dev/null; then
+      local tmpfile
+      tmpfile="$(mktemp "${TMPDIR:-/tmp}/staged-js-XXXXXX.js")"
+      if git show ":$file" >"$tmpfile" 2>&1; then
+        if node --check "$tmpfile" 2>&1; then
+          echo "  ✓ $file"
+        else
+          echo "  ✗ $file — syntax error (see above)"
+          failed=true
+        fi
       else
-        echo "  ✗ $file — syntax error (see above)"
+        echo "  ✗ $file — failed to read staged content"
         failed=true
       fi
+      rm -f "$tmpfile"
     fi
   done < <(printf '%s\n' "$staged_js")
 

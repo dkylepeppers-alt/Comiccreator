@@ -56,19 +56,30 @@ for f in "$WORKFLOWS_DIR"/*.yml "$WORKFLOWS_DIR"/*.yaml; do
 
   # ── Check 2: bot loop guard on auto-commit workflows ────────────────────
   # Detect workflows that commit/push: look for git push/commit on non-comment lines.
-  if grep -qE "^\s*[^#].*git (push|commit)" "$f"; then
-    if grep -q "github-actions\[bot\]" "$f"; then
-      ok "has bot loop guard (github-actions[bot])"
-    else
-      error "$file: auto-commit workflow is missing bot loop guard for 'github-actions[bot]'"
+  # Bot loop guards are only needed for push/schedule-triggered workflows — a
+  # workflow_dispatch-only workflow cannot be re-triggered by a bot commit.
+  if grep -qE "^[[:space:]]*[^#].*git (push|commit)" "$f"; then
+    is_push_triggered=false
+    if grep -qE "^  (push|schedule|pull_request):" "$f"; then
+      is_push_triggered=true
+    fi
+
+    if [ "$is_push_triggered" = true ]; then
+      # Require an explicit guard on an if: line, e.g.:
+      #   if: github.actor != 'github-actions[bot]'
+      if grep -qE "^[[:space:]]*if:.*github\.actor[[:space:]]*!=[[:space:]]*['\"]github-actions\[bot\]['\"]" "$f"; then
+        ok "has bot loop guard (if: github.actor != 'github-actions[bot]')"
+      else
+        error "$file: push-triggered auto-commit workflow is missing bot loop guard for 'github-actions[bot]'"
+      fi
     fi
   fi
 
   # ── Check 3: concurrency group on Main-push workflows ───────────────────
   # Detect workflows triggered on push to Main by looking for the branch listed
   # inside a branches: array or block (e.g. `- Main` or `branches: [Main]`).
-  if grep -qE "^\s+-\s+['\"]?(Main|main)['\"]?\s*$" "$f" || \
-     grep -qE "branches:\s*\[['\"]?(Main|main)['\"]?\]" "$f"; then
+  if grep -qE "^[[:space:]]+-[[:space:]]+['\"]?(Main|main)['\"]?[[:space:]]*$" "$f" || \
+     grep -qE "branches:[[:space:]]*\[['\"]?(Main|main)['\"]?\]" "$f"; then
     if grep -q '^concurrency:' "$f"; then
       ok "has concurrency group"
     else

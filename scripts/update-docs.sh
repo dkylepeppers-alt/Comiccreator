@@ -170,9 +170,24 @@ generate_agent_roster() {
   echo '| Agent | Name | Description |'
   echo '|-------|------|-------------|'
 
+  # Collect agent files then sort explicitly for deterministic ordering.
+  local agent_files=()
   for f in "$REPO_ROOT"/.github/agents/*.agent.md; do
     [ -f "$f" ] || continue
+    agent_files+=("$f")
+  done
 
+  if [ "${#agent_files[@]}" -eq 0 ]; then
+    return
+  fi
+
+  local sorted_files=()
+  while IFS= read -r line; do
+    sorted_files+=("$line")
+  done < <(printf '%s\n' "${agent_files[@]}" | LC_ALL=C sort)
+
+  local f
+  for f in "${sorted_files[@]}"; do
     local file
     file="$(basename "$f" .agent.md)"
 

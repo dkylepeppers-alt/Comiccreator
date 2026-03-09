@@ -29,9 +29,9 @@ if [ ! -d "$WORKFLOWS_DIR" ]; then
 fi
 
 workflow_files=()
-while IFS= read -r -d '' f; do
+while IFS= read -r f; do
   workflow_files+=("$f")
-done < <(find "$WORKFLOWS_DIR" -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) -print0 | sort -z)
+done < <(find "$WORKFLOWS_DIR" -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
 
 if [ "${#workflow_files[@]}" -eq 0 ]; then
   echo "No workflow files found in $WORKFLOWS_DIR."
