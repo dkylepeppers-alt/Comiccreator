@@ -5,10 +5,10 @@ on:
     branches:
       - Main
 
-# Cancel any in-progress bump if a newer commit arrives on Main
+# Serialize with auto-update-docs to prevent non-fast-forward push failures
 concurrency:
-  group: auto-bump
-  cancel-in-progress: true
+  group: auto-main-push
+  cancel-in-progress: false
 
 jobs:
   auto-bump:

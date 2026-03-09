@@ -1,0 +1,42 @@
+name: Auto Update Docs
+
+on:
+  push:
+    branches:
+      - Main
+
+# Serialize with auto-bump to prevent non-fast-forward push failures
+concurrency:
+  group: auto-main-push
+  cancel-in-progress: false
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    # Skip commits made by bots to prevent infinite loops
+    if: github.actor != 'github-actions[bot]' && github.actor != 'copilot[bot]'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run update-docs
+        run: bash scripts/update-docs.sh
+
+      - name: Commit and push if changed
+        run: |
+          git add README.md
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: auto-update README generated sections"
+            git push origin "HEAD:${{ github.ref_name }}"
+          else
+            echo "No documentation changes detected — skipping commit."
+          fi

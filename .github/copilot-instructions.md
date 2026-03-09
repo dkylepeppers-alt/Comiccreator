@@ -43,6 +43,7 @@ test/
     smoke.spec.js            Playwright end-to-end smoke tests (Chromium, requires local server)
 scripts/
   bump-version.sh        Atomically bumps version in all 5 places (see Versioning below)
+  update-docs.sh         Regenerates auto-generated README sections (directory tree, workflows table)
   install-hooks.sh       Installs git pre-commit hook
   pre-commit             Pre-commit hook (version consistency check only — does NOT run syntax checks or tests)
 .github/
@@ -125,6 +126,9 @@ npm run format:check
 
 # Serve locally on port 8080
 npm run serve
+
+# Regenerate auto-generated README sections (directory tree, workflows table)
+npm run update-docs
 ```
 
 Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:assert` modules. `fake-indexeddb` is used to mock IndexedDB in tests. Always run `npm install` first in a fresh environment.
@@ -144,9 +148,12 @@ Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:
 
 Additional workflows:
 - `.github/workflows/auto-bump.yml` — auto-bumps the patch version on every push to `Main` (skips bot commits)
+- `.github/workflows/auto-update-docs.yml` — regenerates auto-generated README sections on every push to `Main` (skips bot commits); runs `scripts/update-docs.sh`
 - `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `Main` or manual trigger
 - `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs checks, bumps version, tags, creates GitHub Release
 - `.github/workflows/security.yml` — weekly `npm audit --audit-level=high` security scan
+
+`auto-bump.yml` and `auto-update-docs.yml` share a concurrency group (`auto-main-push`) to serialize bot pushes and avoid non-fast-forward failures.
 
 All steps must pass before merging. If CI is red, check the workflow run logs.
 

@@ -134,38 +134,58 @@ Image generation can be disabled in Settings to save API credits (text-only comi
 
 ## Architecture
 
+<!-- AUTO-GENERATED-CONTENT:START (DIRECTORY_TREE) -->
 ```
 Comiccreator/
-├── index.html              Main app shell
-├── manifest.json           PWA manifest
-├── sw.js                   Service worker (offline caching)
-├── version.json            App version metadata
-├── generate-icons.html     Browser-based icon generator utility
-│
-├── css/
-│   └── app.css             Complete UI (dark theme, responsive, mobile-first)
-│
-├── js/
-│   ├── utils.js            Shared helpers (escHtml, timeAgo, GENRES, cosineSimilarity, etc.)
-│   ├── db.js               IndexedDB storage layer (7 object stores)
-│   ├── api.js              NanoGPT API client (streaming SSE, image gen, embeddings, captions)
-│   ├── app.js              SPA router, navigation, modals, toasts
-│   │
-│   └── pages/
-│       ├── home.js         Dashboard with stats, recent comics, genre grid
-│       ├── characters.js   Character CRUD with multi-image upload (up to 20 per character)
-│       ├── worlds.js       World CRUD with multi-image upload (up to 20 per world)
-│       ├── create.js       Comic generation engine (setup → stream → read → branch)
-│       ├── library.js      Comic viewer and PDF export
-│       ├── presets.js      Prompt preset editor with sampler controls
-│       ├── image-presets.js  Image style preset editor (art-style prompt prefixes)
-│       └── settings.js     API config, model params, data management
-│
-└── icons/
-    ├── icon.svg            Vector logo
-    ├── icon-192.png        PWA icon (small)
-    └── icon-512.png        PWA icon (large)
+├── css
+│   └── app.css
+├── docs
+│   └── image-generation-pipeline.md
+├── icons
+│   ├── icon-192.png
+│   ├── icon-512.png
+│   └── icon.svg
+├── js
+│   ├── pages
+│   │   ├── characters.js
+│   │   ├── create.js
+│   │   ├── home.js
+│   │   ├── image-presets.js
+│   │   ├── library.js
+│   │   ├── presets.js
+│   │   ├── settings.js
+│   │   └── worlds.js
+│   ├── api.js
+│   ├── app.js
+│   ├── db.js
+│   └── utils.js
+├── scripts
+│   ├── bump-version.sh
+│   ├── install-hooks.sh
+│   ├── pre-commit
+│   └── update-docs.sh
+├── test
+│   ├── e2e
+│   │   └── smoke.spec.js
+│   ├── api-integration.test.js
+│   ├── api-pure.test.js
+│   ├── config-integrity.test.js
+│   ├── db.test.js
+│   ├── pure-functions.test.js
+│   └── utils.test.js
+├── README.md
+├── TEST_COVERAGE_ANALYSIS.md
+├── eslint.config.js
+├── generate-icons.html
+├── index.html
+├── manifest.json
+├── package-lock.json
+├── package.json
+├── playwright.config.js
+├── sw.js
+└── version.json
 ```
+<!-- AUTO-GENERATED-CONTENT:END (DIRECTORY_TREE) -->
 
 ### Data Model
 
@@ -344,6 +364,21 @@ Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` ensures the s
 
 On every push to `Main`, `.github/workflows/auto-bump.yml` automatically runs a patch bump and pushes the result, so manual bumps are only needed before merging features that warrant a minor or major increment.
 
+### Auto-Updating Documentation
+
+Sections of this README marked with `<!-- AUTO-GENERATED-CONTENT -->` comments are regenerated automatically. On every push to `Main`, `.github/workflows/auto-update-docs.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
+
+- **Architecture directory tree** — reflects the actual file structure of the repository
+- **CI Workflows table** — lists all workflow files with their triggers and names
+
+To regenerate locally:
+
+```bash
+bash scripts/update-docs.sh   # or: npm run update-docs
+```
+
+The script is idempotent — running it multiple times with no file changes produces the same output.
+
 ---
 
 ### GitHub Pages Deployment
@@ -364,14 +399,17 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 
 ### CI Workflows
 
-| Workflow | Trigger | Steps |
-|----------|---------|-------|
-| `tests.yml` | Push / PR (all branches) | `npm ci` → `check-syntax` → `lint` → `npm test` |
-| `playwright.yml` | Push / PR (all branches) | Install Chromium → `npm run test:e2e`; uploads report artifact |
-| `auto-bump.yml` | Push to `Main` (non-bot) | Runs `bump-version.sh patch`, commits, pushes |
-| `deploy-pages.yml` | Push to `Main` / manual | Deploys static assets to GitHub Pages |
-| `release.yml` | Manual `workflow_dispatch` | Runs all checks → bumps version → tags → creates GitHub Release |
-| `security.yml` | Weekly schedule / manual | `npm audit --audit-level=high` |
+<!-- AUTO-GENERATED-CONTENT:START (WORKFLOWS_TABLE) -->
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| `auto-bump.yml` | push | Auto Bump Version |
+| `auto-update-docs.yml` | push | Auto Update Docs |
+| `deploy-pages.yml` | push, workflow_dispatch | Deploy to GitHub Pages |
+| `playwright.yml` | push, pull_request | Playwright E2E Tests |
+| `release.yml` | workflow_dispatch | Release |
+| `security.yml` | schedule, workflow_dispatch | Security Audit |
+| `tests.yml` | push, pull_request | Tests |
+<!-- AUTO-GENERATED-CONTENT:END (WORKFLOWS_TABLE) -->
 
 ---
 
