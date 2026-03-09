@@ -122,8 +122,8 @@
    *     → "action-pose Iron Man: Fist raised"
    *   buildImageEmbeddingText({tag:'default', description:'Red cape'}, 'Superman')
    *     → "Superman: Red cape"
-   *   buildImageEmbeddingText({tag:'interior', description:'Dimly lit lab'}, 'Gotham')
-   *     → "interior Gotham: Dimly lit lab"
+   *   buildImageEmbeddingText({tag:'interior-living-room', description:'Dimly lit lounge'}, 'Gotham')
+   *     → "interior-living-room Gotham: Dimly lit lounge"
    */
   function buildImageEmbeddingText(img, contextName) {
     const parts = [];

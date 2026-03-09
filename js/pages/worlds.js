@@ -14,8 +14,20 @@ const WorldsPage = (() => {
 
   const IMAGE_TAGS = [
     'establishing',
-    'interior',
-    'exterior',
+    'exterior-street',
+    'exterior-rooftop',
+    'exterior-alley',
+    'exterior-courtyard',
+    'exterior-wilderness',
+    'interior-living-room',
+    'interior-kitchen',
+    'interior-bedroom',
+    'interior-bathroom',
+    'interior-office',
+    'interior-bar',
+    'interior-lab',
+    'interior-corridor',
+    'interior-warehouse',
     'aerial',
     'night',
     'day',
@@ -696,6 +708,11 @@ const WorldsPage = (() => {
 
     const worldName = document.getElementById('world-name')?.value.trim() || 'the world';
     const worldDesc = document.getElementById('world-desc')?.value.trim() || '';
+    const worldEra = document.getElementById('world-era')?.value.trim() || '';
+    const worldAtmosphere = document.getElementById('world-atmosphere')?.value.trim() || '';
+
+    // Build a rich world context string for use in interaction prompts
+    const worldContext = [worldDesc, worldEra, worldAtmosphere].filter(Boolean).join(', ') || 'as shown';
 
     const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
     if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
@@ -705,20 +722,21 @@ const WorldsPage = (() => {
     const castNames = castChars.map((c) => c.name).join(', ');
     const castDesc = castChars
       .map((c) => {
+        const roleNote = c.role ? ` [${c.role}]` : '';
         const appearances = c.appearance ? ` (${c.appearance.trim()})` : '';
-        return `${c.name}${appearances}`;
+        return `${c.name}${roleNote}${appearances}`;
       })
       .join('; ');
 
     const interactionPrompts = [
       {
         tag: 'character-interaction',
-        prompt: `${castNames} are together in ${worldName} (${worldDesc || 'as shown'}). Full-body ensemble shot showing all characters interacting with each other in the environment. Characters: ${castDesc}. Dynamic group composition with ${worldName}'s atmosphere and architecture visible in the background. Match the art style of the provided reference images.`,
+        prompt: `${castNames} are together in ${worldName} (${worldContext}). Full-body ensemble shot showing all characters interacting with each other in the environment. Characters: ${castDesc}. Dynamic group composition — each character's personality and role is conveyed through their pose and expression. ${worldName}'s distinctive atmosphere and architecture are visible in the background. Match the art style of the provided reference images.`,
         desc: `${castNames} — ensemble interaction in ${worldName}`,
       },
       {
         tag: 'character-interaction',
-        prompt: `${castNames} in a dramatic confrontation or collaboration scene inside ${worldName} (${worldDesc || 'as shown'}). Each character distinctly visible: ${castDesc}. Cinematic wide shot capturing the tension and relationship between characters with the world's setting providing context. Match the art style of the provided reference images.`,
+        prompt: `${castNames} in a dramatic confrontation or collaboration scene in ${worldName} (${worldContext}). Each character distinctly visible with their own stance and expression: ${castDesc}. Cinematic wide shot capturing the tension and relationship between characters. The world's setting — its architecture, lighting, and atmosphere — reinforces the drama. Match the art style of the provided reference images.`,
         desc: `${castNames} — dramatic scene in ${worldName}`,
       },
     ];

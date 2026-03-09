@@ -692,6 +692,21 @@ const CharactersPage = (() => {
     const appearance = document.getElementById('char-appearance')?.value.trim() || '';
     const charAppearanceNote = appearance ? ` (${appearance})` : '';
 
+    // Build world context strings for prompt placeholders
+    const worldEraNote = world.era ? `, ${world.era}` : '';
+    const worldAtmosphereNote = world.atmosphere || world.description || '';
+
+    // Helper that resolves all placeholders in a variation prompt
+    function resolveWorldPrompt(templatePrompt, charName, charAppNote) {
+      return templatePrompt
+        .replace(/\{charName\}/g, charName)
+        .replace(/\{charAppearanceNote\}/g, charAppNote)
+        .replace(/\{worldName\}/g, world.name)
+        .replace(/\{worldDescription\}/g, world.description || 'as shown in the world reference')
+        .replace(/\{worldEra\}/g, worldEraNote)
+        .replace(/\{worldAtmosphere\}/g, worldAtmosphereNote || 'as shown in the world reference');
+    }
+
     // Build <option> list with placeholders resolved for display
     const options = variations
       .map((v, i) => {
@@ -700,12 +715,11 @@ const CharactersPage = (() => {
       })
       .join('');
 
-    // Build initial prompt with placeholders resolved
-    const initialPrompt = variations[0].prompt
-      .replace(/\{charName\}/g, name)
-      .replace(/\{charAppearanceNote\}/g, charAppearanceNote)
-      .replace(/\{worldName\}/g, world.name)
-      .replace(/\{worldDescription\}/g, world.description || 'as shown in the world reference');
+    // Build initial prompt with all placeholders resolved
+    const initialPrompt = resolveWorldPrompt(variations[0].prompt, name, charAppearanceNote);
+
+    // Build a brief world context hint for the panel header
+    const worldContextHint = [world.era, world.atmosphere].filter(Boolean).join(' · ');
 
     const toolbar = document.getElementById('char-img-toolbar');
     if (!toolbar) return;
@@ -714,7 +728,7 @@ const CharactersPage = (() => {
     panel.id = 'char-world-dropdown';
     panel.className = 'gen-ref-dropdown';
     panel.innerHTML = `
-      <div class="gen-ref-hint">Generate <strong>${escHtml(name)}</strong> in <strong>${escHtml(world.name)}</strong></div>
+      <div class="gen-ref-hint">Generate <strong>${escHtml(name)}</strong> in <strong>${escHtml(world.name)}</strong>${worldContextHint ? ` <span class="text-muted">(${escHtml(worldContextHint)})</span>` : ''}</div>
       <div class="gen-ref-row">
         <select id="char-world-type">${options}<option value="custom">✏️ Custom prompt</option></select>
       </div>
@@ -728,7 +742,7 @@ const CharactersPage = (() => {
     toolbar.insertAdjacentElement('afterend', panel);
 
     // Store context for the generate handler (world is immutable; name/appearance are read fresh from DOM)
-    CharactersPage._pendingWorldData = { world };
+    CharactersPage._pendingWorldData = { world, resolveWorldPrompt };
 
     // Update prompt textarea when dropdown selection changes
     document.getElementById('char-world-type').addEventListener('change', (e) => {
@@ -743,11 +757,7 @@ const CharactersPage = (() => {
         const currentName = document.getElementById('char-name')?.value.trim() || 'the character';
         const currentAppearance = document.getElementById('char-appearance')?.value.trim() || '';
         const currentCharAppearanceNote = currentAppearance ? ` (${currentAppearance})` : '';
-        promptEl.value = (v?.prompt || '')
-          .replace(/\{charName\}/g, currentName)
-          .replace(/\{charAppearanceNote\}/g, currentCharAppearanceNote)
-          .replace(/\{worldName\}/g, world.name)
-          .replace(/\{worldDescription\}/g, world.description || 'as shown in the world reference');
+        promptEl.value = resolveWorldPrompt(v?.prompt || '', currentName, currentCharAppearanceNote);
       }
     });
   }
@@ -769,7 +779,7 @@ const CharactersPage = (() => {
     const variation = selectedIdx !== 'custom' ? variations[parseInt(selectedIdx, 10)] : null;
     const tag = variation ? variation.tag : 'character-in-world';
 
-    const { world } = CharactersPage._pendingWorldData || {};
+    const { world, resolveWorldPrompt } = CharactersPage._pendingWorldData || {};
     if (!world) return App.toast('World data not found — close and reopen the panel', 'error');
 
     // Read fresh values from the DOM so edits made while the panel was open are reflected
@@ -783,9 +793,24 @@ const CharactersPage = (() => {
     const appearance = document.getElementById('char-appearance')?.value.trim() || '';
 
     const migratedWorld = DB.migrateWorld(world);
-    const worldPrimaryImg = migratedWorld.images?.[migratedWorld.primaryImageIndex ?? 0] || migratedWorld.images?.[0];
+    // Collect up to 3 world images for richer world context: primary first, then others
+    const worldImages = migratedWorld.images || [];
+    const worldPrimaryIdx = migratedWorld.primaryImageIndex ?? 0;
+    const worldPrimaryImg = worldImages[worldPrimaryIdx] || worldImages[0];
+    // Build a sorted list with the primary image first to avoid O(n²) indexOf calls in sort
+    const worldRefUrls = worldImages
+      .map((img, idx) => ({ img, idx }))
+      .filter(({ img }) => img && img.dataUrl)
+      .sort((a, b) => {
+        if (a.idx === worldPrimaryIdx) return -1;
+        if (b.idx === worldPrimaryIdx) return 1;
+        return a.idx - b.idx;
+      })
+      .slice(0, 3)
+      .map(({ img }) => img.dataUrl);
 
-    const refUrls = worldPrimaryImg?.dataUrl ? [primaryImg.dataUrl, worldPrimaryImg.dataUrl] : [primaryImg.dataUrl];
+    // Character image first, then world images for context
+    const refUrls = worldPrimaryImg?.dataUrl ? [primaryImg.dataUrl, ...worldRefUrls] : [primaryImg.dataUrl];
 
     const goBtn = document.getElementById('char-world-go-btn');
     if (goBtn) {

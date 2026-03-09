@@ -923,115 +923,151 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       key: 'front-view-main',
       tag: 'front-view',
       prompt:
-        'Full-body front view of the character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose. Arms slightly away from body. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.',
-      desc: 'Front-facing full body reference',
+        'Full-body front view of the exact character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose — arms hanging slightly away from the body, weight evenly distributed. Preserve every detail: face, hairstyle, skin tone, clothing, accessories, and proportions exactly as shown. Full figure visible head to toe. Flat white studio background. Clean ink lines with flat comic-book colors. Orthographic character-sheet style.',
+      desc: 'Front-facing full body',
     },
     {
       key: 'side-view-main',
       tag: 'side-view',
       prompt:
-        'Full-body side profile of the character shown in the reference image. The character stands facing the right side of the frame. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.',
-      desc: 'Side profile reference',
+        'Full-body side profile of the exact character shown in the reference image. The character stands facing the right side of the frame in a neutral upright pose. Preserve every detail: silhouette, hairstyle, clothing layers, and accessories exactly as shown in the reference. Full figure visible head to toe. Flat white studio background. Clean ink lines with flat comic-book colors. Orthographic character-sheet style.',
+      desc: 'Side profile',
     },
     {
       key: 'back-view-main',
       tag: 'back-view',
       prompt:
-        'Full-body rear view of the character shown in the reference image. The character stands facing away from the viewer. Full figure visible from head to toe. Flat white studio background. Orthographic character-sheet style.',
-      desc: 'Rear view reference',
+        'Full-body rear view of the exact character shown in the reference image. The character stands facing directly away from the viewer in a neutral upright pose. Preserve back-of-hair, clothing silhouette, and any accessories visible from behind. Full figure visible head to toe. Flat white studio background. Clean ink lines with flat comic-book colors. Orthographic character-sheet style.',
+      desc: 'Rear view',
     },
     {
       key: 'close-up-portrait',
       tag: 'close-up',
       prompt:
-        'Close-up portrait of the character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the camera. Highly detailed facial features, hair, and collar. Soft studio lighting. Clean neutral background.',
-      desc: 'Close-up face/portrait reference',
+        'Close-up portrait of the exact character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the viewer. Highly detailed face, hair, skin texture, and collar or neckline exactly matching the reference. Soft, even studio lighting with subtle shadows defining facial structure. Clean neutral background. Comic book portrait style.',
+      desc: 'Close-up portrait',
     },
     {
       key: 'action-pose-task',
       tag: 'action-pose',
       prompt:
-        'The character from the reference image actively performing a task or everyday activity — reaching for something, gesturing expressively, working with their hands, or walking with purpose. Natural mid-action body language showing the character doing something. Full body visible. Clean neutral background.',
-      desc: 'Action pose — performing a task/activity',
+        'The exact character from the reference image actively performing an everyday task — reaching for an object, writing, working with their hands, opening a door, or gesturing expressively while speaking. Natural mid-action body language. Conveys what the character is doing, not a heroic stance. Full body visible. Match the character\'s face, clothing, and proportions from the reference exactly. Clean neutral background. Comic book panel style.',
+      desc: 'Action pose — task/activity',
     },
     {
       key: 'action-pose-motion',
       tag: 'action-pose',
       prompt:
-        'The character from the reference image caught in natural motion — turning to look at something, picking up an object, sitting down, or stepping forward. Captured mid-movement in a relaxed, purposeful pose. Conveys what the character is doing, not a heroic stance. Full body visible. Clean neutral background.',
-      desc: 'Action pose — natural movement/activity',
+        'The exact character from the reference image caught in natural motion — turning to look at something, stepping forward, sitting down, picking up an object, or raising a hand to point. Captured mid-movement in a relaxed, purposeful pose. Full body visible. Match the character\'s face, clothing, and proportions from the reference exactly. Clean neutral background. Comic book panel style.',
+      desc: 'Action pose — movement',
     },
     {
       key: 'expression-anger',
       tag: 'expression',
       prompt:
-        'Expressive close-up portrait of the character from the reference image showing intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils. Strong dramatic side-lighting with deep shadows. Head and shoulders framing. Clean dark background.',
+        'Expressive close-up portrait of the exact character from the reference image. Emotion: intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils, eyes narrowed or wide. Hard dramatic side-lighting that deepens shadows and heightens tension. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Dark, charged background. Comic book expression panel.',
       desc: 'Expression — anger/rage',
     },
     {
       key: 'expression-joy',
       tag: 'expression',
       prompt:
-        'Expressive close-up portrait of the character from the reference image showing JOY or TRIUMPH. Wide grin, bright eyes, lifted cheeks. Warm upbeat lighting. Head and shoulders framing. Clean light background.',
+        'Expressive close-up portrait of the exact character from the reference image. Emotion: JOY, TRIUMPH, or LAUGHTER. Wide genuine smile, bright eyes, lifted cheeks, relaxed brow. Warm upbeat lighting from slightly above. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Bright or warm-neutral background. Comic book expression panel.',
       desc: 'Expression — joy/triumph',
     },
     {
       key: 'expression-fear',
       tag: 'expression',
       prompt:
-        'Expressive close-up portrait of the character from the reference image showing FEAR or SHOCK. Wide eyes, raised brows, mouth slightly open. Cool dramatic lighting from below. Head and shoulders framing. Clean background.',
+        'Expressive close-up portrait of the exact character from the reference image. Emotion: FEAR, SHOCK, or DREAD. Wide eyes, sharply raised brows, mouth slightly open, visible tension in the jaw. Cool dramatic under-lighting or side-lighting. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Dark, unsettling background. Comic book expression panel.',
       desc: 'Expression — fear/shock',
     },
     {
       key: 'character-sheet-3view',
       tag: 'character-sheet',
       prompt:
-        'Orthographic character reference sheet of the character from the reference image. Three views arranged side by side: front facing (left), three-quarter view (center), side profile (right). All views show the full body at the same scale. Clean white background, thin guide lines. Comic book character design sheet style.',
+        'Orthographic character reference sheet of the exact character from the reference image. Three views arranged side by side at the same scale: front facing (left), three-quarter view (center), side profile (right). All views show the complete body from head to toe. Thin horizontal guide lines marking head, shoulder, waist, knee, and foot height. Clean white background. Every costume detail, accessory, and color matches the reference image precisely. Comic book character design sheet style.',
       desc: 'Character sheet — 3-view turnaround',
     },
   ];
 
   const WORLD_REF_VARIATIONS = [
     {
-      tag: 'aerial',
-      prompt: "Aerial bird's-eye view of {name}, {description}, wide panoramic perspective showing the full landscape",
-      desc: 'Aerial panoramic view',
+      tag: 'establishing',
+      prompt:
+        'Wide establishing shot of {name}. {description}. Full environment visible with dramatic sky and strong foreground-to-background depth. Cinematic composition showing the scale and defining atmosphere of the location. Architecture, signage, and environmental details reveal the world\'s unique character. No characters. Comic book establishing panel style.',
+      desc: 'Wide establishing shot',
     },
     {
-      tag: 'interior',
-      prompt: 'Interior view of a key location inside {name}, {description}, detailed architecture and furnishings',
-      desc: 'Interior environment detail',
+      tag: 'aerial',
+      prompt:
+        "Aerial bird's-eye view of {name}. {description}. High altitude perspective looking down at a steep angle, showing the full layout of streets, buildings, and terrain. City-block or landscape scale — key landmarks, pathways, and environmental patterns clearly visible from above. No characters. Comic book aerial overview style.",
+      desc: "Aerial bird's-eye view",
+    },
+    {
+      tag: 'exterior-street',
+      prompt:
+        'Street-level exterior view of {name}. {description}. Ground-level perspective on the main thoroughfare, plaza, or public space. Pedestrian scale — storefronts, signage, architectural facades, weather effects, and ambient environmental details visible. Daytime, natural lighting with strong architectural shadows. No characters. Comic book street-level panel style.',
+      desc: 'Street-level exterior',
+    },
+    {
+      tag: 'interior-main',
+      prompt:
+        'Interior view of the most important interior space within {name}. {description}. Detailed room showing furniture, fixtures, lighting, and atmospheric props specific to this world. Strong sense of depth — foreground objects frame the mid-ground activity space and background walls. The space feels lived-in and reveals the culture and era of this world. No characters. Comic book interior panel style.',
+      desc: 'Key interior space',
     },
     {
       tag: 'night',
-      prompt: 'Night scene of {name}, {description}, dark atmosphere with dramatic lighting and shadows',
-      desc: 'Night atmosphere reference',
+      prompt:
+        'Atmospheric night scene of {name}. {description}. Dark environment dramatically illuminated by artificial light sources — neon signs, street lamps, glowing windows, fires, or bioluminescence. Strong chiaroscuro contrast between lit areas and deep shadows. Moody color palette dominated by cool blues, purples, or warm amber. No characters. Comic book night panel style.',
+      desc: 'Night atmosphere',
+    },
+    {
+      tag: 'landmark',
+      prompt:
+        "Iconic landmark or signature location of {name}. {description}. The most recognizable or narratively significant structure, monument, or site in this world. Dramatic low-angle or three-quarter perspective emphasizing its scale and visual impact. The landmark's design communicates the world's history, power, or culture. No characters. Comic book landmark establishing style.",
+      desc: 'Iconic landmark',
     },
     {
       tag: 'detail',
-      prompt: 'Close-up architectural or environmental detail of {name}, {description}, texture and material focus',
-      desc: 'Close-up environment detail',
+      prompt:
+        'Close-up environmental detail from {name}. {description}. Extreme close-up on a specific surface, texture, or object that defines this world — weathered stonework, industrial machinery, neon signs, alien flora, futuristic control panels, period furnishings, or symbolic artifacts. Material textures and fine details clearly rendered. No characters. Comic book detail panel style.',
+      desc: 'Environmental close-up detail',
     },
   ];
 
   /**
    * Variation prompts for generating images of a character interacting within a world.
-   * Uses {charName}, {charAppearanceNote}, {worldName}, {worldDescription} placeholders.
+   * Uses {charName}, {charAppearanceNote}, {worldName}, {worldDescription}, {worldEra}, {worldAtmosphere} placeholders.
    */
   const CHARACTER_WORLD_VARIATIONS = [
     {
       key: 'in-world-establishing',
       tag: 'character-in-world',
       prompt:
-        "The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}). Full-body establishing shot showing the character in context with the environment. The world's distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.",
+        'The character {charName}{charAppearanceNote} standing in {worldName} ({worldDescription}{worldEra}). Full-body establishing shot showing the character in context within the environment. The world\'s distinctive atmosphere, architecture, and defining visual details are clearly visible around them. The character\'s pose and expression naturally reflect how they relate to this world. Match the art style of the provided reference images.',
       desc: '{charName} in {worldName} — establishing shot',
     },
     {
       key: 'in-world-activity',
       tag: 'character-in-world',
       prompt:
-        "The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}) — working, exploring, interacting with an object, or moving through the environment. Full-body shot showing the character mid-activity with the world's distinctive atmosphere and architecture visible around them. Match the art style of the provided reference images.",
-      desc: '{charName} in {worldName} — doing an activity',
+        'The character {charName}{charAppearanceNote} actively doing something in {worldName} ({worldDescription}{worldEra}) — working, exploring, investigating, or moving purposefully through the environment. Full-body mid-action shot. The world\'s atmosphere and architecture frame the character\'s activity. The scene communicates what the character does here and why this place matters to them. Match the art style of the provided reference images.',
+      desc: '{charName} in {worldName} — mid-activity',
+    },
+    {
+      key: 'in-world-interior',
+      tag: 'character-in-world',
+      prompt:
+        'The character {charName}{charAppearanceNote} inside a key interior location within {worldName} ({worldDescription}{worldEra}). Medium or full-body shot with the room clearly legible — furniture, lighting fixtures, architectural details, and cultural objects of the world visible around the character. The interior\'s atmosphere ({worldAtmosphere}) is palpable. Match the art style of the provided reference images.',
+      desc: '{charName} in {worldName} — interior location',
+    },
+    {
+      key: 'in-world-closeup',
+      tag: 'character-in-world',
+      prompt:
+        'Close-up portrait of {charName}{charAppearanceNote} with {worldName} ({worldDescription}{worldEra}) visible in the background. The character fills the foreground — head and shoulders in sharp focus. Behind them the world\'s most recognisable environment is rendered in soft depth-of-field, conveying atmosphere ({worldAtmosphere}) without overwhelming the subject. Match the art style of the provided reference images.',
+      desc: '{charName} — portrait with world background',
     },
   ];
 
