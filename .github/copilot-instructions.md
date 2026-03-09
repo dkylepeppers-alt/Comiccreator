@@ -45,6 +45,10 @@ scripts/
   bump-version.sh        Atomically bumps version in all 5 places (see Versioning below)
   install-hooks.sh       Installs git pre-commit hook
   pre-commit             Pre-commit hook (version consistency check only — does NOT run syntax checks or tests)
+.github/
+  agents/                Copilot agent definitions (gem-team + standalone agents)
+  copilot-instructions.md  This file — project-wide Copilot instructions
+  workflows/             CI/CD workflow definitions
 ```
 
 ---
@@ -229,3 +233,53 @@ Use `App.logError(context, error, extraDetails)` to record errors to the in-app 
 - **`fake-indexeddb` in tests**: `fake-indexeddb` must be `require`d at the top of each test file that exercises IndexedDB. See `test/db.test.js` for the pattern.
 - **Service worker caching**: After a version bump, browsers may serve cached old assets. The `CACHE_NAME` change forces the SW activate step to delete the old cache. Always bump the version when deploying asset changes.
 - **`node_modules` not present in fresh sandbox**: Run `npm install` before `npm test`. The `fake-indexeddb` devDependency is not installed by default.
+
+---
+
+## Multi-Agent Workflow (Gem Team)
+
+This repository uses the [gem-team](https://github.com/mubaidr/gem-team) multi-agent orchestration framework. Agent definitions live in `.github/agents/` and follow the `.agent.md` naming convention.
+
+### Agent Roster
+
+| Agent | File | Role |
+|-------|------|------|
+| `gem-orchestrator` | `gem-orchestrator.agent.md` | Team Lead — detects phase, delegates to workers, synthesizes results. Never executes directly (`disable-model-invocation: true`). |
+| `gem-researcher` | `gem-researcher.agent.md` | Explores codebase, maps dependencies, delivers structured YAML findings. |
+| `gem-planner` | `gem-planner.agent.md` | Creates DAG-based `plan.yaml` with task decomposition, pre-mortem analysis, and wave assignment. |
+| `gem-implementer` | `gem-implementer.agent.md` | Writes code using TDD (Red → Green). Follows plan specifications. |
+| `gem-browser-tester` | `gem-browser-tester.agent.md` | Runs E2E scenarios in browser, verifies UI/UX and accessibility. |
+| `gem-devops` | `gem-devops.agent.md` | Manages CI/CD, containers, and infrastructure deployment with approval gates. |
+| `gem-reviewer` | `gem-reviewer.agent.md` | Security gatekeeper — OWASP scanning, secrets detection, PRD compliance. |
+| `gem-documentation-writer` | `gem-documentation-writer.agent.md` | Writes technical docs, generates diagrams, maintains code-documentation parity. |
+
+### Workflow Phases
+
+1. **Research** — Orchestrator delegates to `gem-researcher` (up to 4 concurrent) to gather codebase context per focus area.
+2. **Planning** — Orchestrator delegates to `gem-planner` to create `docs/plan/{plan_id}/plan.yaml`.
+3. **Execution** — Orchestrator reads `plan.yaml`, dispatches tasks by wave (dependencies first, up to 4 concurrent agents per wave).
+4. **Summary** — Orchestrator delegates to `gem-documentation-writer` to produce a walkthrough and finalize `docs/prd.yaml`.
+
+### Generated Artifacts
+
+| Artifact | Path | Producer |
+|----------|------|----------|
+| Task DAG + state | `docs/plan/{plan_id}/plan.yaml` | `gem-planner` |
+| Research findings | `docs/plan/{plan_id}/research_findings_{focus}.yaml` | `gem-researcher` |
+| Walkthrough / PRD | `docs/plan/{plan_id}/walkthrough-*.md`, `docs/prd.yaml` | `gem-documentation-writer` |
+| Failure logs | `docs/plan/{plan_id}/logs/{agent}_{task_id}_{ts}.yaml` | Any agent on failure |
+
+### Delegation Protocol
+
+The orchestrator passes `base_params` (task_id, plan_id, plan_path, task_definition, contracts) plus agent-specific parameters to each worker. Each worker returns a JSON response with `status`, `task_id`, `plan_id`, `summary`, and an `extra` object containing agent-specific details.
+
+### Additional Agents
+
+The repository also includes non-gem agents in `.github/agents/`:
+
+- `Bugfixer.agent.md` — Bug detection and targeted fixes.
+- `Docs-agent.agent.md` — Repository documentation specialist.
+- `Readme.agent.md` — README file maintenance.
+- `my-agent.agent.md` — General-purpose planning specialist.
+
+These agents operate independently from the gem-team workflow.
