@@ -923,70 +923,70 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       key: 'front-view-main',
       tag: 'front-view',
       prompt:
-        'Full-body front view of the exact character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose — arms hanging slightly away from the body, weight evenly distributed. Preserve every detail: face, hairstyle, skin tone, clothing, accessories, and proportions exactly as shown. Full figure visible head to toe. Flat white studio background. Clean ink lines with flat comic-book colors. Orthographic character-sheet style.',
+        'Full-body front view of the exact character shown in the reference image. The character stands upright facing the viewer with a relaxed, neutral pose — arms hanging slightly away from the body, weight evenly distributed. Preserve every detail: face, hairstyle, skin tone, clothing, accessories, and proportions exactly as shown. Full figure visible head to toe. Flat white studio background. Orthographic character-sheet layout.',
       desc: 'Front-facing full body',
     },
     {
       key: 'side-view-main',
       tag: 'side-view',
       prompt:
-        'Full-body side profile of the exact character shown in the reference image. The character stands facing the right side of the frame in a neutral upright pose. Preserve every detail: silhouette, hairstyle, clothing layers, and accessories exactly as shown in the reference. Full figure visible head to toe. Flat white studio background. Clean ink lines with flat comic-book colors. Orthographic character-sheet style.',
+        'Full-body side profile of the exact character shown in the reference image. The character stands facing the right side of the frame in a neutral upright pose. Preserve every detail: silhouette, hairstyle, clothing layers, and accessories exactly as shown in the reference. Full figure visible head to toe. Flat white studio background. Orthographic character-sheet layout.',
       desc: 'Side profile',
     },
     {
       key: 'back-view-main',
       tag: 'back-view',
       prompt:
-        'Full-body rear view of the exact character shown in the reference image. The character stands facing directly away from the viewer in a neutral upright pose. Preserve back-of-hair, clothing silhouette, and any accessories visible from behind. Full figure visible head to toe. Flat white studio background. Clean ink lines with flat comic-book colors. Orthographic character-sheet style.',
+        'Full-body rear view of the exact character shown in the reference image. The character stands facing directly away from the viewer in a neutral upright pose. Preserve back-of-hair, clothing silhouette, and any accessories visible from behind. Full figure visible head to toe. Flat white studio background. Orthographic character-sheet layout.',
       desc: 'Rear view',
     },
     {
       key: 'close-up-portrait',
       tag: 'close-up',
       prompt:
-        'Close-up portrait of the exact character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the viewer. Highly detailed face, hair, skin texture, and collar or neckline exactly matching the reference. Soft, even studio lighting with subtle shadows defining facial structure. Clean neutral background. Comic book portrait style.',
+        'Close-up portrait of the exact character shown in the reference image. Head and shoulders framing. Neutral expression, eyes looking directly at the viewer. Highly detailed face, hair, skin texture, and collar or neckline exactly matching the reference. Soft, even studio lighting with subtle shadows defining facial structure. Clean neutral background.',
       desc: 'Close-up portrait',
     },
     {
       key: 'action-pose-task',
       tag: 'action-pose',
       prompt:
-        'The exact character from the reference image actively performing an everyday task — reaching for an object, writing, working with their hands, opening a door, or gesturing expressively while speaking. Natural mid-action body language. Conveys what the character is doing, not a heroic stance. Full body visible. Match the character\'s face, clothing, and proportions from the reference exactly. Clean neutral background. Comic book panel style.',
+        'The exact character from the reference image actively performing an everyday task — reaching for an object, writing, working with their hands, opening a door, or gesturing expressively while speaking. Natural mid-action body language. Conveys what the character is doing, not a heroic stance. Full body visible. Match the character\'s face, clothing, and proportions from the reference exactly. Clean neutral background.',
       desc: 'Action pose — task/activity',
     },
     {
       key: 'action-pose-motion',
       tag: 'action-pose',
       prompt:
-        'The exact character from the reference image caught in natural motion — turning to look at something, stepping forward, sitting down, picking up an object, or raising a hand to point. Captured mid-movement in a relaxed, purposeful pose. Full body visible. Match the character\'s face, clothing, and proportions from the reference exactly. Clean neutral background. Comic book panel style.',
+        'The exact character from the reference image caught in natural motion — turning to look at something, stepping forward, sitting down, picking up an object, or raising a hand to point. Captured mid-movement in a relaxed, purposeful pose. Full body visible. Match the character\'s face, clothing, and proportions from the reference exactly. Clean neutral background.',
       desc: 'Action pose — movement',
     },
     {
       key: 'expression-anger',
       tag: 'expression',
       prompt:
-        'Expressive close-up portrait of the exact character from the reference image. Emotion: intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils, eyes narrowed or wide. Hard dramatic side-lighting that deepens shadows and heightens tension. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Dark, charged background. Comic book expression panel.',
+        'Expressive close-up portrait of the exact character from the reference image. Emotion: intense ANGER or RAGE. Furrowed brow, clenched jaw, flared nostrils, eyes narrowed or wide. Hard dramatic side-lighting that deepens shadows and heightens tension. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Dark, charged background.',
       desc: 'Expression — anger/rage',
     },
     {
       key: 'expression-joy',
       tag: 'expression',
       prompt:
-        'Expressive close-up portrait of the exact character from the reference image. Emotion: JOY, TRIUMPH, or LAUGHTER. Wide genuine smile, bright eyes, lifted cheeks, relaxed brow. Warm upbeat lighting from slightly above. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Bright or warm-neutral background. Comic book expression panel.',
+        'Expressive close-up portrait of the exact character from the reference image. Emotion: JOY, TRIUMPH, or LAUGHTER. Wide genuine smile, bright eyes, lifted cheeks, relaxed brow. Warm upbeat lighting from slightly above. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Bright or warm-neutral background.',
       desc: 'Expression — joy/triumph',
     },
     {
       key: 'expression-fear',
       tag: 'expression',
       prompt:
-        'Expressive close-up portrait of the exact character from the reference image. Emotion: FEAR, SHOCK, or DREAD. Wide eyes, sharply raised brows, mouth slightly open, visible tension in the jaw. Cool dramatic under-lighting or side-lighting. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Dark, unsettling background. Comic book expression panel.',
+        'Expressive close-up portrait of the exact character from the reference image. Emotion: FEAR, SHOCK, or DREAD. Wide eyes, sharply raised brows, mouth slightly open, visible tension in the jaw. Cool dramatic under-lighting or side-lighting. Preserve the character\'s exact facial structure, skin tone, and hair from the reference. Head and shoulders framing. Dark, unsettling background.',
       desc: 'Expression — fear/shock',
     },
     {
       key: 'character-sheet-3view',
       tag: 'character-sheet',
       prompt:
-        'Orthographic character reference sheet of the exact character from the reference image. Three views arranged side by side at the same scale: front facing (left), three-quarter view (center), side profile (right). All views show the complete body from head to toe. Thin horizontal guide lines marking head, shoulder, waist, knee, and foot height. Clean white background. Every costume detail, accessory, and color matches the reference image precisely. Comic book character design sheet style.',
+        'Orthographic character reference sheet of the exact character from the reference image. Three views arranged side by side at the same scale: front facing (left), three-quarter view (center), side profile (right). All views show the complete body from head to toe. Thin horizontal guide lines marking head, shoulder, waist, knee, and foot height. Clean white background. Every costume detail, accessory, and color matches the reference image precisely.',
       desc: 'Character sheet — 3-view turnaround',
     },
   ];
@@ -995,43 +995,43 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     {
       tag: 'establishing',
       prompt:
-        'Wide establishing shot of {name}. {description}. Full environment visible with dramatic sky and strong foreground-to-background depth. Cinematic composition showing the scale and defining atmosphere of the location. Architecture, signage, and environmental details reveal the world\'s unique character. No characters. Comic book establishing panel style.',
+        'Wide establishing shot of {name}. {description}. Full environment visible with dramatic sky and strong foreground-to-background depth. Cinematic composition showing the scale and defining atmosphere of the location. Architecture, signage, and environmental details reveal the world\'s unique character. No characters.',
       desc: 'Wide establishing shot',
     },
     {
       tag: 'aerial',
       prompt:
-        "Aerial bird's-eye view of {name}. {description}. High altitude perspective looking down at a steep angle, showing the full layout of streets, buildings, and terrain. City-block or landscape scale — key landmarks, pathways, and environmental patterns clearly visible from above. No characters. Comic book aerial overview style.",
+        "Aerial bird's-eye view of {name}. {description}. High altitude perspective looking down at a steep angle, showing the full layout of streets, buildings, and terrain. City-block or landscape scale — key landmarks, pathways, and environmental patterns clearly visible from above. No characters.",
       desc: "Aerial bird's-eye view",
     },
     {
       tag: 'exterior-street',
       prompt:
-        'Street-level exterior view of {name}. {description}. Ground-level perspective on the main thoroughfare, plaza, or public space. Pedestrian scale — storefronts, signage, architectural facades, weather effects, and ambient environmental details visible. Daytime, natural lighting with strong architectural shadows. No characters. Comic book street-level panel style.',
+        'Street-level exterior view of {name}. {description}. Ground-level perspective on the main thoroughfare, plaza, or public space. Pedestrian scale — storefronts, signage, architectural facades, weather effects, and ambient environmental details visible. Daytime, natural lighting with strong architectural shadows. No characters.',
       desc: 'Street-level exterior',
     },
     {
       tag: 'interior-main',
       prompt:
-        'Interior view of the most important interior space within {name}. {description}. Detailed room showing furniture, fixtures, lighting, and atmospheric props specific to this world. Strong sense of depth — foreground objects frame the mid-ground activity space and background walls. The space feels lived-in and reveals the culture and era of this world. No characters. Comic book interior panel style.',
+        'Interior view of the most important interior space within {name}. {description}. Detailed room showing furniture, fixtures, lighting, and atmospheric props specific to this world. Strong sense of depth — foreground objects frame the mid-ground activity space and background walls. The space feels lived-in and reveals the culture and era of this world. No characters.',
       desc: 'Key interior space',
     },
     {
       tag: 'night',
       prompt:
-        'Atmospheric night scene of {name}. {description}. Dark environment dramatically illuminated by artificial light sources — neon signs, street lamps, glowing windows, fires, or bioluminescence. Strong chiaroscuro contrast between lit areas and deep shadows. Moody color palette dominated by cool blues, purples, or warm amber. No characters. Comic book night panel style.',
+        'Atmospheric night scene of {name}. {description}. Dark environment dramatically illuminated by artificial light sources — neon signs, street lamps, glowing windows, fires, or bioluminescence. Strong chiaroscuro contrast between lit areas and deep shadows. Moody color palette dominated by cool blues, purples, or warm amber. No characters.',
       desc: 'Night atmosphere',
     },
     {
       tag: 'landmark',
       prompt:
-        "Iconic landmark or signature location of {name}. {description}. The most recognizable or narratively significant structure, monument, or site in this world. Dramatic low-angle or three-quarter perspective emphasizing its scale and visual impact. The landmark's design communicates the world's history, power, or culture. No characters. Comic book landmark establishing style.",
+        "Iconic landmark or signature location of {name}. {description}. The most recognizable or narratively significant structure, monument, or site in this world. Dramatic low-angle or three-quarter perspective emphasizing its scale and visual impact. The landmark's design communicates the world's history, power, or culture. No characters.",
       desc: 'Iconic landmark',
     },
     {
       tag: 'detail',
       prompt:
-        'Close-up environmental detail from {name}. {description}. Extreme close-up on a specific surface, texture, or object that defines this world — weathered stonework, industrial machinery, neon signs, alien flora, futuristic control panels, period furnishings, or symbolic artifacts. Material textures and fine details clearly rendered. No characters. Comic book detail panel style.',
+        'Close-up environmental detail from {name}. {description}. Extreme close-up on a specific surface, texture, or object that defines this world — weathered stonework, industrial machinery, neon signs, alien flora, futuristic control panels, period furnishings, or symbolic artifacts. Material textures and fine details clearly rendered. No characters.',
       desc: 'Environmental close-up detail',
     },
   ];
@@ -1075,13 +1075,20 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
    * Generate a single reference image variation using the image API.
    * @param {string} sourceDataUrl - The source reference image to base the variation on
    * @param {string} prompt - The specific prompt for this variation
-   * @param {Object} [options] - Optional overrides (model, resolution)
+   * @param {Object} [options] - Optional overrides (model, resolution, stylePrefix)
    * @returns {Promise<string|null>} - The generated image as a data URL, or null on failure
    */
   async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
     try {
       // Use the user's configured image size rather than a hardcoded default
       const resolution = options.resolution || (await DB.getSetting('imageSize', '1024x1024'));
+      // Prepend the active image style prefix so reference images respect the user's chosen art style.
+      // Callers can pass options.stylePrefix to override; otherwise read the global imagePromptPrefix setting.
+      const stylePrefix =
+        options.stylePrefix !== undefined
+          ? options.stylePrefix
+          : await DB.getSetting('imagePromptPrefix', '');
+      const styledPrompt = stylePrefix ? `${stylePrefix}. ${prompt}` : prompt;
       // Support multiple reference images via options.imageDataUrls (array) or single sourceDataUrl
       const imageGenOpts = { resolution, model: options.model };
       if (options.imageDataUrls && options.imageDataUrls.length > 0) {
@@ -1089,7 +1096,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       } else if (sourceDataUrl) {
         imageGenOpts.imageDataUrl = sourceDataUrl;
       }
-      const result = await generateImage(prompt, imageGenOpts);
+      const result = await generateImage(styledPrompt, imageGenOpts);
       if (!result) return null;
       // Convert URL results to data URLs for local storage
       if (result.startsWith('http')) {
