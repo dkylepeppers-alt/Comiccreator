@@ -15,6 +15,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 README="$REPO_ROOT/README.md"
 
+# Clean up temp files on exit
+cleanup_files=()
+trap 'rm -f "${cleanup_files[@]}"' EXIT
+
 # ──── Helpers ────────────────────────────────────────────────────────
 
 # Replace the content between AUTO-GENERATED-CONTENT markers for a given
@@ -98,7 +102,7 @@ generate_workflows_table() {
   echo '| Workflow | Trigger | Description |'
   echo '|----------|---------|-------------|'
 
-  for f in "$REPO_ROOT"/.github/workflows/*.yml; do
+  for f in "$REPO_ROOT"/.github/workflows/*.yml "$REPO_ROOT"/.github/workflows/*.yaml; do
     [ -f "$f" ] || continue
 
     local file
@@ -122,6 +126,13 @@ generate_workflows_table() {
         inline="$(printf '%s\n' "$line" | sed -n 's/^on:[[:space:]]*\([a-z_]*\).*/\1/p')"
         if [ -n "$inline" ]; then
           triggers="$inline"
+          break
+        fi
+        # Handle bracket form:  on: [push, pull_request]
+        local bracket
+        bracket="$(printf '%s\n' "$line" | sed -n 's/^on:[[:space:]]*\[//p' | tr -d '[]' | sed 's/,  */, /g' | sed 's/[[:space:]]*$//')"
+        if [ -n "$bracket" ]; then
+          triggers="$bracket"
           break
         fi
         continue
@@ -150,16 +161,16 @@ echo "Updating README.md auto-generated sections..."
 
 # Directory tree
 TREE_TMP="$(mktemp)"
+cleanup_files+=("$TREE_TMP")
 generate_tree > "$TREE_TMP"
 replace_section "DIRECTORY_TREE" "$TREE_TMP" "$README"
-rm -f "$TREE_TMP"
 echo "  ✓ Directory tree"
 
 # CI workflows table
 WF_TMP="$(mktemp)"
+cleanup_files+=("$WF_TMP")
 generate_workflows_table > "$WF_TMP"
 replace_section "WORKFLOWS_TABLE" "$WF_TMP" "$README"
-rm -f "$WF_TMP"
 echo "  ✓ CI workflows table"
 
 echo ""
