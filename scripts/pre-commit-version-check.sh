@@ -1,10 +1,50 @@
 #!/usr/bin/env bash
-# pre-commit — Validate version consistency across all version files.
+# pre-commit-version-check.sh — Validate version consistency across all version files
+# and run Node.js syntax checks on staged .js files.
 # Install via: scripts/install-hooks.sh (or symlink manually to .git/hooks/pre-commit)
 
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# ---------- Syntax-check staged .js files ----------
+check_staged_syntax() {
+  local staged_js
+  staged_js="$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.js$' || true)"
+  if [ -z "$staged_js" ]; then
+    return 0
+  fi
+
+  echo "JS syntax check (staged files):"
+  local failed=false
+  while IFS= read -r file; do
+    # Use the staged content from the index, not the working-tree file.
+    if git cat-file -e ":$file" 2>/dev/null; then
+      local tmpfile
+      tmpfile="$(mktemp "${TMPDIR:-/tmp}/staged-js-XXXXXX.js")"
+      if git show ":$file" >"$tmpfile" 2>&1; then
+        if node --check "$tmpfile" 2>&1; then
+          echo "  ✓ $file"
+        else
+          echo "  ✗ $file — syntax error (see above)"
+          failed=true
+        fi
+      else
+        echo "  ✗ $file — failed to read staged content"
+        failed=true
+      fi
+      rm -f "$tmpfile"
+    fi
+  done < <(printf '%s\n' "$staged_js")
+
+  if [ "$failed" = true ]; then
+    echo ""
+    echo "ERROR: One or more staged .js files have syntax errors. Fix them before committing."
+    exit 1
+  fi
+}
+
+check_staged_syntax
 
 VERSION_JSON="$REPO_ROOT/version.json"
 SW_JS="$REPO_ROOT/sw.js"

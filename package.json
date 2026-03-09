@@ -15,6 +15,8 @@
     "test:e2e": "playwright test",
     "check-syntax": "for f in js/*.js js/pages/*.js; do node --check \"$f\" || exit 1; done",
     "update-docs": "bash scripts/update-docs.sh",
+    "lint:actions": "bash scripts/check-actions.sh",
+    "validate:workflows": "bash scripts/validate-workflows.sh",
     "serve": "python3 -m http.server 8080",
     "version:patch": "bash scripts/bump-version.sh patch",
     "version:minor": "bash scripts/bump-version.sh minor",

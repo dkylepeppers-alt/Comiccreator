@@ -19,8 +19,9 @@ mkdir -p "$HOOKS_DIR"
 
 install_hook() {
   local name="$1"
+  local hook_name="${2:-$1}"
   local src="$SCRIPTS_DIR/$name"
-  local dest="$HOOKS_DIR/$name"
+  local dest="$HOOKS_DIR/$hook_name"
 
   if [ ! -f "$src" ]; then
     echo "Warning: $src not found — skipping."
@@ -32,18 +33,18 @@ install_hook() {
   if [ -L "$dest" ] || [ -f "$dest" ]; then
     # Overwrite only if it already points to our script or is our script
     if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
-      echo "  Hook already installed: $name"
+      echo "  Hook already installed: $hook_name"
       return
     fi
     if ! cp "$dest" "${dest}.bak" 2>/dev/null; then
-      echo "  Warning: could not back up existing $name hook — it will be overwritten."
+      echo "  Warning: could not back up existing $hook_name hook — it will be overwritten."
     fi
   fi
 
   ln -sf "$src" "$dest"
-  echo "  Installed hook: $name -> $src"
+  echo "  Installed hook: $hook_name -> $src"
 }
 
 echo "Installing git hooks..."
-install_hook pre-commit
+install_hook pre-commit-version-check.sh pre-commit
 echo "Done."

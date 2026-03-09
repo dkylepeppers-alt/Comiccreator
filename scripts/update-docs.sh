@@ -148,6 +148,61 @@ generate_workflows_table() {
   done
 }
 
+# ──── Generate agent roster table ────────────────────────────────────
+
+# Extract a scalar field from YAML frontmatter (between the first two --- markers).
+# Usage: extract_frontmatter_field <field> <file>
+extract_frontmatter_field() {
+  local field="$1"
+  local file="$2"
+  awk -v field="$field" '
+    /^---/{ if(++fm==2) exit }
+    fm==1 && $0 ~ "^" field ":" {
+      sub("^" field ":[[:space:]]*", "")
+      gsub(/^["'"'"']|["'"'"']$/, "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
+generate_agent_roster() {
+  echo '| Agent | Name | Description |'
+  echo '|-------|------|-------------|'
+
+  # Collect agent files then sort explicitly for deterministic ordering.
+  local agent_files=()
+  for f in "$REPO_ROOT"/.github/agents/*.agent.md; do
+    [ -f "$f" ] || continue
+    agent_files+=("$f")
+  done
+
+  if [ "${#agent_files[@]}" -eq 0 ]; then
+    return
+  fi
+
+  local sorted_files=()
+  while IFS= read -r line; do
+    sorted_files+=("$line")
+  done < <(printf '%s\n' "${agent_files[@]}" | LC_ALL=C sort)
+
+  local f
+  for f in "${sorted_files[@]}"; do
+    local file
+    file="$(basename "$f" .agent.md)"
+
+    local agent_name
+    agent_name="$(extract_frontmatter_field "name" "$f")"
+    [ -z "$agent_name" ] && agent_name="$file"
+
+    local desc
+    desc="$(extract_frontmatter_field "description" "$f")"
+
+    echo "| \`$file\` | $agent_name | $desc |"
+  done
+}
+
+
 # ──── Main ───────────────────────────────────────────────────────────
 
 echo "Updating README.md auto-generated sections..."
@@ -165,6 +220,13 @@ cleanup_files+=("$WF_TMP")
 generate_workflows_table > "$WF_TMP"
 replace_section "WORKFLOWS_TABLE" "$WF_TMP" "$README"
 echo "  ✓ CI workflows table"
+
+# Agent roster table
+AGENT_TMP="$(mktemp)"
+cleanup_files+=("$AGENT_TMP")
+generate_agent_roster > "$AGENT_TMP"
+replace_section "AGENT_ROSTER" "$AGENT_TMP" "$README"
+echo "  ✓ Agent roster"
 
 echo ""
 echo "Done. README.md updated."
