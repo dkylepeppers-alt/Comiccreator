@@ -1,3 +1,16 @@
+<!--
+  Deprecated plan file for feature-ui-enhancement-1.
+
+  The canonical, structured plan for this feature now lives in the gem-team
+  workflow location, following the repository convention:
+
+    docs/plan/feature-ui-enhancement-1/plan.yaml
+
+  This placeholder is retained only to avoid breaking any existing links or
+  references to plan/feature-ui-enhancement-1.md. It should not be treated
+  as an authoritative plan artifact.
+-->
+
 ---
 goal: Comprehensive UI Appearance Enhancement for AI Comic Creator PWA
 version: 1.0

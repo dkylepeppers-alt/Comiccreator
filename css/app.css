@@ -254,6 +254,7 @@ img { max-width: 100%; display: block; }
 .card:hover {
   border-color: var(--glass-border);
   box-shadow: var(--shadow), var(--card-glow);
+  transform: translateY(-2px);
 }
 .card-glass {
   background: var(--glass-bg);
@@ -837,6 +838,13 @@ img { max-width: 100%; display: block; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+@media (forced-colors: active) {
+  .section-title {
+    -webkit-text-fill-color: CanvasText;
+    background: none;
+    color: CanvasText;
+  }
 }
 .section-subtitle {
   font-size: 0.9rem;
