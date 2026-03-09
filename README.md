@@ -137,9 +137,16 @@ Image generation can be disabled in Settings to save API credits (text-only comi
 <!-- AUTO-GENERATED-CONTENT:START (DIRECTORY_TREE) -->
 ```
 Comiccreator/
+.c8rc.json
 .editorconfig
 .github
+    actions
+        setup-node-env
+            action.yml
+        setup-playwright
+            action.yml
     agents
+        Anotherplanner.agent.md
         Bugfixer.agent.md
         Docs-agent.agent.md
         Readme.agent.md
@@ -158,9 +165,11 @@ Comiccreator/
     workflows
         auto-bump.yml
         auto-update-docs.yml
+        codeql-analysis.yml
         deploy-pages.yml
         playwright.yml
         release.yml
+        security-pr.yml
         security.yml
         tests.yml
 .gitignore
@@ -172,6 +181,9 @@ css
     app.css
 docs
     image-generation-pipeline.md
+    plan
+        feature-ui-enhancement-1
+            plan.yaml
 eslint.config.js
 generate-icons.html
 icons
@@ -196,12 +208,18 @@ js
 manifest.json
 package-lock.json
 package.json
+plan
+    feature-ui-enhancement-1.md
+    upgrade-actions-automation-1.md
 playwright.config.js
 scripts
     bump-version.sh
+    check-actions.sh
     install-hooks.sh
     pre-commit
+    pre-commit-version-check.sh
     update-docs.sh
+    validate-workflows.sh
 sw.js
 test
     api-integration.test.js
@@ -399,6 +417,7 @@ Sections of this README wrapped in `<!-- AUTO-GENERATED-CONTENT:START (NAME) -->
 
 - **Architecture directory tree** — reflects the actual file structure of the repository
 - **CI Workflows table** — lists all workflow files with their triggers and names
+- **Agent roster** — lists all Copilot agent definitions with their names and descriptions
 
 To regenerate locally:
 
@@ -433,12 +452,34 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 |----------|---------|-------------|
 | `auto-bump.yml` | push | Auto Bump Version |
 | `auto-update-docs.yml` | push | Auto Update Docs |
+| `codeql-analysis.yml` | push, pull_request | CodeQL Analysis |
 | `deploy-pages.yml` | push, workflow_dispatch | Deploy to GitHub Pages |
 | `playwright.yml` | push, pull_request | Playwright E2E Tests |
 | `release.yml` | workflow_dispatch | Release |
+| `security-pr.yml` | pull_request | Security PR Check |
 | `security.yml` | schedule, workflow_dispatch | Security Audit |
 | `tests.yml` | push, pull_request | Tests |
 <!-- AUTO-GENERATED-CONTENT:END (WORKFLOWS_TABLE) -->
+
+### Copilot Agents
+
+<!-- AUTO-GENERATED-CONTENT:START (AGENT_ROSTER) -->
+| Agent | Name | Description |
+|-------|------|-------------|
+| `Anotherplanner` | Implementation Plan Generation Mode | Generate an implementation plan for new features or refactoring existing code. |
+| `Bugfixer` | bug-fix-teammate | Identifies critical bugs in your project and implements targeted fixes with working code |
+| `Docs-agent` | repo-docs-specialist | Repository documentation specialist for writing and maintaining clear instructional, reference, and configuration documents that coding agents can follow reliably. |
+| `Readme` | readme-specialist | Specialized agent for creating and improving README files and project documentation |
+| `gem-browser-tester` | gem-browser-tester | Automates E2E scenarios with Chrome DevTools MCP, Playwright, Agent Browser. UI/UX validation using browser automation tools and visual verification techniques |
+| `gem-devops` | gem-devops | Manages containers, CI/CD pipelines, and infrastructure deployment |
+| `gem-documentation-writer` | gem-documentation-writer | Generates technical docs, diagrams, maintains code-documentation parity |
+| `gem-implementer` | gem-implementer | Executes TDD code changes, ensures verification, maintains quality |
+| `gem-orchestrator` | gem-orchestrator | Team Lead - Coordinates multi-agent workflows with energetic announcements, delegates tasks, synthesizes results via runSubagent |
+| `gem-planner` | gem-planner | Creates DAG-based plans with pre-mortem analysis and task decomposition from research findings |
+| `gem-researcher` | gem-researcher | Research specialist: gathers codebase context, identifies relevant files/patterns, returns structured findings |
+| `gem-reviewer` | gem-reviewer | Security gatekeeper for critical tasks—OWASP, secrets, compliance |
+| `my-agent` | planning-specialist | Specialized planning agent focused on turning goals into clear, structured execution plans for coding agents. Produces implementation plans, task breakdowns, sequencing, dependency maps, milestone outlines, risk notes, and decision frameworks with an emphasis on clarity, feasibility, and repository-grounded actionability. |
+<!-- AUTO-GENERATED-CONTENT:END (AGENT_ROSTER) -->
 
 ---
 

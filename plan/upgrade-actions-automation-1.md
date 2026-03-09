@@ -92,10 +92,10 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-016 | Rename `scripts/pre-commit` to `scripts/pre-commit-version-check.sh` to clarify its purpose (version consistency only). Add a `node --check` syntax validation loop for staged `.js` files as a separate function within the script. This is a preparatory step — Phase 11 (TASK-055/056) will replace the entire manual hook system with `husky` + `lint-staged`. | | |
-| TASK-017 | Create `scripts/check-actions.sh` — a local validation script that uses `actionlint` (if installed) to lint all workflow YAML files. Add a corresponding `npm run lint:actions` script to `package.json`. This is optional/advisory (does not block commits) but provides quick feedback. | | |
-| TASK-018 | Enhance `scripts/update-docs.sh` to also generate an agent roster table in README.md by scanning `.github/agents/*.agent.md` files and extracting the agent name and description from frontmatter. Add a new `<!-- AUTO-GENERATED-CONTENT:START (AGENT_ROSTER) -->` section to README.md. | | |
-| TASK-019 | Add a `scripts/validate-workflows.sh` script that checks all workflow files for: (1) presence of `permissions` block, (2) bot loop guards on auto-commit workflows, (3) concurrency groups on Main-push workflows. Add as `npm run validate:workflows` to `package.json`. | | |
+| TASK-016 | Rename `scripts/pre-commit` to `scripts/pre-commit-version-check.sh` to clarify its purpose (version consistency only). Add a `node --check` syntax validation loop for staged `.js` files as a separate function within the script. This is a preparatory step — Phase 11 (TASK-055/056) will replace the entire manual hook system with `husky` + `lint-staged`. | ✅ | 2026-03-09 |
+| TASK-017 | Create `scripts/check-actions.sh` — a local validation script that uses `actionlint` (if installed) to lint all workflow YAML files. Add a corresponding `npm run lint:actions` script to `package.json`. This is optional/advisory (does not block commits) but provides quick feedback. | ✅ | 2026-03-09 |
+| TASK-018 | Enhance `scripts/update-docs.sh` to also generate an agent roster table in README.md by scanning `.github/agents/*.agent.md` files and extracting the agent name and description from frontmatter. Add a new `<!-- AUTO-GENERATED-CONTENT:START (AGENT_ROSTER) -->` section to README.md. | ✅ | 2026-03-09 |
+| TASK-019 | Add a `scripts/validate-workflows.sh` script that checks all workflow files for: (1) presence of `permissions` block, (2) bot loop guards on auto-commit workflows, (3) concurrency groups on Main-push workflows. Add as `npm run validate:workflows` to `package.json`. | ✅ | 2026-03-09 |
 
 ### Implementation Phase 5 — Auto-Merge & PR Automation
 
