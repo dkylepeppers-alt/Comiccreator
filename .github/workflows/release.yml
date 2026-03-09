@@ -19,10 +19,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Setup Node.js Environment
-        uses: ./.github/actions/setup-node-env
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-node-env
 
       - name: Configure git
         run: |

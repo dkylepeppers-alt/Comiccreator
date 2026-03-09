@@ -1,19 +1,11 @@
 name: 'Setup Playwright'
 description: 'Setup Node.js environment and install Playwright browsers with caching'
 
-inputs:
-  fetch-depth:
-    description: 'Number of commits to fetch (0 for all history)'
-    required: false
-    default: '1'
-
 runs:
   using: 'composite'
   steps:
     - name: Setup Node.js Environment
       uses: ./.github/actions/setup-node-env
-      with:
-        fetch-depth: ${{ inputs.fetch-depth }}
 
     - name: Cache Playwright browsers
       id: playwright-cache
