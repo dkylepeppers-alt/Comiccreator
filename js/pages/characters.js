@@ -226,6 +226,13 @@ const CharactersPage = (() => {
       }
       toolbar.innerHTML = btns;
     }
+    // Keep slot-count hints in any open dropdown panels in sync
+    const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+    const slotText = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
+    const charRefSlots = document.getElementById('char-ref-slots');
+    if (charRefSlots) charRefSlots.textContent = slotText;
+    const charWorldSlots = document.getElementById('char-world-slots');
+    if (charWorldSlots) charWorldSlots.textContent = slotText;
   }
 
   function addImageSlot() {
@@ -642,8 +649,8 @@ const CharactersPage = (() => {
     `;
     toolbar.insertAdjacentElement('afterend', panel);
 
-    // Store context for the generate handler
-    CharactersPage._pendingWorldData = { world, name };
+    // Store context for the generate handler (world is immutable; name/appearance are read fresh from DOM)
+    CharactersPage._pendingWorldData = { world };
 
     // Update prompt textarea when dropdown selection changes
     document.getElementById('char-world-type').addEventListener('change', (e) => {
@@ -654,9 +661,13 @@ const CharactersPage = (() => {
         promptEl.focus();
       } else {
         const v = variations[parseInt(idx, 10)];
+        // Re-read current character name and appearance so we don't use stale values
+        const currentName = document.getElementById('char-name')?.value.trim() || 'the character';
+        const currentAppearance = document.getElementById('char-appearance')?.value.trim() || '';
+        const currentCharAppearanceNote = currentAppearance ? ` (${currentAppearance})` : '';
         promptEl.value = (v?.prompt || '')
-          .replace(/\{charName\}/g, name)
-          .replace(/\{charAppearanceNote\}/g, charAppearanceNote)
+          .replace(/\{charName\}/g, currentName)
+          .replace(/\{charAppearanceNote\}/g, currentCharAppearanceNote)
           .replace(/\{worldName\}/g, world.name)
           .replace(/\{worldDescription\}/g, world.description || 'as shown in the world reference');
       }
@@ -680,8 +691,11 @@ const CharactersPage = (() => {
     const variation = selectedIdx !== 'custom' ? variations[parseInt(selectedIdx, 10)] : null;
     const tag = variation ? variation.tag : 'character-in-world';
 
-    const { world, name } = CharactersPage._pendingWorldData || {};
+    const { world } = CharactersPage._pendingWorldData || {};
     if (!world) return App.toast('World data not found — close and reopen the panel', 'error');
+
+    // Read fresh values from the DOM so edits made while the panel was open are reflected
+    const name = document.getElementById('char-name')?.value.trim() || 'the character';
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
     const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)

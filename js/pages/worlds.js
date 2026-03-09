@@ -221,6 +221,13 @@ const WorldsPage = (() => {
         btns += '<button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
       }
       toolbar.innerHTML = btns;
+      // Keep slot-count hints in any open dropdown panels in sync
+      const remaining = MAX_IMAGES - editorImages.filter(img => img.dataUrl).length;
+      const slotText = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
+      const worldRefSlots = document.getElementById('world-ref-slots');
+      if (worldRefSlots) worldRefSlots.textContent = slotText;
+      const worldInterSlots = document.getElementById('world-inter-slots');
+      if (worldInterSlots) worldInterSlots.textContent = slotText;
       // Async: add interactions button if 2+ characters are linked
       if (hasImages && editingId) {
         DB.getAll(DB.STORES.characters).then(chars => {
