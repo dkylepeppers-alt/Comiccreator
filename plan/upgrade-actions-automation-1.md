@@ -11,14 +11,14 @@ tags: [upgrade, automation, ci-cd, actions, mcp, efficiency, infrastructure, vit
 # Introduction
 
 
-Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions workflows, MCP toolsets, automation scripts, CI/CD efficiency, and frontend architecture. The current pipeline consists of 7 workflows, 8+ Copilot agents, 3 automation scripts, and a Dependabot configuration. The app itself is built with vanilla HTML/CSS/JS globals (no build step, no module system, no type checking) which limits developer velocity and code quality. This plan identifies gaps, inefficiencies, and architectural debt across both the CI/CD pipeline and the application itself, then prescribes concrete, phased improvements.
+Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions workflows, MCP toolsets, automation scripts, CI/CD efficiency, and frontend architecture. The current pipeline consists of 7 workflows, 8+ Copilot agents, 4 automation scripts, and a Dependabot configuration. The app itself is built with vanilla HTML/CSS/JS globals (no build step, no module system, no type checking) which limits developer velocity and code quality. This plan identifies gaps, inefficiencies, and architectural debt across both the CI/CD pipeline and the application itself, then prescribes concrete, phased improvements.
 
 ### Current State Summary
 
 | Area | Count | Key Observations |
 |------|-------|------------------|
 | Workflows | 7 | tests.yml, playwright.yml, auto-bump.yml, auto-update-docs.yml, deploy-pages.yml, release.yml, security.yml |
-| Agents | 11 | 8 gem-team agents + Bugfixer, Docs-agent, Readme, my-agent, Anotherplanner, architect-innovator |
+| Agents | 14 | 8 gem-team agents + Bugfixer, Docs-agent, Readme, my-agent, Anotherplanner, architect-innovator |
 | Scripts | 4 | bump-version.sh, update-docs.sh, install-hooks.sh, pre-commit |
 | Dependabot | 2 ecosystems | npm (weekly), github-actions (weekly) -- no labels, no PR limits, no commit message prefix |
 | Pre-commit hook | 1 check | Version consistency only -- no syntax, lint, or format checks |
@@ -26,7 +26,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 | Frontend architecture | Vanilla | Browser globals (IIFEs), no module system, no bundler, no TypeScript, no build step, manual `<script>` ordering |
 ## 1. Requirements & Constraints
 
-- **REQ-001**: The frontend architecture should be modernized to use ES modules, a build tool (Vite), and TypeScript. The migration must be incremental — the app must remain functional at every commit. Each file conversion must pass all existing tests before proceeding to the next file. Define intermediate checkpoints: (1) Vite builds and serves the existing JS files unchanged, (2) each ES module conversion compiles and passes E2E, (3) each TypeScript rename compiles with zero `tsc --noEmit` errors
+- **REQ-001**: The frontend architecture should be modernized to use ES modules, a build tool (Vite), and TypeScript. The migration is incremental **at the phase level** — each phase produces a stable, shippable checkpoint. However, within Phase 9 the IIFE→ESM conversion (TASK-036/037) is an **atomic step** because old `<script>` tags and the ES module entry point cannot coexist in a working state (see RISK-006). That phase must be completed on a dedicated feature branch, verified with a full E2E pass, then merged as a single PR. All other phases (TypeScript rename, Vitest migration, etc.) can proceed file-by-file. Define intermediate checkpoints: (1) Vite builds and serves the existing JS files unchanged, (2) ESM conversion lands as one atomic PR with full E2E pass, (3) each TypeScript rename compiles with zero `tsc --noEmit` errors
 - **REQ-002**: All 5 version files must remain in sync — any workflow change must not break the version consistency test (`config-integrity.test.js`). The version sync mechanism itself may be simplified once a build tool manages it
 - **REQ-003**: New workflows must use job-level permissions (least-privilege) following existing convention
 - **REQ-004**: Bot loop guards must be maintained — all auto-commit workflows must skip `github-actions[bot]` and `copilot[bot]` actors
@@ -40,7 +40,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 - **CON-001**: The repository is a client-side PWA — CI does not need server/database provisioning, but will require a build step after Phase 9 (Vite)
 - **CON-002**: Node.js 22 is the target runtime (per existing workflows)
 - **CON-003**: New npm packages may be added freely as `devDependencies` or `dependencies` where the build tool needs them. Choose the best-in-class tool for every job regardless of dependency count
-- **CON-004**: Agent definition files in `.github/agents/` follow the `.agent.md` naming convention with YAML frontmatter
+- **CON-004**: Agent definition files in `.github/agents/` follow the `.agent.md` naming convention with YAML frontmatter; `.github/agents/architect-innovator.md` is a documented legacy exception that must be renamed/converted to `architect-innovator.agent.md` with YAML frontmatter as part of this upgrade
 - **CON-005**: After the Vite migration (Phase 9), `deploy-pages.yml` must deploy the `dist/` build output instead of raw source files
 - **GUD-001**: Workflows should complete in under 5 minutes for the common case (push to feature branch)
 - **GUD-002**: Use GitHub Actions cache for `node_modules` and Playwright browsers to reduce CI wall time
