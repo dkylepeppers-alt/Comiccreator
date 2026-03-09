@@ -151,6 +151,7 @@ Comiccreator/
         Docs-agent.agent.md
         Readme.agent.md
         architect-innovator.md
+        ci-optimizer.agent.md
         gem-browser-tester.agent.md
         gem-devops.agent.md
         gem-documentation-writer.agent.md
@@ -161,6 +162,7 @@ Comiccreator/
         gem-reviewer.agent.md
         my-agent.agent.md
     copilot-instructions.md
+    copilot-mcp.json
     dependabot.yml
     labeler.yml
     workflows
@@ -474,6 +476,7 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 | `Bugfixer` | bug-fix-teammate | Identifies critical bugs in your project and implements targeted fixes with working code |
 | `Docs-agent` | repo-docs-specialist | Repository documentation specialist for writing and maintaining clear instructional, reference, and configuration documents that coding agents can follow reliably. |
 | `Readme` | readme-specialist | Specialized agent for creating and improving README files and project documentation |
+| `ci-optimizer` | ci-optimizer | CI/CD pipeline optimization specialist — analyzes run times, suggests caching, validates security |
 | `gem-browser-tester` | gem-browser-tester | Automates E2E scenarios with Chrome DevTools MCP, Playwright, Agent Browser. UI/UX validation using browser automation tools and visual verification techniques |
 | `gem-devops` | gem-devops | Manages containers, CI/CD pipelines, and infrastructure deployment |
 | `gem-documentation-writer` | gem-documentation-writer | Generates technical docs, diagrams, maintains code-documentation parity |
