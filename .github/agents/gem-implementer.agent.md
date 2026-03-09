@@ -3,6 +3,15 @@ description: "Executes TDD code changes, ensures verification, maintains quality
 name: gem-implementer
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "🔍 Request Review"
+    agent: gem-reviewer
+    prompt: "Implementation is complete. Please perform a security and quality review."
+    send: false
+  - label: "⚡ Continue Workflow"
+    agent: gem-orchestrator
+    prompt: "Implementation task is complete. Please continue the workflow."
+    send: false
 ---
 
 <agent>

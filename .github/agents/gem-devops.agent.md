@@ -3,6 +3,11 @@ description: "Manages containers, CI/CD pipelines, and infrastructure deployment
 name: gem-devops
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "⚡ Continue Workflow"
+    agent: gem-orchestrator
+    prompt: "DevOps task is complete. Please continue the workflow."
+    send: false
 ---
 
 <agent>

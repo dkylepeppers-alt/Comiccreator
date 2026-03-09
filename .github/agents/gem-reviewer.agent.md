@@ -3,6 +3,11 @@ description: "Security gatekeeper for critical tasks—OWASP, secrets, complianc
 name: gem-reviewer
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "⚡ Continue Workflow"
+    agent: gem-orchestrator
+    prompt: "Review is complete. Please continue the workflow and address any findings."
+    send: false
 ---
 
 <agent>

@@ -3,6 +3,11 @@ description: "Creates DAG-based plans with pre-mortem analysis and task decompos
 name: gem-planner
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "🚀 Start Execution"
+    agent: gem-orchestrator
+    prompt: "The plan is approved and ready. Please start the execution phase."
+    send: false
 ---
 
 <agent>

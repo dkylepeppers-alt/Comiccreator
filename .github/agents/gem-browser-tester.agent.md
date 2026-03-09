@@ -3,6 +3,11 @@ description: "Automates E2E scenarios with Chrome DevTools MCP, Playwright, Agen
 name: gem-browser-tester
 disable-model-invocation: false
 user-invocable: true
+handoffs:
+  - label: "⚡ Continue Workflow"
+    agent: gem-orchestrator
+    prompt: "Browser testing is complete. Please continue the workflow."
+    send: false
 ---
 
 <agent>
