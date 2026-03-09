@@ -1,0 +1,27 @@
+javascript:
+  - changed-files:
+      - any-glob-to-any-file: 'js/**'
+
+styles:
+  - changed-files:
+      - any-glob-to-any-file: 'css/**'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/workflows/**'
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: 'test/**'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: 'docs/**'
+
+agents:
+  - changed-files:
+      - any-glob-to-any-file: '.github/agents/**'
+
+planning:
+  - changed-files:
+      - any-glob-to-any-file: 'plan/**'
