@@ -57,12 +57,12 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | Create `.github/actions/setup-node-env/action.yml` composite action that performs: (1) `actions/checkout@v4`, (2) `actions/setup-node@v4` with `node-version: 22` and `cache: npm`, (3) `npm ci`. This replaces the 3-step boilerplate in `tests.yml`, `playwright.yml`, `release.yml`, `security.yml`, and any new workflows. | | |
-| TASK-002 | Create `.github/actions/setup-playwright/action.yml` composite action that performs: (1) calls `setup-node-env`, (2) caches Playwright browsers using `actions/cache@v4` with key `playwright-${{ hashFiles('package-lock.json') }}` and path `~/.cache/ms-playwright`, (3) runs `npx playwright install --with-deps chromium` only on cache miss. | | |
-| TASK-003 | Refactor `tests.yml` to use `setup-node-env` composite action, removing the duplicated checkout/setup-node/npm-ci steps. Verify all 4 steps (checkout, setup, install, syntax-check, lint, test) still pass. | | |
-| TASK-004 | Refactor `playwright.yml` to use `setup-playwright` composite action. Verify Playwright browser caching works (second run should skip browser download). | | |
-| TASK-005 | Refactor `release.yml` to use `setup-node-env` composite action. Verify the full release flow still works (tests -> bump -> commit -> tag -> release). | | |
-| TASK-006 | Refactor `security.yml` to use `setup-node-env` composite action. | | |
+| TASK-001 | Create `.github/actions/setup-node-env/action.yml` composite action that performs: (1) `actions/checkout@v4`, (2) `actions/setup-node@v4` with `node-version: 22` and `cache: npm`, (3) `npm ci`. This replaces the 3-step boilerplate in `tests.yml`, `playwright.yml`, `release.yml`, `security.yml`, and any new workflows. | ✅ | 2026-03-09 |
+| TASK-002 | Create `.github/actions/setup-playwright/action.yml` composite action that performs: (1) calls `setup-node-env`, (2) caches Playwright browsers using `actions/cache@v4` with key `playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}` and path `~/.cache/ms-playwright`, (3) runs `npx playwright install --with-deps chromium` only on cache miss. | ✅ | 2026-03-09 |
+| TASK-003 | Refactor `tests.yml` to use `setup-node-env` composite action, removing the duplicated checkout/setup-node/npm-ci steps. Verify all 4 steps (checkout, setup, install, syntax-check, lint, test) still pass. | ✅ | 2026-03-09 |
+| TASK-004 | Refactor `playwright.yml` to use `setup-playwright` composite action. Verify Playwright browser caching works (second run should skip browser download). | ✅ | 2026-03-09 |
+| TASK-005 | Refactor `release.yml` to use `setup-node-env` composite action. Verify the full release flow still works (tests -> bump -> commit -> tag -> release). | ✅ | 2026-03-09 |
+| TASK-006 | Refactor `security.yml` to use `setup-node-env` composite action. | ✅ | 2026-03-09 |
 
 ### Implementation Phase 2 — Enhanced CI Pipeline (Quality Gates)
 
