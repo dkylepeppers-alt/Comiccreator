@@ -1,0 +1,83 @@
+name: Post-Merge Pipeline
+
+on:
+  push:
+    branches:
+      - Main
+
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
+# Cancel any in-progress run if a newer commit arrives on Main
+concurrency:
+  group: post-merge-main
+  cancel-in-progress: true
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    # Skip commits already made by the bot to prevent infinite loops.
+    if: github.actor != 'github-actions[bot]' && github.actor != 'copilot[bot]'
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        run: bash scripts/bump-version.sh patch
+
+      - name: Read new version
+        id: version
+        run: |
+          NEW_VERSION="$(jq -r .version package.json)"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push version bump
+        run: |
+          git diff --staged --quiet || git commit -m "chore: bump version to v${{ steps.version.outputs.version }}"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+  update-docs:
+    runs-on: ubuntu-latest
+    needs: bump-version
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Ensure we have the version-bump commit from the previous job, even if the
+      # checkout resolved to the SHA that existed at workflow-start time.
+      - name: Pull latest (picks up version-bump commit)
+        run: git pull --rebase origin "${{ github.ref_name }}"
+
+      - name: Run update-docs
+        run: bash scripts/update-docs.sh
+
+      - name: Commit and push if changed
+        run: |
+          git add README.md
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: auto-update README generated sections"
+            git push origin "HEAD:${{ github.ref_name }}"
+          else
+            echo "No documentation changes detected — skipping commit."
+          fi
