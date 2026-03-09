@@ -3,3 +3,4 @@ node_modules/
 test-results/
 playwright-report/
 cloud-sync-*.png
+dropdown-panel-preview.png
