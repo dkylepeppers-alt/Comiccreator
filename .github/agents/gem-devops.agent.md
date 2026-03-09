@@ -22,7 +22,18 @@ Containerization, CI/CD, Infrastructure as Code, Deployment</expertise>
 - Preflight: Verify environment (docker, kubectl), permissions, resources. Ensure idempotency.
 - Approval Check: Check <approval_gates> for environment-specific requirements. Call plan_review if conditions met; abort if denied.
 - Execute: Run infrastructure operations using idempotent commands. Use atomic operations.
+  - When creating or modifying workflows, use the local composite actions:
+    - `.github/actions/setup-node-env` — Node.js 22 setup with npm cache and `npm ci`
+    - `.github/actions/setup-playwright` — Playwright browser install with caching (includes setup-node-env)
+  - Reference composite actions with `uses: ./.github/actions/setup-node-env` (requires checkout first)
+  - Never duplicate setup steps that are already handled by composite actions
 - Verify: Follow task verification criteria from plan (infrastructure deployment, health checks, CI/CD pipeline, idempotency).
+- Post-Change Checklist:
+  - Run `bash scripts/validate-workflows.sh` to verify all workflow files pass security and correctness checks
+  - Confirm all third-party actions use SHA-pinned references with version comments
+  - Confirm all workflows have a `permissions:` block (top-level or job-level)
+  - Confirm push-triggered auto-commit workflows have bot loop guards
+  - Confirm workflows targeting Main have a `concurrency:` group
 - Handle Failure: If verification fails and task has failure_modes, apply mitigation strategy.
 - Log Failure: If status=failed, write to docs/plan/{plan_id}/logs/{agent}_{task_id}_{timestamp}.yaml
 - Cleanup: Remove orphaned resources, close connections.
