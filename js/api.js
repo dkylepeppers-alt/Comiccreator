@@ -504,10 +504,10 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
       if (world.details) prompt += `Details: ${world.details}\n`;
       if (world.atmosphere) prompt += `Atmosphere: ${world.atmosphere}\n`;
       prompt += `\nWORLD VISUAL RULES:
-- Every imagePrompt must ground the scene in ${world.name}. Include at least one specific environmental detail (architecture style, lighting quality, material textures, colour palette) that reflects this world's atmosphere.
+- Every imagePrompt must ground the scene in ${world.name}. Include at least one specific environmental detail (architecture style, lighting quality, material textures, color palette) that reflects this world's atmosphere.
 - When characters appear indoors, name the specific interior space (e.g., "a cluttered kitchen in ${world.name}", "the dim office corridor of ${world.name}") rather than a generic room.
 - When characters appear outdoors, name the specific exterior context (e.g., "the rain-slicked streets of ${world.name}", "the rooftop overlooking ${world.name}") to reinforce the world's visual identity.
-- Blend the character's presence with the world — show how they belong to (or contrast with) this environment through lighting, colour mood, and framing.`;
+- Blend the character's presence with the world — show how they belong to (or contrast with) this environment through lighting, color mood, and framing.`;
     }
 
     return prompt;
