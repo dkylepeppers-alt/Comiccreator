@@ -23,7 +23,7 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "c8": "^11.0.0",
-    "eslint": "^10.0.2",
+    "eslint": "^10.0.3",
     "fake-indexeddb": "^6.2.5",
     "nanogptjs": "^1.0.4",
     "prettier": "^3.0.0",
