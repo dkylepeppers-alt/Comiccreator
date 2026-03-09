@@ -36,7 +36,7 @@ npm run check-syntax && npm run lint && npm run format:check && npm test
 ```
 - Run this full pipeline locally before submitting fixes to catch issues early
 - If any step fails, fix the issue before proceeding
-- For test coverage reporting, use: `npm test -- --experimental-test-coverage`
+- For test coverage reporting, use: `npm run coverage`
 - For E2E testing (when UI changes are involved): `npm run test:e2e`
 
 **Guidelines:**
