@@ -539,6 +539,44 @@ img { max-width: 100%; display: block; }
   margin-top: 8px;
   flex-wrap: wrap;
 }
+/* Inline dropdown panel for reference image generation */
+.gen-ref-dropdown {
+  margin-top: 10px;
+  padding: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gen-ref-dropdown .gen-ref-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.gen-ref-dropdown select {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.gen-ref-dropdown .gen-ref-prompt {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.gen-ref-dropdown .gen-ref-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.gen-ref-dropdown .gen-ref-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
 
 .comic-page {
   background: #fff;
