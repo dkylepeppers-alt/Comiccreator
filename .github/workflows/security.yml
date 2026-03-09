@@ -5,6 +5,9 @@ on:
     - cron: '0 8 * * 1'  # Every Monday at 08:00 UTC
   workflow_dispatch:
 
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -12,7 +15,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Setup Node.js Environment
         uses: ./.github/actions/setup-node-env
