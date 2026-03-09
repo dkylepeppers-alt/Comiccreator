@@ -5,6 +5,9 @@ on:
     branches:
       - Main
 
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
 # Cancel any in-progress bump if a newer commit arrives on Main
 concurrency:
   group: auto-main-push
@@ -21,7 +24,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
