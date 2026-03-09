@@ -401,7 +401,7 @@ const WorldsPage = (() => {
 
   /**
    * Generate reference image variations from the primary uploaded image.
-   * Shows a selection modal letting the user choose which variations to generate.
+   * Shows an inline dropdown panel letting the user choose which variations to generate.
    */
   function generateReferences() {
     const primaryCandidate = editorImages[editorPrimaryIndex];
@@ -419,31 +419,48 @@ const WorldsPage = (() => {
 
     if (available.length === 0) return App.toast('All reference variations already exist', 'info');
 
-    // Show ALL available variations, pre-check up to slotsAvailable
-    const checkboxes = available.map((v, i) => {
+    // Toggle dropdown off if already open
+    const existingDropdown = document.getElementById('world-gen-refs-dropdown');
+    if (existingDropdown) { existingDropdown.remove(); return; }
+    // Close any other open generation dropdowns
+    document.getElementById('world-gen-interactions-dropdown')?.remove();
+
+    WorldsPage._pendingRefVariations = available;
+    WorldsPage._pendingRefSlots = slotsAvailable;
+
+    const optionRows = available.map((v, i) => {
       const checked = i < slotsAvailable ? 'checked' : '';
-      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+      return `<label class="gen-ref-option">
         <input type="checkbox" class="world-ref-pick" data-idx="${i}" ${checked}>
         <span><strong>${escHtml(v.tag)}</strong> — ${escHtml(v.desc)}</span>
       </label>`;
     }).join('');
 
-    App.showModal(`
-      <div class="modal-title">Select Reference Images to Generate</div>
-      <p class="text-sm text-muted" style="margin-bottom:12px;">Choose which reference image types to generate (${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available):</p>
-      <div style="max-height:45vh;overflow-y:auto;">${checkboxes}</div>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="App.hideModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="WorldsPage._doGenerateReferences()">Generate Selected</button>
+    const dropdown = document.createElement('div');
+    dropdown.id = 'world-gen-refs-dropdown';
+    dropdown.className = 'gen-ref-dropdown';
+    dropdown.innerHTML = `
+      <div class="gen-ref-dropdown-header">
+        <span class="text-sm text-muted">${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available</span>
+        <div class="gen-ref-dropdown-controls">
+          <button class="btn-link text-sm" onclick="document.querySelectorAll('#world-gen-refs-dropdown .world-ref-pick').forEach(cb=>cb.checked=true)">All</button>
+          <button class="btn-link text-sm" onclick="document.querySelectorAll('#world-gen-refs-dropdown .world-ref-pick').forEach(cb=>cb.checked=false)">None</button>
+        </div>
       </div>
-    `);
-    WorldsPage._pendingRefVariations = available;
-    WorldsPage._pendingRefSlots = slotsAvailable;
+      <div class="gen-ref-options">${optionRows}</div>
+      <div class="gen-ref-dropdown-footer">
+        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('world-gen-refs-dropdown')?.remove()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="WorldsPage._doGenerateReferences()">Generate Selected</button>
+      </div>
+    `;
+
+    const toolbar = document.getElementById('world-img-toolbar');
+    if (toolbar) toolbar.insertAdjacentElement('afterend', dropdown);
   }
 
   /** Execute reference generation for the user-selected variations. */
   async function _doGenerateReferences() {
-    const picks = document.querySelectorAll('.world-ref-pick:checked');
+    const picks = document.querySelectorAll('#world-gen-refs-dropdown .world-ref-pick:checked');
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
@@ -451,7 +468,7 @@ const WorldsPage = (() => {
     if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => WorldsPage._pendingRefVariations[i]).filter(Boolean);
-    App.hideModal();
+    document.getElementById('world-gen-refs-dropdown')?.remove();
 
     const primaryCandidate = editorImages[editorPrimaryIndex];
     const primaryImg = (primaryCandidate && primaryCandidate.dataUrl)
@@ -575,7 +592,7 @@ const WorldsPage = (() => {
 
   /**
    * Generate images of linked characters interacting with each other inside this world.
-   * Shows a selection modal letting the user choose which interactions to generate.
+   * Shows an inline dropdown panel letting the user choose which interactions to generate.
    * Requires at least 2 characters linked to this world and at least one world image.
    */
   async function generateCharacterInteractions() {
@@ -620,33 +637,50 @@ const WorldsPage = (() => {
 
     const available = interactionPrompts;
 
+    // Toggle dropdown off if already open
+    const existingDropdown = document.getElementById('world-gen-interactions-dropdown');
+    if (existingDropdown) { existingDropdown.remove(); return; }
+    // Close any other open generation dropdowns
+    document.getElementById('world-gen-refs-dropdown')?.remove();
+
+    WorldsPage._pendingInteractionData = { prompts: available, castChars, castNames, castDesc, worldName, worldDesc, worldImg, slotsAvailable };
+
     // Build linked characters display
     const charList = castChars.map(c => `<strong>${escHtml(c.name)}</strong>${c.appearance ? ` <span class="text-muted">(${escHtml(c.appearance.slice(0, 60))})</span>` : ''}`).join(', ');
 
-    const checkboxes = available.map((v, i) => {
+    const optionRows = available.map((v, i) => {
       const checked = i < slotsAvailable ? 'checked' : '';
-      return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;">
+      return `<label class="gen-ref-option">
         <input type="checkbox" class="world-inter-pick" data-idx="${i}" ${checked}>
         <span>${escHtml(v.desc)}</span>
       </label>`;
     }).join('');
 
-    App.showModal(`
-      <div class="modal-title">Generate Character Interactions</div>
-      <p class="text-sm text-muted" style="margin-bottom:8px;">Characters: ${charList}</p>
-      <p class="text-sm text-muted" style="margin-bottom:12px;">Choose which interaction images to generate (${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available):</p>
-      <div style="max-height:45vh;overflow-y:auto;">${checkboxes}</div>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="App.hideModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="WorldsPage._doGenerateCharacterInteractions()">Generate Selected</button>
+    const dropdown = document.createElement('div');
+    dropdown.id = 'world-gen-interactions-dropdown';
+    dropdown.className = 'gen-ref-dropdown';
+    dropdown.innerHTML = `
+      <div class="gen-ref-dropdown-header">
+        <span class="text-sm text-muted">Characters: ${charList} &mdash; ${slotsAvailable} slot${slotsAvailable !== 1 ? 's' : ''} available</span>
+        <div class="gen-ref-dropdown-controls">
+          <button class="btn-link text-sm" onclick="document.querySelectorAll('#world-gen-interactions-dropdown .world-inter-pick').forEach(cb=>cb.checked=true)">All</button>
+          <button class="btn-link text-sm" onclick="document.querySelectorAll('#world-gen-interactions-dropdown .world-inter-pick').forEach(cb=>cb.checked=false)">None</button>
+        </div>
       </div>
-    `);
-    WorldsPage._pendingInteractionData = { prompts: available, castChars, castNames, castDesc, worldName, worldDesc, worldImg, slotsAvailable };
+      <div class="gen-ref-options">${optionRows}</div>
+      <div class="gen-ref-dropdown-footer">
+        <button class="btn btn-sm btn-secondary" onclick="document.getElementById('world-gen-interactions-dropdown')?.remove()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="WorldsPage._doGenerateCharacterInteractions()">Generate Selected</button>
+      </div>
+    `;
+
+    const toolbar = document.getElementById('world-img-toolbar');
+    if (toolbar) toolbar.insertAdjacentElement('afterend', dropdown);
   }
 
   /** Execute character interaction generation for the user-selected variations. */
   async function _doGenerateCharacterInteractions() {
-    const picks = document.querySelectorAll('.world-inter-pick:checked');
+    const picks = document.querySelectorAll('#world-gen-interactions-dropdown .world-inter-pick:checked');
     const selectedIdxs = Array.from(picks).map(cb => parseInt(cb.dataset.idx, 10));
     if (selectedIdxs.length === 0) return App.toast('Select at least one variation', 'error');
 
@@ -655,7 +689,7 @@ const WorldsPage = (() => {
     if (selectedIdxs.length > maxSlots) return App.toast(`Only ${maxSlots} slot${maxSlots !== 1 ? 's' : ''} available — deselect some options`, 'error');
 
     const selectedVariations = selectedIdxs.map(i => data.prompts[i]).filter(Boolean);
-    App.hideModal();
+    document.getElementById('world-gen-interactions-dropdown')?.remove();
 
     const { castChars, castNames, worldName, worldImg } = data;
 

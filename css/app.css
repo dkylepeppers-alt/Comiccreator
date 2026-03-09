@@ -540,6 +540,60 @@ img { max-width: 100%; display: block; }
   flex-wrap: wrap;
 }
 
+/* === Generate References / Interactions inline dropdown panel === */
+.gen-ref-dropdown {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-top: 8px;
+  animation: gen-ref-slide-in 0.15s ease;
+}
+@keyframes gen-ref-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.gen-ref-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.gen-ref-dropdown-controls {
+  display: flex;
+  gap: 12px;
+}
+.gen-ref-options {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gen-ref-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  line-height: 1.4;
+}
+.gen-ref-option:hover { background: rgba(124, 58, 237, 0.1); }
+.gen-ref-option input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.gen-ref-dropdown-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
 .comic-page {
   background: #fff;
   border-radius: var(--radius);
