@@ -18,8 +18,8 @@ mcp-servers:
     tools: ["*"]
   fetch:
     type: 'local'
-    command: 'fetch-mcp-server'
-    args: []
+    command: 'docker'
+    args: ['run', '-i', '--rm', 'mcp/fetch']
     tools: ["*"]
 handoffs:
   - label: "✅ Upgrade Complete"

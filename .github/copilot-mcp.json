@@ -6,14 +6,12 @@
       "args": [
         "--toolsets",
         "repos,issues,pull_requests,actions,code_security"
-      ],
-      "tools": ["*"]
+      ]
     },
     "fetch": {
       "type": "stdio",
-      "command": "fetch-mcp-server",
-      "args": [],
-      "tools": ["*"]
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "mcp/fetch"]
     }
   }
 }
