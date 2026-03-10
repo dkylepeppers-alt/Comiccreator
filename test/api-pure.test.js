@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 
 // --- Inline the static fallback lookup from api.js (no DB dependency) ---

@@ -1,7 +1,5 @@
-// @vitest-environment node
 /**
  * Tests for pure functions that can run in Node.js without a browser.
- * Run with: node --test test/
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';

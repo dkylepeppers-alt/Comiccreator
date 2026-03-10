@@ -6,7 +6,6 @@ export default mergeConfig(
   defineConfig({
     test: {
       globals: true,
-      environment: 'jsdom',
       include: ['test/**/*.test.{js,ts}'],
       coverage: {
         provider: 'v8',

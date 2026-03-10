@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, beforeEach, expect } from 'vitest';
 import 'fake-indexeddb/auto';
 
