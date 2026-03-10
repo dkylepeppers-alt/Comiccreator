@@ -179,7 +179,7 @@ function uuid(): string {
 
 // Settings helpers
 async function getSetting<T>(key: string, defaultValue: T | null = null): Promise<T | null> {
-  const row = await get(STORES.settings, key) as Setting | undefined;
+  const row = (await get(STORES.settings, key)) as Setting | undefined;
   return row ? row.value : defaultValue;
 }
 

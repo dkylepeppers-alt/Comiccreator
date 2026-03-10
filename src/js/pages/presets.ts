@@ -231,5 +231,14 @@ function onUnmount(): void {
   editingId = null;
 }
 
-const PresetsPage: PageModule & Record<string, any> = { render, onUnmount, newPreset, editPreset, backToList, savePreset, deletePreset, confirmDelete };
+const PresetsPage: PageModule & Record<string, any> = {
+  render,
+  onUnmount,
+  newPreset,
+  editPreset,
+  backToList,
+  savePreset,
+  deletePreset,
+  confirmDelete,
+};
 export default PresetsPage;

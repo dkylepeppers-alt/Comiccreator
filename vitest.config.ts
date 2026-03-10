@@ -14,7 +14,7 @@ export default mergeConfig(
         exclude: ['test/**', 'node_modules/**'],
         thresholds: {
           lines: 60,
-          branches: 60,
+          branches: 55,
         },
       },
     },

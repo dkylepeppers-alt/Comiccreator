@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Global type declarations for the AI Comic Creator app.
  * Covers window globals set by app.ts and Vite build-time defines.
@@ -33,7 +32,6 @@ declare const SettingsPage: any;
 
 /** Extend globalThis to include App for module-scoped references */
 declare namespace globalThis {
-  // eslint-disable-next-line no-var
   var App: typeof App;
 }
 

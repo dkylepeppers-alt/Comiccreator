@@ -352,7 +352,10 @@ function compressDataUrl(dataUrl: string, maxDim: number = 1024, quality: number
  * @param {Object} [options]  - { genre, model, signal }
  * @returns {Promise<string>} - Enriched prompt, or rawPrompt on failure
  */
-async function enrichImagePrompt(rawPrompt: string, options: ChatCompletionOptions & { genre?: string } = {}): Promise<string> {
+async function enrichImagePrompt(
+  rawPrompt: string,
+  options: ChatCompletionOptions & { genre?: string } = {},
+): Promise<string> {
   // Return falsy inputs (null, undefined, '') unchanged — mirrors how other
   // API helpers handle missing input without throwing.
   if (!rawPrompt) return rawPrompt;
@@ -1283,7 +1286,11 @@ async function generateRefVariation(
     return `data:image/png;base64,${result}`;
   } catch (err) {
     if (typeof (globalThis as any).App !== 'undefined') {
-      (globalThis as any).App.logError('generateRefVariation', err, `Failed to generate variation: ${prompt.slice(0, 80)}`);
+      (globalThis as any).App.logError(
+        'generateRefVariation',
+        err,
+        `Failed to generate variation: ${prompt.slice(0, 80)}`,
+      );
     }
     return null;
   }

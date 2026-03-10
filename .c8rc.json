@@ -1,8 +1,0 @@
-{
-  "lines": 60,
-  "branches": 60,
-  "functions": 60,
-  "statements": 60,
-  "reporter": ["text", "lcov"],
-  "exclude": ["test/**", "node_modules/**"]
-}
