@@ -1,0 +1,68 @@
+name: CI Metrics
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Collect and report CI metrics
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const workflows = ['tests.yml', 'playwright.yml'];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let report = '# Weekly CI Metrics Report\n\n';
+            report += `Generated: ${new Date().toISOString()}\n\n`;
+
+            for (const workflow of workflows) {
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflow,
+                per_page: 20,
+                status: 'completed',
+              });
+
+              const completed = runs.data.workflow_runs.filter(
+                r => r.conclusion === 'success' || r.conclusion === 'failure'
+              );
+
+              if (completed.length === 0) {
+                report += `## ${workflow}\nNo completed runs in the last 20 runs.\n\n`;
+                continue;
+              }
+
+              const durations = completed.map(r => {
+                const start = new Date(r.run_started_at).getTime();
+                const end = new Date(r.updated_at).getTime();
+                return (end - start) / 1000 / 60; // minutes
+              });
+
+              const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+              const max = Math.max(...durations);
+              const min = Math.min(...durations);
+              const successCount = completed.filter(r => r.conclusion === 'success').length;
+              const successRate = ((successCount / completed.length) * 100).toFixed(1);
+
+              report += `## ${workflow}\n`;
+              report += `| Metric | Value |\n|--------|-------|\n`;
+              report += `| Runs analyzed | ${completed.length} |\n`;
+              report += `| Avg duration | ${avg.toFixed(1)} min |\n`;
+              report += `| Min duration | ${min.toFixed(1)} min |\n`;
+              report += `| Max duration | ${max.toFixed(1)} min |\n`;
+              report += `| Success rate | ${successRate}% |\n\n`;
+            }
+
+            core.summary.addRaw(report);
+            await core.summary.write();

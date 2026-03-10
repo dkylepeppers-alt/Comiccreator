@@ -20,7 +20,7 @@ updates:
     schedule:
       interval: "weekly"
     labels:
-      - "dependencies"
+      - "ci"
     commit-message:
       prefix: "chore"
     open-pull-requests-limit: 10

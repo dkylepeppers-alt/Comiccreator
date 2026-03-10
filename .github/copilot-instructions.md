@@ -45,8 +45,13 @@ scripts/
   bump-version.sh        Atomically bumps version in all 5 places (see Versioning below)
   update-docs.sh         Regenerates auto-generated README sections (directory tree, workflows table)
   install-hooks.sh       Installs git pre-commit hook
-  pre-commit             Pre-commit hook (version consistency check only — does NOT run syntax checks or tests)
+  pre-commit-version-check.sh  Pre-commit hook (version consistency check + staged JS syntax check)
 .github/
+  actions/
+    setup-node-env/      Composite action: checkout + Node.js 22 setup + npm ci
+      action.yml
+    setup-playwright/    Composite action: setup-node-env + Playwright browser caching
+      action.yml
   agents/                Copilot agent definitions (gem-team + standalone agents)
   copilot-instructions.md  This file — project-wide Copilot instructions
   workflows/             CI/CD workflow definitions
@@ -137,14 +142,20 @@ Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:
 
 ## CI Workflow
 
+Two **composite actions** eliminate duplicated setup steps across workflows:
+- `.github/actions/setup-node-env` — runs `actions/setup-node@v4` (Node.js 22 with npm cache) then `npm ci`. Referenced with `uses: ./.github/actions/setup-node-env` (checkout must happen first in the calling workflow).
+- `.github/actions/setup-playwright` — calls `setup-node-env`, then caches Playwright browsers with `actions/cache@v4` (key: `playwright-{os}-{hash(package-lock.json)}`), then installs Chromium only on cache miss.
+
 `.github/workflows/tests.yml` runs on every push and pull request:
 
-1. `npm ci` — install dependencies
+1. `npm ci` — install dependencies (via `setup-node-env` composite action)
 2. `npm run check-syntax` — `node --check` every JS file
 3. `npm run lint` — ESLint checks
-4. `npm test` — all unit/integration test files
+4. `npm run format:check` — Prettier formatting enforcement
+5. `npm run coverage:ci` — all unit/integration tests with `c8` coverage reporting
+6. Coverage artifact upload (14-day retention) and optional Codecov upload
 
-`.github/workflows/playwright.yml` also runs on every push and pull request and executes Playwright E2E tests (`npm run test:e2e`) in Chromium. E2E test artifacts (reports) are uploaded with 14-day retention.
+`.github/workflows/playwright.yml` runs on pushes and PRs that change relevant files (`js/**`, `css/**`, `index.html`, `sw.js`, `test/e2e/**`, `playwright.config.js`, `.github/workflows/playwright.yml`, `.github/actions/setup-playwright/**`) and executes Playwright E2E tests (`npm run test:e2e`) in Chromium via the `setup-playwright` composite action. E2E test artifacts (reports) are uploaded with 14-day retention.
 
 Additional workflows:
 - `.github/workflows/post-merge.yml` — consolidated post-merge pipeline triggered on every push to `Main` (skips bot commits); runs two sequential jobs: `bump-version` (runs `scripts/bump-version.sh patch`, commits and pushes the version bump) then `update-docs` (checks out the updated `Main`, runs `scripts/update-docs.sh`, commits and pushes README changes if any). Uses concurrency group `post-merge-main` with `cancel-in-progress: true`.
@@ -156,6 +167,7 @@ Additional workflows:
 - `.github/workflows/auto-merge-dependabot.yml` — automatically approves and merges Dependabot minor and patch update PRs; runs on every pull request but only acts when `github.actor == 'dependabot[bot]'`
 - `.github/workflows/pr-labeler.yml` — labels pull requests automatically based on changed file paths (uses `actions/labeler`); runs on every pull request
 - `.github/workflows/stale.yml` — marks issues and PRs as stale after 30 days of inactivity and closes them after a further 7 days; runs daily via cron
+- `.github/workflows/ci-metrics.yml` — weekly CI metrics report; fetches the last 20 runs of `tests.yml` and `playwright.yml`, calculates average/min/max duration and success rate, posts summary to the GitHub Actions job summary
 
 All steps must pass before merging. If CI is red, check the workflow run logs.
 
