@@ -1,9 +1,9 @@
 export default [
   {
-    files: ['js/**/*.js'],
+    files: ['src/js/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'module',
       globals: {
         // Browser globals
         window: 'readonly',
@@ -27,34 +27,14 @@ export default [
         Promise: 'readonly',
         crypto: 'readonly',
         caches: 'readonly',
-        module: 'readonly',
         structuredClone: 'readonly',
+        globalThis: 'readonly',
 
-        // App globals (IIFEs)
-        DB: 'readonly',
-        API: 'readonly',
+        // App global (set on window by app.js, used by page modules at runtime)
         App: 'readonly',
-        CloudSync: 'readonly',
-        FIREBASE_CONFIG: 'readonly',
-        firebase: 'readonly',
-        HomePage: 'readonly',
-        CharactersPage: 'readonly',
-        WorldsPage: 'readonly',
-        CreatePage: 'readonly',
-        LibraryPage: 'readonly',
-        PresetsPage: 'readonly',
-        ImagePresetsPage: 'readonly',
-        SettingsPage: 'readonly',
 
-        // Shared utilities from home.js
-        escHtml: 'readonly',
-        timeAgo: 'readonly',
-        getGenreEmoji: 'readonly',
-        GENRES: 'readonly',
-        dedupeByNameLatest: 'readonly',
-        cosineSimilarity: 'readonly',
-        sanitizeImagePrompt: 'readonly',
-        buildImageEmbeddingText: 'readonly',
+        // Vite build-time define (replaced at build time)
+        __APP_VERSION__: 'readonly',
       },
     },
     rules: {
@@ -70,26 +50,6 @@ export default [
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-throw-literal': 'error',
-    },
-  },
-  {
-    // Service worker file
-    files: ['sw.js'],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'script',
-      globals: {
-        self: 'readonly',
-        caches: 'readonly',
-        fetch: 'readonly',
-        URL: 'readonly',
-        Response: 'readonly',
-        Promise: 'readonly',
-      },
-    },
-    rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-      'no-undef': 'error',
     },
   },
 ];
