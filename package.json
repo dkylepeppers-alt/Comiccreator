@@ -1,6 +1,6 @@
 {
   "name": "comic-creator",
-  "version": "1.6.61",
+  "version": "1.6.62",
   "type": "module",
   "private": true,
   "description": "AI Comic Creator - A Vite-powered PWA for generating AI-powered comic books",
