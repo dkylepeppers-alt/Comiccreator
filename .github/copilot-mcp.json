@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "github": {
-      "type": "local",
+      "type": "stdio",
       "command": "github-mcp-server",
       "args": [
         "--toolsets",
@@ -10,7 +10,7 @@
       "tools": ["*"]
     },
     "fetch": {
-      "type": "local",
+      "type": "stdio",
       "command": "fetch-mcp-server",
       "args": [],
       "tools": ["*"]
