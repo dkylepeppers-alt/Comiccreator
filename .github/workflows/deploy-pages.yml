@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - Main
+      - main
   workflow_dispatch:
 
 # Exception: deploy-pages requires top-level permissions because the

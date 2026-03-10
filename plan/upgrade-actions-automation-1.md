@@ -47,7 +47,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 - **GUD-002**: Use GitHub Actions cache for `node_modules` and Playwright browsers to reduce CI wall time
 - **GUD-003**: Prefer workflow reuse (composite actions or reusable workflows) over copy-pasting setup steps
 - **PAT-001**: Follow the existing pattern of job-level `permissions` blocks on all new workflows
-- **PAT-002**: Follow the existing concurrency group pattern for workflows that push commits to `Main`
+- **PAT-002**: Follow the existing concurrency group pattern for workflows that push commits to `main`
 - **PAT-003**: Workflow file naming: lowercase-kebab-case `.yml` files in `.github/workflows/`
 
 ## 2. Implementation Steps
@@ -85,7 +85,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 |------|-------------|-----------|------|
 | TASK-012 | Pin all third-party actions in every workflow file to their full SHA commit hash instead of floating version tags. Affected actions: `actions/checkout@v4`, `actions/setup-node@v4`, `actions/upload-artifact@v4`, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`, `actions/cache@v4`. Add a comment next to each SHA with the tag name for readability (e.g., `# v4.2.2`). | ✅ | 2026-03-09 |
 | TASK-013 | Add `permissions: {}` (empty/deny-all) as the top-level default for all workflow files, then explicitly grant only required permissions at the job level. This follows the principle of least privilege. Currently, `deploy-pages.yml` uses top-level permissions — keep that exception but add a comment explaining why. | ✅ | 2026-03-09 |
-| TASK-014 | Add a `codeql-analysis.yml` workflow that runs GitHub CodeQL analysis on push to `Main` and on PRs. Configure it for JavaScript and TypeScript analysis. This provides automated SAST scanning beyond npm audit. After Phase 10 (TypeScript migration), CodeQL's TypeScript support will provide even deeper analysis. | ✅ | 2026-03-09 |
+| TASK-014 | Add a `codeql-analysis.yml` workflow that runs GitHub CodeQL analysis on push to `main` and on PRs. Configure it for JavaScript and TypeScript analysis. This provides automated SAST scanning beyond npm audit. After Phase 10 (TypeScript migration), CodeQL's TypeScript support will provide even deeper analysis. | ✅ | 2026-03-09 |
 | TASK-015 | Update `dependabot.yml` to: (1) add `labels: ["dependencies"]` for npm updates and `labels: ["ci"]` for github-actions updates, (2) add `commit-message: { prefix: "chore" }` for consistent commit messages, (3) add `open-pull-requests-limit: 10` to prevent Dependabot from overwhelming the repo, (4) add `groups` to batch minor/patch updates together. | ✅ | 2026-03-09 |
 ### Implementation Phase 4 — Automation Script Improvements
 
@@ -96,7 +96,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 | TASK-016 | Rename `scripts/pre-commit` to `scripts/pre-commit-version-check.sh` to clarify its purpose (version consistency only). Add a `node --check` syntax validation loop for staged `.js` files as a separate function within the script. This is a preparatory step — Phase 11 (TASK-055/056) will replace the entire manual hook system with `husky` + `lint-staged`. | ✅ | 2026-03-09 |
 | TASK-017 | Create `scripts/check-actions.sh` — a local validation script that uses `actionlint` (if installed) to lint all workflow YAML files. Add a corresponding `npm run lint:actions` script to `package.json`. This is optional/advisory (does not block commits) but provides quick feedback. | ✅ | 2026-03-09 |
 | TASK-018 | Enhance `scripts/update-docs.sh` to also generate an agent roster table in README.md by scanning `.github/agents/*.agent.md` files and extracting the agent name and description from frontmatter. Add a new `<!-- AUTO-GENERATED-CONTENT:START (AGENT_ROSTER) -->` section to README.md. | ✅ | 2026-03-09 |
-| TASK-019 | Add a `scripts/validate-workflows.sh` script that checks all workflow files for: (1) presence of `permissions` block, (2) bot loop guards on auto-commit workflows, (3) concurrency groups on Main-push workflows. Add as `npm run validate:workflows` to `package.json`. | ✅ | 2026-03-09 |
+| TASK-019 | Add a `scripts/validate-workflows.sh` script that checks all workflow files for: (1) presence of `permissions` block, (2) bot loop guards on auto-commit workflows, (3) concurrency groups on main-push workflows. Add as `npm run validate:workflows` to `package.json`. | ✅ | 2026-03-09 |
 
 ### Implementation Phase 5 — Auto-Merge & PR Automation
 
@@ -115,7 +115,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-024 | Create `.github/workflows/post-merge.yml` workflow triggered on `push` to `Main`. This single workflow runs two sequential jobs: (1) `bump-version` — runs `bash scripts/bump-version.sh patch`, reads new version, commits and pushes. (2) `update-docs` — depends on `bump-version` via `needs:`, checks out the updated Main, runs `bash scripts/update-docs.sh`, commits and pushes if changed. Both jobs use the same bot identity and bot-loop guards. Use concurrency group `post-merge-main` with `cancel-in-progress: true`. | ✅ | 2026-03-09 |
+| TASK-024 | Create `.github/workflows/post-merge.yml` workflow triggered on `push` to `main`. This single workflow runs two sequential jobs: (1) `bump-version` — runs `bash scripts/bump-version.sh patch`, reads new version, commits and pushes. (2) `update-docs` — depends on `bump-version` via `needs:`, checks out the updated main, runs `bash scripts/update-docs.sh`, commits and pushes if changed. Both jobs use the same bot identity and bot-loop guards. Use concurrency group `post-merge-main` with `cancel-in-progress: true`. | ✅ | 2026-03-09 |
 | TASK-025 | Delete `auto-bump.yml` and `auto-update-docs.yml` after `post-merge.yml` is verified working. Update `.github/copilot-instructions.md` to reference the new consolidated workflow. | ✅ | 2026-03-09 |
 | TASK-026 | Update the CI Workflow section of `.github/copilot-instructions.md` to document all new and modified workflows, including the composite actions, security-pr, post-merge, auto-merge-dependabot, pr-labeler, stale, and codeql-analysis workflows. | ✅ | 2026-03-09 |
 
@@ -187,7 +187,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 | TASK-058 | Create `.github/PULL_REQUEST_TEMPLATE.md` with sections: Description, Type of Change (checkboxes: bug fix, feature, refactor, docs, CI), Testing (how was this tested?), Screenshots (if UI change), and Checklist (tests pass, lint passes, types check, no secrets committed). | | |
 | TASK-059 | Create `.github/ISSUE_TEMPLATE/bug_report.yml` and `.github/ISSUE_TEMPLATE/feature_request.yml` using GitHub's YAML issue form syntax. Bug report includes: description, reproduction steps, expected behavior, actual behavior, browser/OS, screenshots. Feature request includes: description, motivation, proposed solution, alternatives considered. Add `.github/ISSUE_TEMPLATE/config.yml` with `blank_issues_enabled: false`. | | |
 | TASK-060 | Create `.github/workflows/lighthouse-ci.yml` workflow: triggered on PRs that change `src/**`, `index.html`, `public/**`. Installs `@lhci/cli` as a devDependency, runs `npm run build`, then runs `lhci autorun` against the Vite preview server. Configure `.lighthouserc.js` with assertions: `performance >= 0.9`, `accessibility >= 0.9`, `best-practices >= 0.9`, `pwa >= 0.9`. Upload the Lighthouse report as a workflow artifact. Post results as a PR comment via `actions/github-script`. | | |
-| TASK-061 | Install `release-please` GitHub Action. Create `.github/workflows/release-please.yml` that runs on push to `Main` and creates/updates a release PR automatically based on conventional commit messages. Configure `release-type: node` so it bumps `package.json` version and generates a `CHANGELOG.md`. This replaces the manual `release.yml` workflow dispatch and the `auto-bump.yml` patch auto-increment. | | |
+| TASK-061 | Install `release-please` GitHub Action. Create `.github/workflows/release-please.yml` that runs on push to `main` and creates/updates a release PR automatically based on conventional commit messages. Configure `release-type: node` so it bumps `package.json` version and generates a `CHANGELOG.md`. This replaces the manual `release.yml` workflow dispatch and the `auto-bump.yml` patch auto-increment. | | |
 | TASK-062 | Create `.github/workflows/bundle-size.yml` workflow: triggered on PRs. Runs `npm run build`, captures the output `dist/` size with `du -sh dist/`, and compares against the base branch build size. Posts a PR comment showing the size diff (e.g., "+12 KB / 340 KB total"). Uses `actions/cache` to store the base branch build size. This prevents unintentional bundle bloat. | | |
 
 ## 3. Alternatives
@@ -327,7 +327,7 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 - **TEST-007**: After TASK-015, verify Dependabot PRs have the expected labels after the next weekly run
 - **TEST-008**: After TASK-016, verify `npx lint-staged` runs syntax check, ESLint fix, and Prettier write on staged `.js` files
 - **TEST-009**: After TASK-019, run `npm run validate:workflows` and verify it reports on all workflow files
-- **TEST-010**: After TASK-024/TASK-025, push a commit to Main and verify the consolidated post-merge workflow runs bump + docs-update sequentially
+- **TEST-010**: After TASK-024/TASK-025, push a commit to main and verify the consolidated post-merge workflow runs bump + docs-update sequentially
 - **TEST-011**: After TASK-032, verify README badges render correctly on GitHub
 - **TEST-012**: After TASK-034, verify all jobs have `timeout-minutes` set by running `grep -L timeout-minutes .github/workflows/*.yml` — should return no results
 

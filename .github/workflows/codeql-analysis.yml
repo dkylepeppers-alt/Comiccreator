@@ -3,7 +3,7 @@ name: CodeQL Analysis
 on:
   push:
     branches:
-      - Main
+      - main
   pull_request:
 
 # Deny all permissions by default; grant only what each job needs.

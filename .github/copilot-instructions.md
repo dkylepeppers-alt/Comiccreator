@@ -180,12 +180,12 @@ Two **composite actions** eliminate duplicated setup steps across workflows:
 `.github/workflows/playwright.yml` runs on pushes and PRs that change relevant files (`src/**`, `index.html`, `vite.config.js`, `test/e2e/**`, `playwright.config.js`, `.github/workflows/playwright.yml`, `.github/actions/setup-playwright/**`). Steps: `npm run build` then `npm run test:e2e` (Playwright uses the Vite preview server). E2E test artifacts (reports) are uploaded with 14-day retention.
 
 Additional workflows:
-- `.github/workflows/post-merge.yml` — consolidated post-merge pipeline triggered on every push to `Main` (skips bot commits); runs two sequential jobs: `bump-version` (runs `scripts/bump-version.sh patch`, commits and pushes the version bump) then `update-docs` (checks out the updated `Main`, runs `scripts/update-docs.sh`, commits and pushes README changes if any). Uses concurrency group `post-merge-main` with `cancel-in-progress: true`.
-- `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `Main` or manual trigger; runs `npm run build` and deploys from `dist/`
+- `.github/workflows/post-merge.yml` — consolidated post-merge pipeline triggered on every push to `main` (skips bot commits); runs two sequential jobs: `bump-version` (runs `scripts/bump-version.sh patch`, commits and pushes the version bump) then `update-docs` (checks out the updated `main`, runs `scripts/update-docs.sh`, commits and pushes README changes if any). Uses concurrency group `post-merge-main` with `cancel-in-progress: true`.
+- `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `main` or manual trigger; runs `npm run build` and deploys from `dist/`
 - `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs `npm run build && npm run lint && npm test`, bumps version, tags, creates GitHub Release
 - `.github/workflows/security.yml` — weekly `npm audit --audit-level=high` security scan
 - `.github/workflows/security-pr.yml` — runs `npm audit --audit-level=high` on every pull request to catch new vulnerabilities before merge
-- `.github/workflows/codeql-analysis.yml` — CodeQL SAST analysis for JavaScript/TypeScript, runs on push to `Main` and on pull requests
+- `.github/workflows/codeql-analysis.yml` — CodeQL SAST analysis for JavaScript/TypeScript, runs on push to `main` and on pull requests
 - `.github/workflows/auto-merge-dependabot.yml` — automatically approves and merges Dependabot minor and patch update PRs; runs on every pull request but only acts when `github.actor == 'dependabot[bot]'`
 - `.github/workflows/pr-labeler.yml` — labels pull requests automatically based on changed file paths (uses `actions/labeler`); runs on every pull request
 - `.github/workflows/stale.yml` — marks issues and PRs as stale after 30 days of inactivity and closes them after a further 7 days; runs daily via cron

@@ -381,7 +381,7 @@ Requires a browser with support for:
 
 ### Version Management
 
-**Every merge to `Main` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
+**Every merge to `main` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
 
 The version appears in **three places** that must all match. Use the bump script to update them atomically:
 
@@ -416,11 +416,11 @@ If you must update manually, change all three locations:
 
 The service worker version is managed automatically by Workbox via `vite-plugin-pwa` — no manual `CACHE_NAME` update is needed. The `APP_VERSION` displayed in Settings is injected at build time via Vite's `define` plugin, which reads `public/version.json`.
 
-On every push to `Main`, `.github/workflows/post-merge.yml` automatically runs a patch bump and pushes the result, so manual bumps are only needed before merging features that warrant a minor or major increment.
+On every push to `main`, `.github/workflows/post-merge.yml` automatically runs a patch bump and pushes the result, so manual bumps are only needed before merging features that warrant a minor or major increment.
 
 ### Auto-Updating Documentation
 
-Sections of this README wrapped in `<!-- AUTO-GENERATED-CONTENT:START (NAME) -->` / `<!-- AUTO-GENERATED-CONTENT:END (NAME) -->` comments are regenerated automatically. On every push to `Main`, `.github/workflows/post-merge.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
+Sections of this README wrapped in `<!-- AUTO-GENERATED-CONTENT:START (NAME) -->` / `<!-- AUTO-GENERATED-CONTENT:END (NAME) -->` comments are regenerated automatically. On every push to `main`, `.github/workflows/post-merge.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
 
 - **Architecture directory tree** — reflects the actual file structure of the repository
 - **CI Workflows table** — lists all workflow files with their triggers and names
@@ -438,7 +438,7 @@ The script is idempotent — running it multiple times with no file changes prod
 
 ### GitHub Pages Deployment
 
-The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `Main` branch or via manual `workflow_dispatch`. The workflow runs `npm run build` then deploys the `dist/` output using the official GitHub Pages actions:
+The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `main` branch or via manual `workflow_dispatch`. The workflow runs `npm run build` then deploys the `dist/` output using the official GitHub Pages actions:
 
 - `actions/configure-pages` — configures the Pages environment
 - `actions/upload-pages-artifact` — uploads the `dist/` build output
