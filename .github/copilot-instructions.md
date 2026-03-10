@@ -2,50 +2,52 @@
 
 ## What This Project Is
 
-A fully installable Progressive Web App (PWA) for generating AI-powered comic books. It is **pure vanilla HTML/CSS/JavaScript** with no frontend build step. The app runs directly in a browser as static files served by any HTTP server. A NanoGPT API key is required for AI generation features.
+A fully installable Progressive Web App (PWA) for generating AI-powered comic books. It is a **Vite-powered PWA using vanilla JavaScript ES modules**. Vite handles bundling, dev server (with HMR), and service worker generation via `vite-plugin-pwa` (Workbox). A NanoGPT API key is required for AI generation features.
 
 ---
 
 ## Repository Layout
 
 ```
-index.html              Main app shell (SPA, all pages rendered into #content)
-manifest.json           PWA manifest
-sw.js                   Service worker (offline cache-first for shell, network-only for API)
-version.json            Single source of truth for app version
-css/app.css             All styles (dark theme, mobile-first, no preprocessor)
-js/
-  utils.js              Shared helpers: escHtml, timeAgo, getGenreEmoji, dedupeByNameLatest,
-                        cosineSimilarity, sanitizeImagePrompt, GENRES
-  db.js                 IndexedDB layer (DB singleton – open, get, put, del, getAll, getByIndex,
-                        uuid, settings helpers, fileToDataURL, migrateCharacter, migrateWorld,
-                        seedDefaults, dedupePresets)
-  api.js                NanoGPT API client (chat streaming, image gen, embeddings, model fetching,
-                        image compression, prompt building, reference image variations)
-  app.js                SPA router (App.navigate, modal, toast, error log)
-  pages/
-    home.js             Dashboard
-    characters.js       Character CRUD + multi-image upload (up to 20 images per character)
-    worlds.js           World CRUD + multi-image upload (up to 20 images per world)
-    create.js           Comic generation engine
-    library.js          Comic viewer + PDF export
-    presets.js          Prompt preset editor
-    image-presets.js    Image style preset editor (reusable art-style prompt prefixes)
-    settings.js         API config, model params, data management (contains APP_VERSION constant)
+index.html              Main app shell (SPA, single module entry point)
+vite.config.js          Vite configuration (PWA plugin, __APP_VERSION__ define)
+public/
+  manifest.json         PWA manifest (served as-is by Vite)
+  version.json          Single source of truth for app version
+  icons/                App icons (192, 512, SVG)
+  .nojekyll             GitHub Pages config
+src/
+  css/app.css           All styles (dark theme, mobile-first, no preprocessor)
+  js/
+    utils.js            Shared helpers (named exports: escHtml, timeAgo, getGenreEmoji,
+                        dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt, GENRES)
+    db.js               IndexedDB layer (default export: DB)
+    api.js              NanoGPT API client (default export: API)
+    app.js              SPA router + entry point (imports all modules, sets window globals)
+    pages/
+      home.js           Dashboard
+      characters.js     Character CRUD + multi-image upload (up to 20 images per character)
+      worlds.js         World CRUD + multi-image upload (up to 20 images per world)
+      create.js         Comic generation engine
+      library.js        Comic viewer + PDF export
+      presets.js         Prompt preset editor
+      image-presets.js   Image style preset editor (reusable art-style prompt prefixes)
+      settings.js        API config, model params, data management (APP_VERSION injected by Vite define)
 test/
-  config-integrity.test.js   Version sync and sw.js asset checks
+  config-integrity.test.js   Version sync across source files
   db.test.js                 IndexedDB layer tests (uses fake-indexeddb)
   api-integration.test.js    API module tests (uses fake-indexeddb)
   api-pure.test.js           Pure API function tests
   pure-functions.test.js     Utility function tests
   utils.test.js              escHtml / utils tests
   e2e/
-    smoke.spec.js            Playwright end-to-end smoke tests (Chromium, requires local server)
+    smoke.spec.js            Playwright end-to-end smoke tests (Chromium, requires build first)
 scripts/
-  bump-version.sh        Atomically bumps version in all 5 places (see Versioning below)
+  bump-version.sh        Atomically bumps version in all 3 source files (see Versioning below)
   update-docs.sh         Regenerates auto-generated README sections (directory tree, workflows table)
   install-hooks.sh       Installs git pre-commit hook
-  pre-commit-version-check.sh  Pre-commit hook (version consistency check + staged JS syntax check)
+  pre-commit-version-check.sh  Pre-commit hook (version consistency check)
+dist/                    Vite production build output (not committed)
 .github/
   actions/
     setup-node-env/      Composite action: checkout + Node.js 22 setup + npm ci
@@ -59,50 +61,55 @@ scripts/
 
 ---
 
-## Script Load Order (Critical)
+## ES Module Architecture
 
-`index.html` loads scripts in this exact order — **do not change it**:
+`index.html` has a single module entry point:
 
 ```html
-<script src="js/utils.js"></script>           <!-- exports globals: escHtml, GENRES, etc. -->
-<script src="js/db.js"></script>              <!-- depends on utils globals (dedupeByNameLatest) -->
-<script src="js/api.js"></script>             <!-- depends on DB global -->
-<script src="js/pages/home.js"></script>
-<script src="js/pages/characters.js"></script>
-<script src="js/pages/worlds.js"></script>
-<script src="js/pages/create.js"></script>
-<script src="js/pages/library.js"></script>
-<script src="js/pages/presets.js"></script>
-<script src="js/pages/image-presets.js"></script>
-<script src="js/pages/settings.js"></script>
-<script src="js/app.js"></script>             <!-- depends on all page modules -->
+<script type="module" src="/src/js/app.js"></script>
 ```
 
-All JS files are browser globals (IIFE or `(function(exports){…})(…)` pattern). There is no module bundler. Every new `<script>` tag added to `index.html` **must also be added to `STATIC_ASSETS` in `sw.js`** — the `config-integrity` test enforces this.
+`app.js` imports all modules and exposes them on `window` for HTML `onclick` handlers:
+
+```js
+import { escHtml, GENRES, ... } from './utils.js';
+import DB from './db.js';
+import { HomePage } from './pages/home.js';
+// ... all other pages
+window.App = App;
+window.HomePage = HomePage;
+// etc.
+```
+
+**Dependency graph:** `utils.js` → `db.js` → `api.js` → pages → `app.js`. Vite resolves the import graph automatically — no manual script load order is needed.
+
+All source modules use standard ES `import`/`export`. The `package.json` has `"type": "module"` so Node.js tests also use ESM.
 
 ---
 
 ## Versioning — Must Stay in Sync
 
-The app version appears in **five places** and CI tests enforce that all five match:
+The app version appears in **three source files** and CI tests enforce that they match:
 
 | File | Location |
 |------|----------|
-| `version.json` | `"version": "1.6.30"` |
-| `sw.js` | `const CACHE_NAME = 'comic-creator-v1.6.30';` |
-| `js/pages/settings.js` | `const APP_VERSION = '1.6.30';` |
-| `index.html` | sidebar footer: `v1.6.30 &middot; PWA` |
-| `package.json` | `"version": "1.6.30"` |
+| `public/version.json` | `"version": "X.Y.Z"` — source of truth, read by `vite.config.js` at build time |
+| `package.json` | `"version": "X.Y.Z"` |
+| `index.html` | sidebar footer: `vX.Y.Z &middot; PWA` |
 
-**Use the bump script** to update all five atomically:
+`settings.js` gets `APP_VERSION` via Vite's `define` plugin at build time — `vite.config.js` reads `public/version.json` and injects `__APP_VERSION__` as a global constant. In dev mode it falls back to `'dev'`.
+
+The service worker version is managed automatically by Workbox (`vite-plugin-pwa`) — no manual `CACHE_NAME` update is needed.
+
+**Use the bump script** to update all three atomically:
 
 ```bash
-bash scripts/bump-version.sh patch   # 1.6.30 → 1.6.31
-bash scripts/bump-version.sh minor   # 1.6.30 → 1.7.0
-bash scripts/bump-version.sh major   # 1.6.30 → 2.0.0
+bash scripts/bump-version.sh patch   # 1.6.58 → 1.6.59
+bash scripts/bump-version.sh minor   # 1.6.58 → 1.7.0
+bash scripts/bump-version.sh major   # 1.6.58 → 2.0.0
 ```
 
-If you manually edit the version, update all five files. Failing to do so will break CI.
+If you manually edit the version, update all three files. Failing to do so will break CI.
 
 ---
 
@@ -112,31 +119,34 @@ If you manually edit the version, update all five files. Failing to do so will b
 # Install dev dependencies (required before running tests)
 npm install
 
-# Run all tests (Node built-in test runner)
+# Start Vite dev server with HMR on port 8080
+npm run dev
+
+# Production build to dist/
+npm run build
+
+# Preview production build on port 8080
+npm run serve
+
+# Run all tests (Node.js built-in test runner, ESM)
 npm test
 
-# Run Playwright E2E tests (auto-starts/reuses a local server on port 8080 via python3; requires Python 3)
+# Run Playwright E2E tests (requires build first)
 npm run test:e2e
 
-# Syntax check all JS files
-npm run check-syntax
-
-# Lint JS (ESLint)
+# Lint JS (ESLint, scoped to src/js/)
 npm run lint
 npm run lint:fix
 
-# Format (Prettier)
+# Format (Prettier, scoped to src/)
 npm run format
 npm run format:check
-
-# Serve locally on port 8080
-npm run serve
 
 # Regenerate auto-generated README sections (directory tree, workflows table)
 npm run update-docs
 ```
 
-Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:assert` modules. `fake-indexeddb` is used to mock IndexedDB in tests. Always run `npm install` first in a fresh environment.
+Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:assert` modules with ESM imports. `fake-indexeddb` is used to mock IndexedDB in tests (imported via `import 'fake-indexeddb/auto'`). Always run `npm install` first in a fresh environment.
 
 ---
 
@@ -149,18 +159,18 @@ Two **composite actions** eliminate duplicated setup steps across workflows:
 `.github/workflows/tests.yml` runs on every push and pull request:
 
 1. `npm ci` — install dependencies (via `setup-node-env` composite action)
-2. `npm run check-syntax` — `node --check` every JS file
+2. `npm run build` — Vite production build (also serves as a syntax/import check)
 3. `npm run lint` — ESLint checks
 4. `npm run format:check` — Prettier formatting enforcement
 5. `npm run coverage:ci` — all unit/integration tests with `c8` coverage reporting
 6. Coverage artifact upload (14-day retention) and optional Codecov upload
 
-`.github/workflows/playwright.yml` runs on pushes and PRs that change relevant files (`js/**`, `css/**`, `index.html`, `sw.js`, `test/e2e/**`, `playwright.config.js`, `.github/workflows/playwright.yml`, `.github/actions/setup-playwright/**`) and executes Playwright E2E tests (`npm run test:e2e`) in Chromium via the `setup-playwright` composite action. E2E test artifacts (reports) are uploaded with 14-day retention.
+`.github/workflows/playwright.yml` runs on pushes and PRs that change relevant files (`src/**`, `index.html`, `vite.config.js`, `test/e2e/**`, `playwright.config.js`, `.github/workflows/playwright.yml`, `.github/actions/setup-playwright/**`). Steps: `npm run build` then `npm run test:e2e` (Playwright uses the Vite preview server). E2E test artifacts (reports) are uploaded with 14-day retention.
 
 Additional workflows:
 - `.github/workflows/post-merge.yml` — consolidated post-merge pipeline triggered on every push to `Main` (skips bot commits); runs two sequential jobs: `bump-version` (runs `scripts/bump-version.sh patch`, commits and pushes the version bump) then `update-docs` (checks out the updated `Main`, runs `scripts/update-docs.sh`, commits and pushes README changes if any). Uses concurrency group `post-merge-main` with `cancel-in-progress: true`.
-- `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `Main` or manual trigger
-- `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs checks, bumps version, tags, creates GitHub Release
+- `.github/workflows/deploy-pages.yml` — deploys to GitHub Pages on push to `Main` or manual trigger; runs `npm run build` and deploys from `dist/`
+- `.github/workflows/release.yml` — manual `workflow_dispatch` release: runs `npm run build && npm run lint && npm test`, bumps version, tags, creates GitHub Release
 - `.github/workflows/security.yml` — weekly `npm audit --audit-level=high` security scan
 - `.github/workflows/security-pr.yml` — runs `npm audit --audit-level=high` on every pull request to catch new vulnerabilities before merge
 - `.github/workflows/codeql-analysis.yml` — CodeQL SAST analysis for JavaScript/TypeScript, runs on push to `Main` and on pull requests
@@ -175,7 +185,7 @@ All steps must pass before merging. If CI is red, check the workflow run logs.
 
 ## App Architecture Patterns
 
-### SPA Router (`js/app.js`)
+### SPA Router (`src/js/app.js`)
 
 `App.navigate(page, param)` is the only way to change pages:
 1. Calls `previousPage.onUnmount()` if present
@@ -183,13 +193,15 @@ All steps must pass before merging. If CI is red, check the workflow run logs.
 3. Calls `pages[page].postRender(param)` if present — called without `await` (fire-and-forget); may be async but its Promise is not awaited by the router
 4. Calls `await pages[page].onMount(param)` if present
 
-Each page module exposes: `render(param)` (required), optionally `postRender(param)`, `onMount(param)`, `onUnmount()`.
+Each page module uses ES `export` to expose its page object (e.g., `export const HomePage = { render() {…} }`). Page objects must provide `render(param)` (required), and optionally `postRender(param)`, `onMount(param)`, `onUnmount()`.
+
+`app.js` imports all page modules and assigns them to `window` (e.g., `window.HomePage = HomePage`) so that HTML `onclick` handlers in rendered templates can reference them.
 
 ### HTML Safety
 
-**Always use `escHtml(str)`** (from `js/utils.js`) when inserting user-controlled or API-returned data into HTML strings. Never use `.innerHTML = userInput` directly. The function escapes `&`, `<`, `>`, `"`, and `'`.
+**Always use `escHtml(str)`** (import from `src/js/utils.js`) when inserting user-controlled or API-returned data into HTML strings. Never use `.innerHTML = userInput` directly. The function escapes `&`, `<`, `>`, `"`, and `'`.
 
-### Utility Helpers (`js/utils.js`)
+### Utility Helpers (`src/js/utils.js`)
 
 - `escHtml(str)` — HTML-escapes a string (see HTML Safety above)
 - `timeAgo(ts)` — formats a timestamp as a human-readable relative string (e.g., "3h ago")
@@ -199,7 +211,7 @@ Each page module exposes: `render(param)` (required), optionally `postRender(par
 - `sanitizeImagePrompt(rawPrompt)` — strips narrative noise (dialogue, story text, internal states) from an image prompt so only visual descriptors remain
 - `GENRES` — array of `{ id, name, emoji }` genre objects
 
-### IndexedDB (`js/db.js`)
+### IndexedDB (`src/js/db.js`)
 
 Seven object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `imagePresets`, `settings`.
 
@@ -214,7 +226,7 @@ Seven object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `imag
 - `DB.seedDefaults()` — inserts the three built-in prompt presets on first run (idempotent)
 - `DB.dedupePresets()` — removes duplicate presets by name, keeping the most recently updated one
 
-### API Client (`js/api.js`)
+### API Client (`src/js/api.js`)
 
 All methods are async and read the API key and model settings from IndexedDB automatically.
 
@@ -239,21 +251,20 @@ Use `App.logError(context, error, extraDetails)` to record errors to the in-app 
 
 ## Adding a New Page
 
-1. Create `js/pages/mypage.js` exporting a `MyPage` object with at minimum a `render()` method.
-2. Add `<script src="js/pages/mypage.js"></script>` to `index.html` **before** `js/app.js`.
-3. Add `'/js/pages/mypage.js'` to `STATIC_ASSETS` in `sw.js`.
-4. Register the page in `app.js`: add to `pages` and `pageTitles` objects.
+1. Create `src/js/pages/mypage.js` exporting a `MyPage` object with at minimum a `render()` method using ES module syntax.
+2. Import it in `src/js/app.js` (e.g., `import { MyPage } from './pages/mypage.js';`).
+3. Register the page in `app.js`: add to `pages` and `pageTitles` objects.
+4. Add `window.MyPage = MyPage;` in `app.js` so HTML `onclick` handlers can reference it.
 5. Add navigation links as needed in `index.html`.
-6. Add the new global name (`MyPage`) to `eslint.config.js` globals to avoid `no-undef` lint errors.
 
 ---
 
 ## Errors Encountered and Workarounds
 
-- **ESLint browser-globals**: `eslint.config.js` declares browser globals manually because the standard `eslint:recommended` config does not include them. If you add a new global (e.g., a new page module name), add it to `eslint.config.js`.
-- **`fake-indexeddb` in tests**: `fake-indexeddb` must be `require`d at the top of each test file that exercises IndexedDB. See `test/db.test.js` for the pattern.
-- **Service worker caching**: After a version bump, browsers may serve cached old assets. The `CACHE_NAME` change forces the SW activate step to delete the old cache. Always bump the version when deploying asset changes.
-- **`node_modules` not present in fresh sandbox**: Run `npm install` before `npm test`. The `fake-indexeddb` devDependency is not installed by default.
+- **`__APP_VERSION__` Vite define**: `vite.config.js` reads `public/version.json` and injects `__APP_VERSION__` at build time via `define`. In dev mode or tests where Vite's define is unavailable, `settings.js` falls back to `'dev'`. The `eslint.config.js` declares `__APP_VERSION__` as a readonly global so ESLint does not flag it as undefined.
+- **`fake-indexeddb` in tests**: Import `'fake-indexeddb/auto'` at the top of each test file that exercises IndexedDB. Use dynamic `await import()` for source modules to ensure the polyfill is active before DB initialization. See `test/db.test.js` for the pattern.
+- **`node_modules` not present in fresh sandbox**: Run `npm install` before `npm test`. The `fake-indexeddb` and `vite` devDependencies are not installed by default.
+- **Service worker**: The service worker is auto-generated by Workbox via `vite-plugin-pwa`. Old hand-written `comic-creator-*` caches are cleaned up automatically on activation. No manual cache versioning is needed.
 
 ---
 
