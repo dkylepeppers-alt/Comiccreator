@@ -1,5 +1,5 @@
-import { describe, it, beforeEach } from 'node:test';
-import assert from 'node:assert/strict';
+// @vitest-environment node
+import { describe, it, beforeEach, expect } from 'vitest';
 import 'fake-indexeddb/auto';
 
 // Mock browser APIs needed by api.js (Image, canvas)
@@ -76,18 +76,18 @@ describe('API integration', () => {
       return new Response(JSON.stringify({ choices: [{ message: { content: 'reply' } }] }), { status: 200 });
     };
     const out = await API.chatCompletion([{ role: 'user', content: 'Hi' }], { temperature: 0.3 });
-    assert.equal(out, 'reply');
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].opts.headers.Authorization, 'Bearer test-key');
-    assert.equal(JSON.parse(calls[0].opts.body).temperature, 0.3);
+    expect(out).toBe('reply');
+    expect(calls.length).toBe(1);
+    expect(calls[0].opts.headers.Authorization).toBe('Bearer test-key');
+    expect(JSON.parse(calls[0].opts.body).temperature).toBe(0.3);
   });
 
   it('chatCompletion throws on missing key or http error', async () => {
     await DB.setSetting('apiKey', '');
-    await assert.rejects(() => API.chatCompletion([]), /API key not set/);
+    await expect(API.chatCompletion([])).rejects.toThrow(/API key not set/);
     await DB.setSetting('apiKey', 'test-key');
     globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'bad' } }), { status: 400 });
-    await assert.rejects(() => API.chatCompletion([]), /bad/);
+    await expect(API.chatCompletion([])).rejects.toThrow(/bad/);
   });
 
   it('chatCompletionStream accumulates chunks and skips non-json frames', async () => {
@@ -100,8 +100,8 @@ describe('API integration', () => {
       '\n',
     ]);
     const text = await API.chatCompletionStream([], (chunk, full) => deltas.push([chunk, full]));
-    assert.equal(text, 'Hello');
-    assert.deepEqual(deltas, [['Hel', 'Hel'], ['lo', 'Hello']]);
+    expect(text).toBe('Hello');
+    expect(deltas).toEqual([['Hel', 'Hel'], ['lo', 'Hello']]);
   });
 
   it('fetchTextModels sorts, caches, force-refreshes and falls back', async () => {
@@ -113,13 +113,13 @@ describe('API integration', () => {
       return new Response(JSON.stringify({ data: [{ id: 'z' }, { id: 'a' }] }), { status: 200 });
     };
     const first = await API.fetchTextModels();
-    assert.deepEqual(first.map(m => m.id), ['a', 'z']);
+    expect(first.map(m => m.id)).toEqual(['a', 'z']);
     mode = 'error';
     const cached = await API.fetchTextModels();
-    assert.deepEqual(cached.map(m => m.id), ['a', 'z']);
+    expect(cached.map(m => m.id)).toEqual(['a', 'z']);
     const forced = await API.fetchTextModels(true);
-    assert.deepEqual(forced.map(m => m.id), ['a', 'z']);
-    assert.equal(fetchCalls, 2);
+    expect(forced.map(m => m.id)).toEqual(['a', 'z']);
+    expect(fetchCalls).toBe(2);
   });
 
   it('fetchTextModels maps capabilities.vision and capabilities.tool_calling', async () => {
@@ -147,12 +147,12 @@ describe('API integration', () => {
     const models = await API.fetchTextModels(true);
 
     const gpt4o = models.find(m => m.id === 'gpt-4o');
-    assert.equal(gpt4o.supports_vision, true, 'should read vision from capabilities.vision');
-    assert.equal(gpt4o.supports_tools, true, 'should read tools from capabilities.tool_calling');
+    expect(gpt4o.supports_vision).toBe(true);
+    expect(gpt4o.supports_tools).toBe(true);
 
     const noCaps = models.find(m => m.id === 'no-caps-model');
-    assert.equal(noCaps.supports_vision, false);
-    assert.equal(noCaps.supports_tools, false);
+    expect(noCaps.supports_vision).toBe(false);
+    expect(noCaps.supports_tools).toBe(false);
   });
 
 
@@ -161,8 +161,8 @@ describe('API integration', () => {
       throw new Error('down');
     };
     const fallback = await API.fetchImageModels(true);
-    assert.ok(Array.isArray(fallback));
-    assert.ok(fallback.length > 0);
+    expect(Array.isArray(fallback)).toBeTruthy();
+    expect(fallback.length > 0).toBeTruthy();
   });
 
   it('fetchImageModels sends Authorization header and caches sizes from response', async () => {
@@ -183,20 +183,20 @@ describe('API integration', () => {
     const models = await API.fetchImageModels(true);
 
     // Auth header must be sent
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].opts.headers.Authorization, 'Bearer test-key');
+    expect(calls.length).toBe(1);
+    expect(calls[0].opts.headers.Authorization).toBe('Bearer test-key');
 
     // Models should be sorted by id and sizes captured from all field variants
     const gpt = models.find(m => m.id === 'gpt-image-1');
-    assert.deepEqual(gpt.sizes, ['1024x1024', '1536x1024', '1024x1536', 'auto']);
+    expect(gpt.sizes).toEqual(['1024x1024', '1536x1024', '1024x1536', 'auto']);
     const dall3 = models.find(m => m.id === 'dall-e-3');
-    assert.deepEqual(dall3.sizes, ['1024x1024', '1024x1792']);
+    expect(dall3.sizes).toEqual(['1024x1024', '1024x1792']);
     const flux = models.find(m => m.id === 'flux-pro');
-    assert.deepEqual(flux.sizes, ['512x512', '1024x1024']);
+    expect(flux.sizes).toEqual(['512x512', '1024x1024']);
 
     // Sizes should be available via getModelSizes after fetch
     const sizes = await API.getModelSizes('gpt-image-1');
-    assert.deepEqual(sizes, ['1024x1024', '1536x1024', '1024x1536', 'auto']);
+    expect(sizes).toEqual(['1024x1024', '1536x1024', '1024x1536', 'auto']);
   });
 
   it('fetchImageModels maps capabilities.image_to_image to supports_edit', async () => {
@@ -212,10 +212,10 @@ describe('API integration', () => {
     const models = await API.fetchImageModels(true);
 
     const editModel = models.find(m => m.id === 'flux-kontext');
-    assert.equal(editModel.supports_edit, true, 'should read supports_edit from capabilities.image_to_image');
+    expect(editModel.supports_edit).toBe(true);
 
     const textOnly = models.find(m => m.id === 'nano-banana-pro-ultra');
-    assert.equal(textOnly.supports_edit, false);
+    expect(textOnly.supports_edit).toBe(false);
   });
 
   it('getModelSizes returns cached sizes when present, null when missing or no sizes', async () => {
@@ -228,23 +228,23 @@ describe('API integration', () => {
 
     // Model with sizes should return those sizes
     const withSizes = await API.getModelSizes('model-with-sizes');
-    assert.deepEqual(withSizes, ['512x512', '1024x1024']);
+    expect(withSizes).toEqual(['512x512', '1024x1024']);
 
     // Model with null sizes should return null
     const noSizes = await API.getModelSizes('model-no-sizes');
-    assert.equal(noSizes, null);
+    expect(noSizes).toBe(null);
 
     // Model with empty sizes array should return null
     const emptySizes = await API.getModelSizes('model-empty-sizes');
-    assert.equal(emptySizes, null);
+    expect(emptySizes).toBe(null);
 
     // Unknown model (not in cache) should return null
     const unknown = await API.getModelSizes('unknown-model');
-    assert.equal(unknown, null);
+    expect(unknown).toBe(null);
 
     // Null/undefined modelId should return null
-    assert.equal(await API.getModelSizes(null), null);
-    assert.equal(await API.getModelSizes(''), null);
+    expect(await API.getModelSizes(null)).toBe(null);
+    expect(await API.getModelSizes('')).toBe(null);
   });
 
   it('generateImage uses default gpt-image-1 model when none explicitly configured', async () => {
@@ -255,8 +255,8 @@ describe('API integration', () => {
       return new Response(JSON.stringify({ data: [{ b64_json: 'default-img' }] }), { status: 200 });
     };
     const result = await API.generateImage('draw scene');
-    assert.equal(result, 'default-img');
-    assert.equal(calls[0].body.model, 'gpt-image-1');
+    expect(result).toBe('default-img');
+    expect(calls[0].body.model).toBe('gpt-image-1');
   });
 
   it('generateImage throws with diagnostic properties and makes exactly one request on 500 error', async () => {
@@ -268,19 +268,20 @@ describe('API integration', () => {
       return new Response('{"error":{"message":"Internal server error"}}', { status: 500 });
     };
 
-    await assert.rejects(
-      () => API.generateImage('draw scene', { resolution: '1792x1024' }),
-      (err) => {
-        assert.equal(err.status, 500);
-        assert.equal(err.model, 'unstable-model');
-        assert.equal(err.resolution, '1792x1024');
-        assert.equal(err.prompt, 'draw scene');
-        assert.match(err.message, /Image generation failed \[HTTP 500\]/);
-        return true;
-      }
-    );
-    assert.equal(calls.length, 1, 'should make exactly one request with no retries or fallbacks');
-    assert.deepEqual([calls[0].model, calls[0].size], ['unstable-model', '1792x1024']);
+    let caught;
+    try {
+      await API.generateImage('draw scene', { resolution: '1792x1024' });
+      throw new Error('Expected to throw');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught.status).toBe(500);
+    expect(caught.model).toBe('unstable-model');
+    expect(caught.resolution).toBe('1792x1024');
+    expect(caught.prompt).toBe('draw scene');
+    expect(caught.message).toMatch(/Image generation failed \[HTTP 500\]/);
+    expect(calls.length).toBe(1);
+    expect([calls[0].model, calls[0].size]).toEqual(['unstable-model', '1792x1024']);
   });
 
   it('generateImage sends reference images as imageDataUrls in JSON body', async () => {
@@ -298,15 +299,15 @@ describe('API integration', () => {
       ],
     });
 
-    assert.equal(result, 'ref-img');
-    assert.equal(calls.length, 1);
-    assert.ok(calls[0].url.endsWith('/images/generations'));
-    assert.equal(calls[0].body.model, 'ref-model');
-    assert.equal(calls[0].body.prompt, 'draw scene');
-    assert.equal(calls[0].body.n, 1);
-    assert.ok(Array.isArray(calls[0].body.imageDataUrls));
-    assert.equal(calls[0].body.imageDataUrls.length, 2);
-    assert.equal(calls[0].headers['Authorization'], 'Bearer test-key');
+    expect(result).toBe('ref-img');
+    expect(calls.length).toBe(1);
+    expect(calls[0].url.endsWith('/images/generations')).toBeTruthy();
+    expect(calls[0].body.model).toBe('ref-model');
+    expect(calls[0].body.prompt).toBe('draw scene');
+    expect(calls[0].body.n).toBe(1);
+    expect(Array.isArray(calls[0].body.imageDataUrls)).toBeTruthy();
+    expect(calls[0].body.imageDataUrls.length).toBe(2);
+    expect(calls[0].headers['Authorization']).toBe('Bearer test-key');
   });
 
   it('generateImage includes showExplicitContent and n when enabled', async () => {
@@ -318,16 +319,16 @@ describe('API integration', () => {
     };
 
     const result = await API.generateImage('draw scene');
-    assert.equal(result, 'https://img.test/explicit.png');
-    assert.equal(requestBody.showExplicitContent, true);
-    assert.equal(requestBody.n, 1);
-    assert.ok(requestBody.size);
+    expect(result).toBe('https://img.test/explicit.png');
+    expect(requestBody.showExplicitContent).toBe(true);
+    expect(requestBody.n).toBe(1);
+    expect(requestBody.size).toBeTruthy();
   });
 
   it('generateEmbedding returns null when no API key is set', async () => {
     await DB.setSetting('apiKey', '');
     const result = await API.generateEmbedding('test text');
-    assert.equal(result, null);
+    expect(result).toBe(null);
   });
 
   it('generateEmbedding reads model from settings and sends dimensions for supported models', async () => {
@@ -346,14 +347,14 @@ describe('API integration', () => {
     // Default model (text-embedding-3-small) supports dimension reduction
     const result = await API.generateEmbedding('hero with cape');
 
-    assert.deepEqual(result, fakeEmbedding);
-    assert.equal(calls.length, 1);
-    assert.ok(calls[0].url.endsWith('/embeddings'));
-    assert.equal(calls[0].headers['Authorization'], 'Bearer test-key');
-    assert.equal(calls[0].body.input, 'hero with cape');
-    assert.equal(calls[0].body.model, 'text-embedding-3-small');
-    assert.equal(calls[0].body.encoding_format, 'float');
-    assert.equal(calls[0].body.dimensions, 256, 'should include dimensions for supported models');
+    expect(result).toEqual(fakeEmbedding);
+    expect(calls.length).toBe(1);
+    expect(calls[0].url.endsWith('/embeddings')).toBeTruthy();
+    expect(calls[0].headers['Authorization']).toBe('Bearer test-key');
+    expect(calls[0].body.input).toBe('hero with cape');
+    expect(calls[0].body.model).toBe('text-embedding-3-small');
+    expect(calls[0].body.encoding_format).toBe('float');
+    expect(calls[0].body.dimensions).toBe(256);
   });
 
   it('generateEmbedding reads configured embeddingModel from settings', async () => {
@@ -367,8 +368,8 @@ describe('API integration', () => {
     };
 
     await API.generateEmbedding('test');
-    assert.equal(requestBody.model, 'qwen/qwen3-embedding-8b');
-    assert.equal(requestBody.dimensions, 256, 'qwen3-embedding-8b supports dimension reduction');
+    expect(requestBody.model).toBe('qwen/qwen3-embedding-8b');
+    expect(requestBody.dimensions).toBe(256);
   });
 
   it('generateEmbedding omits dimensions for models that do not support it', async () => {
@@ -382,8 +383,8 @@ describe('API integration', () => {
 
     // BAAI/bge-m3 does NOT support dimension reduction
     await API.generateEmbedding('test', { model: 'BAAI/bge-m3' });
-    assert.equal(requestBody.model, 'BAAI/bge-m3');
-    assert.equal(requestBody.dimensions, undefined, 'should NOT send dimensions for unsupported models');
+    expect(requestBody.model).toBe('BAAI/bge-m3');
+    expect(requestBody.dimensions).toBe(undefined);
   });
 
   it('generateEmbedding uses explicit options.model override over settings', async () => {
@@ -397,32 +398,32 @@ describe('API integration', () => {
     };
 
     await API.generateEmbedding('test', { model: 'text-embedding-3-large' });
-    assert.equal(requestBody.model, 'text-embedding-3-large');
-    assert.equal(requestBody.dimensions, 256, 'text-embedding-3-large supports dimension reduction');
+    expect(requestBody.model).toBe('text-embedding-3-large');
+    expect(requestBody.dimensions).toBe(256);
   });
 
   it('generateEmbedding returns null on HTTP error', async () => {
     globalThis.fetch = async () => new Response('{"error":{"message":"bad request"}}', { status: 400 });
     const result = await API.generateEmbedding('test text');
-    assert.equal(result, null);
+    expect(result).toBe(null);
   });
 
   it('generateEmbedding returns null on network error', async () => {
     globalThis.fetch = async () => { throw new Error('network down'); };
     const result = await API.generateEmbedding('test text');
-    assert.equal(result, null);
+    expect(result).toBe(null);
   });
 
   it('generateEmbedding returns null when response has no embedding data', async () => {
     globalThis.fetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
     const result = await API.generateEmbedding('test text');
-    assert.equal(result, null);
+    expect(result).toBe(null);
   });
 
   it('generateImageCaption returns null when no API key is set', async () => {
     await DB.setSetting('apiKey', '');
     const result = await API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
-    assert.equal(result, null);
+    expect(result).toBe(null);
   });
 
   it('generateImageCaption returns null (silently) for non-vision models without calling fetch', async () => {
@@ -435,8 +436,8 @@ describe('API integration', () => {
     let fetchCalled = false;
     globalThis.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }); };
     const result = await API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
-    assert.equal(result, null, 'should return null without calling fetch');
-    assert.equal(fetchCalled, false, 'should not call fetch for non-vision model');
+    expect(result).toBe(null);
+    expect(fetchCalled).toBe(false);
   });
 
   it('generateImageCaption uses captionModel setting when set, falls back to text model', async () => {
@@ -448,12 +449,12 @@ describe('API integration', () => {
     // With explicit captionModel
     await DB.setSetting('captionModel', 'gpt-4o');
     const r1 = await API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose' });
-    assert.equal(r1, 'A hero in red armor.');
-    assert.equal(calls[0].body.model, 'gpt-4o');
+    expect(r1).toBe('A hero in red armor.');
+    expect(calls[0].body.model).toBe('gpt-4o');
     // Without captionModel, falls back to text model from settings
     await DB.setSetting('captionModel', '');
     await API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man' });
-    assert.equal(calls[1].body.model, 'gpt-4o-mini'); // default from beforeEach
+    expect(calls[1].body.model).toBe('gpt-4o-mini'); // default from beforeEach
   });
 
   it('generateImageCaption sends vision message with compressed image and context', async () => {
@@ -467,26 +468,26 @@ describe('API integration', () => {
       'data:image/png;base64,aGVsbG8=',
       { type: 'world', name: 'Neo-Tokyo', era: '2099', tag: 'night' },
     );
-    assert.equal(result, 'Neon skyline at dusk.');
+    expect(result).toBe('Neon skyline at dusk.');
     // System message is first to frame the comic context
     const sysMsg = requestBody.messages[0];
-    assert.equal(sysMsg.role, 'system', 'first message should be a system message');
-    assert.ok(sysMsg.content.includes('comic book'), 'system message should mention comic book context');
+    expect(sysMsg.role).toBe('system');
+    expect(sysMsg.content.includes('comic book')).toBeTruthy();
     // Vision user message is second
     const userMsg = requestBody.messages[1];
-    assert.equal(userMsg.role, 'user');
-    assert.ok(Array.isArray(userMsg.content), 'content should be an array for vision');
+    expect(userMsg.role).toBe('user');
+    expect(Array.isArray(userMsg.content)).toBeTruthy();
     const imagePart = userMsg.content.find(c => c.type === 'image_url');
-    assert.ok(imagePart, 'should include an image_url part');
+    expect(imagePart).toBeTruthy();
     // The image URL should be a compressed JPEG (from compressDataUrl)
-    assert.ok(imagePart.image_url.url.startsWith('data:image/'), 'image url should be a data URL');
+    expect(imagePart.image_url.url.startsWith('data:image/')).toBeTruthy();
     const textPart = userMsg.content.find(c => c.type === 'text');
-    assert.ok(textPart.text.includes('Neo-Tokyo'), 'context should include world name');
-    assert.ok(textPart.text.includes('2099'), 'context should include era');
-    assert.ok(textPart.text.includes('night'), 'context should include tag');
+    expect(textPart.text.includes('Neo-Tokyo')).toBeTruthy();
+    expect(textPart.text.includes('2099')).toBeTruthy();
+    expect(textPart.text.includes('night')).toBeTruthy();
     // Model params
-    assert.equal(requestBody.max_tokens, 120);
-    assert.equal(requestBody.temperature, 0.3);
+    expect(requestBody.max_tokens).toBe(120);
+    expect(requestBody.temperature).toBe(0.3);
   });
 
   it('generateImageCaption anchors description to character name when provided', async () => {
@@ -503,16 +504,16 @@ describe('API integration', () => {
     const userMsg = requestBody.messages[1];
     const textPart = userMsg.content.find(c => c.type === 'text');
     // Prompt must mention character name and request name-anchored description
-    assert.ok(textPart.text.includes('Iron Man'), 'prompt should include character name');
-    assert.ok(textPart.text.includes('red and gold armor'), 'prompt should include appearance hint');
-    assert.ok(textPart.text.includes('action-pose'), 'prompt should include tag');
+    expect(textPart.text.includes('Iron Man')).toBeTruthy();
+    expect(textPart.text.includes('red and gold armor')).toBeTruthy();
+    expect(textPart.text.includes('action-pose')).toBeTruthy();
   });
 
   it('generateImageCaption returns null on API error', async () => {
     await DB.setSetting('captionModel', 'gpt-4o');
     globalThis.fetch = async () => { throw new Error('network down'); };
     const result = await API.generateImageCaption('data:image/png;base64,abc', {});
-    assert.equal(result, null);
+    expect(result).toBe(null);
   });
 
   it('generateImageCaption uses character-sheet prompt with higher token limit', async () => {
@@ -526,14 +527,14 @@ describe('API integration', () => {
       'data:image/png;base64,aGVsbG8=',
       { type: 'character', name: 'Nova', role: 'hero', tag: 'character-sheet', appearance: 'silver armor, blue cape' },
     );
-    assert.equal(result, 'Nova shown from front, side, and back views wearing silver armor.');
+    expect(result).toBe('Nova shown from front, side, and back views wearing silver armor.');
     const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
-    assert.ok(textPart.text.includes('character sheet'), 'prompt should mention character sheet');
-    assert.ok(textPart.text.includes('multiple'), 'prompt should mention multiple views/angles');
-    assert.ok(textPart.text.includes('Nova'), 'prompt should include character name');
-    assert.ok(textPart.text.includes('silver armor, blue cape'), 'prompt should include appearance');
+    expect(textPart.text.includes('character sheet')).toBeTruthy();
+    expect(textPart.text.includes('multiple')).toBeTruthy();
+    expect(textPart.text.includes('Nova')).toBeTruthy();
+    expect(textPart.text.includes('silver armor, blue cape')).toBeTruthy();
     // Character sheets get a higher token limit for more detailed captions
-    assert.equal(requestBody.max_tokens, 200, 'character-sheet should get 200 max_tokens');
+    expect(requestBody.max_tokens).toBe(200);
   });
 
   it('generateImageCaption uses character-in-world prompt with worldName context', async () => {
@@ -547,11 +548,11 @@ describe('API integration', () => {
       'data:image/png;base64,aGVsbG8=',
       { type: 'character-in-world', name: 'Nova', tag: 'character-in-world', appearance: 'silver armor', worldName: 'Neo-Tokyo' },
     );
-    assert.equal(result, 'Nova stands amid the neon towers of Neo-Tokyo.');
+    expect(result).toBe('Nova stands amid the neon towers of Neo-Tokyo.');
     const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
-    assert.ok(textPart.text.includes('Nova'), 'prompt should include character name');
-    assert.ok(textPart.text.includes('Neo-Tokyo'), 'prompt should include world name');
-    assert.ok(textPart.text.includes('character-in-world'), 'prompt should include tag');
+    expect(textPart.text.includes('Nova')).toBeTruthy();
+    expect(textPart.text.includes('Neo-Tokyo')).toBeTruthy();
+    expect(textPart.text.includes('character-in-world')).toBeTruthy();
   });
 
   it('generateImageCaption uses character-interaction prompt with characterNames and worldName', async () => {
@@ -565,11 +566,11 @@ describe('API integration', () => {
       'data:image/png;base64,aGVsbG8=',
       { type: 'character-interaction', name: 'Colosseum', tag: 'character-interaction', characterNames: 'Nova, Blaze', worldName: 'Colosseum' },
     );
-    assert.equal(result, 'Nova and Blaze face off in the arena.');
+    expect(result).toBe('Nova and Blaze face off in the arena.');
     const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
-    assert.ok(textPart.text.includes('Nova, Blaze'), 'prompt should include character names');
-    assert.ok(textPart.text.includes('Colosseum'), 'prompt should include world name');
-    assert.ok(textPart.text.includes('interacting'), 'prompt should mention interaction');
+    expect(textPart.text.includes('Nova, Blaze')).toBeTruthy();
+    expect(textPart.text.includes('Colosseum')).toBeTruthy();
+    expect(textPart.text.includes('interacting')).toBeTruthy();
   });
 });
 
@@ -589,7 +590,7 @@ describe('generateImage negative prompt', () => {
       return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
     };
     await API.generateImage('a hero', { negativePrompt: 'blurry, watermark' });
-    assert.equal(requestBody.negative_prompt, 'blurry, watermark');
+    expect(requestBody.negative_prompt).toBe('blurry, watermark');
   });
 
   it('does not include negative_prompt when option is absent', async () => {
@@ -599,7 +600,7 @@ describe('generateImage negative prompt', () => {
       return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
     };
     await API.generateImage('a hero');
-    assert.equal(requestBody.negative_prompt, undefined);
+    expect(requestBody.negative_prompt).toBe(undefined);
   });
 
   it('does not include negative_prompt when option is an empty string', async () => {
@@ -609,7 +610,7 @@ describe('generateImage negative prompt', () => {
       return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
     };
     await API.generateImage('a hero', { negativePrompt: '   ' });
-    assert.equal(requestBody.negative_prompt, undefined);
+    expect(requestBody.negative_prompt).toBe(undefined);
   });
 });
 
@@ -628,29 +629,29 @@ describe('enrichImagePrompt', () => {
       calls.push({ url, opts });
       return new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
     };
-    assert.equal(await API.enrichImagePrompt(null), null);
-    assert.equal(await API.enrichImagePrompt(''), '');
-    assert.equal(await API.enrichImagePrompt(undefined), undefined);
-    assert.equal(calls.length, 0, 'no fetch call should be made for falsy input');
+    expect(await API.enrichImagePrompt(null)).toBe(null);
+    expect(await API.enrichImagePrompt('')).toBe('');
+    expect(await API.enrichImagePrompt(undefined)).toBe(undefined);
+    expect(calls.length).toBe(0);
   });
 
   it('returns rawPrompt unchanged when API key is missing', async () => {
     await DB.setSetting('apiKey', '');
     const result = await API.enrichImagePrompt('A hero in the city');
-    assert.equal(result, 'A hero in the city');
+    expect(result).toBe('A hero in the city');
   });
 
   it('returns the enriched prompt from the LLM', async () => {
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ choices: [{ message: { content: 'Cinematic wide shot — hero stands tall' } }] }), { status: 200 });
     const result = await API.enrichImagePrompt('hero stands in city');
-    assert.equal(result, 'Cinematic wide shot — hero stands tall');
+    expect(result).toBe('Cinematic wide shot — hero stands tall');
   });
 
   it('falls back to rawPrompt on API error', async () => {
     globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
     const result = await API.enrichImagePrompt('hero stands in city');
-    assert.equal(result, 'hero stands in city');
+    expect(result).toBe('hero stands in city');
   });
 
   it('includes genre context in the LLM request when provided', async () => {
@@ -661,13 +662,13 @@ describe('enrichImagePrompt', () => {
     };
     await API.enrichImagePrompt('dark alley scene', { genre: 'noir' });
     const userMsg = requestBody.messages.find(m => m.role === 'user');
-    assert.ok(userMsg.content.includes('noir'), 'genre should appear in the user message');
+    expect(userMsg.content.includes('noir')).toBeTruthy();
   });
 
   it('returns rawPrompt when API response has no content', async () => {
     globalThis.fetch = async () =>
       new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 });
     const result = await API.enrichImagePrompt('a dragon flies');
-    assert.equal(result, 'a dragon flies');
+    expect(result).toBe('a dragon flies');
   });
 });
