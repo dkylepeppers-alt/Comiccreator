@@ -11,6 +11,8 @@ on:
       - 'sw.js'
       - 'test/e2e/**'
       - 'playwright.config.js'
+      - '.github/workflows/playwright.yml'
+      - '.github/actions/setup-playwright/**'
   pull_request:
     paths:
       - 'js/**'
@@ -19,6 +21,8 @@ on:
       - 'sw.js'
       - 'test/e2e/**'
       - 'playwright.config.js'
+      - '.github/workflows/playwright.yml'
+      - '.github/actions/setup-playwright/**'
 
 # Deny all permissions by default; grant only what each job needs.
 permissions: {}
