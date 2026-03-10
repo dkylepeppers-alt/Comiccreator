@@ -145,7 +145,6 @@ Image generation can be disabled in Settings to save API credits (text-only comi
 <!-- AUTO-GENERATED-CONTENT:START (DIRECTORY_TREE) -->
 ```
 Comiccreator/
-.c8rc.json
 .editorconfig
 .github
     actions
@@ -224,19 +223,20 @@ src
     css
         app.css
     js
-        api.js
-        app.js
-        db.js
+        api.ts
+        app.ts
+        db.ts
+        global.d.ts
         pages
-            characters.js
-            create.js
-            home.js
-            image-presets.js
-            library.js
-            presets.js
-            settings.js
-            worlds.js
-        utils.js
+            characters.ts
+            create.ts
+            home.ts
+            image-presets.ts
+            library.ts
+            presets.ts
+            settings.ts
+            worlds.ts
+        utils.ts
 test
     api-integration.test.js
     api-pure.test.js
@@ -246,7 +246,9 @@ test
         smoke.spec.js
     pure-functions.test.js
     utils.test.js
+tsconfig.json
 vite.config.js
+vitest.config.ts
 ```
 <!-- AUTO-GENERATED-CONTENT:END (DIRECTORY_TREE) -->
 
