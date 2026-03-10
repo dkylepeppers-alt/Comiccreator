@@ -36,8 +36,21 @@ test.describe('App shell', () => {
 });
 
 test.describe('Core navigation', () => {
+  // Helper: wait for app init() to finish its initial navigation.
+  // init() always calls navigate() at the end (to 'settings' when no API key is
+  // set, which is always the case in E2E). Without this wait, a test that then
+  // calls App.navigate() races with init() and the init navigation can win and
+  // overwrite the page the test just navigated to.
+  async function waitForAppInit(page) {
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#content h2, #content h3');
+      return el !== null && el.textContent.trim().length > 0;
+    });
+  }
+
   test('navigates to the Settings page via App.navigate()', async ({ page }) => {
     await page.goto('/');
+    await waitForAppInit(page);
 
     // Use the SPA router directly to navigate
     await page.evaluate(() => App.navigate('settings'));
@@ -48,6 +61,7 @@ test.describe('Core navigation', () => {
 
   test('navigates to the Library page via App.navigate()', async ({ page }) => {
     await page.goto('/');
+    await waitForAppInit(page);
 
     await page.evaluate(() => App.navigate('library'));
 
@@ -56,6 +70,7 @@ test.describe('Core navigation', () => {
 
   test('navigates to the Characters page via bottom nav', async ({ page }) => {
     await page.goto('/');
+    await waitForAppInit(page);
 
     // Click the Characters button in the bottom navigation bar
     await page.click('button[data-page="characters"]');
