@@ -1,53 +1,40 @@
-const { describe, it, beforeEach } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const { indexedDB } = require('fake-indexeddb');
+import { describe, it, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import 'fake-indexeddb/auto';
 
-const dbCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'db.js'), 'utf8');
-const apiCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'api.js'), 'utf8');
+// Mock browser APIs needed by api.js (Image, canvas)
+globalThis.Image = globalThis.Image || class {
+  set src(_value) {
+    this.width = 256;
+    this.height = 256;
+    if (this.onload) this.onload();
+  }
+};
 
-function loadApiContext(fetchImpl) {
-  const ctx = {
-    indexedDB,
-    crypto: globalThis.crypto || require('node:crypto').webcrypto,
-    atob: globalThis.atob,
-    Blob: globalThis.Blob,
-    TextDecoder: globalThis.TextDecoder,
-    Image: class {
-      set src(_value) {
-        this.width = 256;
-        this.height = 256;
-        if (this.onload) this.onload();
-      }
+if (typeof globalThis.document === 'undefined') {
+  globalThis.document = {
+    createElement(tag) {
+      if (tag !== 'canvas') return {};
+      return {
+        width: 0,
+        height: 0,
+        getContext() {
+          return { drawImage() {} };
+        },
+        toDataURL() {
+          return 'data:image/jpeg;base64,aGVsbG8=';
+        },
+      };
     },
-    document: {
-      createElement(tag) {
-        if (tag !== 'canvas') return {};
-        return {
-          width: 0,
-          height: 0,
-          getContext() {
-            return { drawImage() {} };
-          },
-          toDataURL() {
-            return 'data:image/jpeg;base64,aGVsbG8=';
-          },
-        };
-      },
-    },
-    fetch: fetchImpl,
-    console,
-    Date,
-    setTimeout,
-    clearTimeout,
   };
-  vm.createContext(ctx);
-  vm.runInContext(`${dbCode}\n;this.DB = DB;`, ctx, { filename: 'db.js' });
-  vm.runInContext(`${apiCode}\n;this.API = API;`, ctx, { filename: 'api.js' });
-  return ctx;
 }
+
+// Default fetch mock (overridden per test as needed)
+globalThis.fetch = async () =>
+  new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
+
+const { default: DB } = await import('../src/js/db.js');
+const { default: API } = await import('../src/js/api.js');
 
 function sseResponse(lines) {
   const enc = new TextEncoder();
@@ -59,22 +46,36 @@ function sseResponse(lines) {
   }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
-describe('API integration', () => {
-  let ctx;
+/** Clear all IndexedDB stores and reset API caches between tests */
+async function clearAllStores() {
+  API._resetCacheForTesting();
+  const db = await DB.open();
+  await Promise.all(Object.values(DB.STORES).map((storeName) => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }));
+}
 
+describe('API integration', () => {
   beforeEach(async () => {
-    ctx = loadApiContext(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 }));
-    await ctx.DB.setSetting('apiKey', 'test-key');
-    await ctx.DB.setSetting('model', 'gpt-4o-mini');
+    await clearAllStores();
+    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
+    await DB.setSetting('apiKey', 'test-key');
+    await DB.setSetting('model', 'gpt-4o-mini');
   });
 
   it('chatCompletion sends auth/body and returns content', async () => {
     const calls = [];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, opts });
       return new Response(JSON.stringify({ choices: [{ message: { content: 'reply' } }] }), { status: 200 });
     };
-    const out = await ctx.API.chatCompletion([{ role: 'user', content: 'Hi' }], { temperature: 0.3 });
+    const out = await API.chatCompletion([{ role: 'user', content: 'Hi' }], { temperature: 0.3 });
     assert.equal(out, 'reply');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].opts.headers.Authorization, 'Bearer test-key');
@@ -82,23 +83,23 @@ describe('API integration', () => {
   });
 
   it('chatCompletion throws on missing key or http error', async () => {
-    await ctx.DB.setSetting('apiKey', '');
-    await assert.rejects(() => ctx.API.chatCompletion([]), /API key not set/);
-    await ctx.DB.setSetting('apiKey', 'test-key');
-    ctx.fetch = async () => new Response(JSON.stringify({ error: { message: 'bad' } }), { status: 400 });
-    await assert.rejects(() => ctx.API.chatCompletion([]), /bad/);
+    await DB.setSetting('apiKey', '');
+    await assert.rejects(() => API.chatCompletion([]), /API key not set/);
+    await DB.setSetting('apiKey', 'test-key');
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'bad' } }), { status: 400 });
+    await assert.rejects(() => API.chatCompletion([]), /bad/);
   });
 
   it('chatCompletionStream accumulates chunks and skips non-json frames', async () => {
     const deltas = [];
-    ctx.fetch = async () => sseResponse([
+    globalThis.fetch = async () => sseResponse([
       'data: {"choices":[{"delta":{"content":"Hel"}}]}\n',
       'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
       'data: not-json\n',
       'data: [DONE]\n',
       '\n',
     ]);
-    const text = await ctx.API.chatCompletionStream([], (chunk, full) => deltas.push([chunk, full]));
+    const text = await API.chatCompletionStream([], (chunk, full) => deltas.push([chunk, full]));
     assert.equal(text, 'Hello');
     assert.deepEqual(deltas, [['Hel', 'Hel'], ['lo', 'Hello']]);
   });
@@ -106,23 +107,23 @@ describe('API integration', () => {
   it('fetchTextModels sorts, caches, force-refreshes and falls back', async () => {
     let mode = 'network';
     let fetchCalls = 0;
-    ctx.fetch = async () => {
+    globalThis.fetch = async () => {
       fetchCalls++;
       if (mode === 'error') throw new Error('down');
       return new Response(JSON.stringify({ data: [{ id: 'z' }, { id: 'a' }] }), { status: 200 });
     };
-    const first = await ctx.API.fetchTextModels();
+    const first = await API.fetchTextModels();
     assert.deepEqual(first.map(m => m.id), ['a', 'z']);
     mode = 'error';
-    const cached = await ctx.API.fetchTextModels();
+    const cached = await API.fetchTextModels();
     assert.deepEqual(cached.map(m => m.id), ['a', 'z']);
-    const forced = await ctx.API.fetchTextModels(true);
+    const forced = await API.fetchTextModels(true);
     assert.deepEqual(forced.map(m => m.id), ['a', 'z']);
     assert.equal(fetchCalls, 2);
   });
 
   it('fetchTextModels maps capabilities.vision and capabilities.tool_calling', async () => {
-    ctx.fetch = async () => new Response(JSON.stringify({
+    globalThis.fetch = async () => new Response(JSON.stringify({
       data: [
         // Real NanoGPT API shape: capabilities nested object
         {
@@ -143,7 +144,7 @@ describe('API integration', () => {
       ],
     }), { status: 200 });
 
-    const models = await ctx.API.fetchTextModels(true);
+    const models = await API.fetchTextModels(true);
 
     const gpt4o = models.find(m => m.id === 'gpt-4o');
     assert.equal(gpt4o.supports_vision, true, 'should read vision from capabilities.vision');
@@ -156,17 +157,17 @@ describe('API integration', () => {
 
 
   it('fetchImageModels caches and falls back to defaults when empty cache', async () => {
-    ctx.fetch = async () => {
+    globalThis.fetch = async () => {
       throw new Error('down');
     };
-    const fallback = await ctx.API.fetchImageModels(true);
+    const fallback = await API.fetchImageModels(true);
     assert.ok(Array.isArray(fallback));
     assert.ok(fallback.length > 0);
   });
 
   it('fetchImageModels sends Authorization header and caches sizes from response', async () => {
     const calls = [];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, opts });
       return new Response(JSON.stringify({
         data: [
@@ -179,7 +180,7 @@ describe('API integration', () => {
       }), { status: 200 });
     };
 
-    const models = await ctx.API.fetchImageModels(true);
+    const models = await API.fetchImageModels(true);
 
     // Auth header must be sent
     assert.equal(calls.length, 1);
@@ -194,12 +195,12 @@ describe('API integration', () => {
     assert.deepEqual(flux.sizes, ['512x512', '1024x1024']);
 
     // Sizes should be available via getModelSizes after fetch
-    const sizes = await ctx.API.getModelSizes('gpt-image-1');
+    const sizes = await API.getModelSizes('gpt-image-1');
     assert.deepEqual(sizes, ['1024x1024', '1536x1024', '1024x1536', 'auto']);
   });
 
   it('fetchImageModels maps capabilities.image_to_image to supports_edit', async () => {
-    ctx.fetch = async () => new Response(JSON.stringify({
+    globalThis.fetch = async () => new Response(JSON.stringify({
       data: [
         // Real NanoGPT API shape: edit support under capabilities.image_to_image
         { id: 'flux-kontext', name: 'Flux Kontext', owned_by: 'Black Forest Labs', capabilities: { image_generation: true, image_to_image: true }, supported_parameters: { resolutions: ['1024x1024'] } },
@@ -208,7 +209,7 @@ describe('API integration', () => {
       ],
     }), { status: 200 });
 
-    const models = await ctx.API.fetchImageModels(true);
+    const models = await API.fetchImageModels(true);
 
     const editModel = models.find(m => m.id === 'flux-kontext');
     assert.equal(editModel.supports_edit, true, 'should read supports_edit from capabilities.image_to_image');
@@ -219,56 +220,56 @@ describe('API integration', () => {
 
   it('getModelSizes returns cached sizes when present, null when missing or no sizes', async () => {
     // Seed the IndexedDB cache with one model that has sizes and one without
-    await ctx.DB.setSetting('cachedImageModels', [
+    await DB.setSetting('cachedImageModels', [
       { id: 'model-with-sizes', sizes: ['512x512', '1024x1024'] },
       { id: 'model-no-sizes', sizes: null },
       { id: 'model-empty-sizes', sizes: [] },
     ]);
 
     // Model with sizes should return those sizes
-    const withSizes = await ctx.API.getModelSizes('model-with-sizes');
+    const withSizes = await API.getModelSizes('model-with-sizes');
     assert.deepEqual(withSizes, ['512x512', '1024x1024']);
 
     // Model with null sizes should return null
-    const noSizes = await ctx.API.getModelSizes('model-no-sizes');
+    const noSizes = await API.getModelSizes('model-no-sizes');
     assert.equal(noSizes, null);
 
     // Model with empty sizes array should return null
-    const emptySizes = await ctx.API.getModelSizes('model-empty-sizes');
+    const emptySizes = await API.getModelSizes('model-empty-sizes');
     assert.equal(emptySizes, null);
 
     // Unknown model (not in cache) should return null
-    const unknown = await ctx.API.getModelSizes('unknown-model');
+    const unknown = await API.getModelSizes('unknown-model');
     assert.equal(unknown, null);
 
     // Null/undefined modelId should return null
-    assert.equal(await ctx.API.getModelSizes(null), null);
-    assert.equal(await ctx.API.getModelSizes(''), null);
+    assert.equal(await API.getModelSizes(null), null);
+    assert.equal(await API.getModelSizes(''), null);
   });
 
   it('generateImage uses default gpt-image-1 model when none explicitly configured', async () => {
     // No imageModel saved — should use default 'gpt-image-1'
     const calls = [];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
       return new Response(JSON.stringify({ data: [{ b64_json: 'default-img' }] }), { status: 200 });
     };
-    const result = await ctx.API.generateImage('draw scene');
+    const result = await API.generateImage('draw scene');
     assert.equal(result, 'default-img');
     assert.equal(calls[0].body.model, 'gpt-image-1');
   });
 
   it('generateImage throws with diagnostic properties and makes exactly one request on 500 error', async () => {
-    await ctx.DB.setSetting('imageModel', 'unstable-model');
+    await DB.setSetting('imageModel', 'unstable-model');
     const calls = [];
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       const body = JSON.parse(opts.body);
       calls.push(body);
       return new Response('{"error":{"message":"Internal server error"}}', { status: 500 });
     };
 
     await assert.rejects(
-      () => ctx.API.generateImage('draw scene', { resolution: '1792x1024' }),
+      () => API.generateImage('draw scene', { resolution: '1792x1024' }),
       (err) => {
         assert.equal(err.status, 500);
         assert.equal(err.model, 'unstable-model');
@@ -283,14 +284,14 @@ describe('API integration', () => {
   });
 
   it('generateImage sends reference images as imageDataUrls in JSON body', async () => {
-    await ctx.DB.setSetting('imageModel', 'ref-model');
+    await DB.setSetting('imageModel', 'ref-model');
     const calls = [];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body), headers: opts.headers });
       return new Response(JSON.stringify({ data: [{ b64_json: 'ref-img' }] }), { status: 200 });
     };
 
-    const result = await ctx.API.generateImage('draw scene', {
+    const result = await API.generateImage('draw scene', {
       imageDataUrls: [
         'data:image/png;base64,aGVsbG8=',
         'data:image/png;base64,aGVsbG8=',
@@ -309,14 +310,14 @@ describe('API integration', () => {
   });
 
   it('generateImage includes showExplicitContent and n when enabled', async () => {
-    await ctx.DB.setSetting('showExplicitContent', true);
+    await DB.setSetting('showExplicitContent', true);
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ data: [{ url: 'https://img.test/explicit.png' }] }), { status: 200 });
     };
 
-    const result = await ctx.API.generateImage('draw scene');
+    const result = await API.generateImage('draw scene');
     assert.equal(result, 'https://img.test/explicit.png');
     assert.equal(requestBody.showExplicitContent, true);
     assert.equal(requestBody.n, 1);
@@ -324,15 +325,15 @@ describe('API integration', () => {
   });
 
   it('generateEmbedding returns null when no API key is set', async () => {
-    await ctx.DB.setSetting('apiKey', '');
-    const result = await ctx.API.generateEmbedding('test text');
+    await DB.setSetting('apiKey', '');
+    const result = await API.generateEmbedding('test text');
     assert.equal(result, null);
   });
 
   it('generateEmbedding reads model from settings and sends dimensions for supported models', async () => {
     const calls = [];
     const fakeEmbedding = [0.1, -0.2, 0.3, 0.4];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body), headers: opts.headers });
       return new Response(JSON.stringify({
         object: 'list',
@@ -343,7 +344,7 @@ describe('API integration', () => {
     };
 
     // Default model (text-embedding-3-small) supports dimension reduction
-    const result = await ctx.API.generateEmbedding('hero with cape');
+    const result = await API.generateEmbedding('hero with cape');
 
     assert.deepEqual(result, fakeEmbedding);
     assert.equal(calls.length, 1);
@@ -356,23 +357,23 @@ describe('API integration', () => {
   });
 
   it('generateEmbedding reads configured embeddingModel from settings', async () => {
-    await ctx.DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
+    await DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({
         data: [{ embedding: [0.5, 0.5] }],
       }), { status: 200 });
     };
 
-    await ctx.API.generateEmbedding('test');
+    await API.generateEmbedding('test');
     assert.equal(requestBody.model, 'qwen/qwen3-embedding-8b');
     assert.equal(requestBody.dimensions, 256, 'qwen3-embedding-8b supports dimension reduction');
   });
 
   it('generateEmbedding omits dimensions for models that do not support it', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({
         data: [{ embedding: [0.5, 0.5] }],
@@ -380,89 +381,89 @@ describe('API integration', () => {
     };
 
     // BAAI/bge-m3 does NOT support dimension reduction
-    await ctx.API.generateEmbedding('test', { model: 'BAAI/bge-m3' });
+    await API.generateEmbedding('test', { model: 'BAAI/bge-m3' });
     assert.equal(requestBody.model, 'BAAI/bge-m3');
     assert.equal(requestBody.dimensions, undefined, 'should NOT send dimensions for unsupported models');
   });
 
   it('generateEmbedding uses explicit options.model override over settings', async () => {
-    await ctx.DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
+    await DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({
         data: [{ embedding: [0.5, 0.5] }],
       }), { status: 200 });
     };
 
-    await ctx.API.generateEmbedding('test', { model: 'text-embedding-3-large' });
+    await API.generateEmbedding('test', { model: 'text-embedding-3-large' });
     assert.equal(requestBody.model, 'text-embedding-3-large');
     assert.equal(requestBody.dimensions, 256, 'text-embedding-3-large supports dimension reduction');
   });
 
   it('generateEmbedding returns null on HTTP error', async () => {
-    ctx.fetch = async () => new Response('{"error":{"message":"bad request"}}', { status: 400 });
-    const result = await ctx.API.generateEmbedding('test text');
+    globalThis.fetch = async () => new Response('{"error":{"message":"bad request"}}', { status: 400 });
+    const result = await API.generateEmbedding('test text');
     assert.equal(result, null);
   });
 
   it('generateEmbedding returns null on network error', async () => {
-    ctx.fetch = async () => { throw new Error('network down'); };
-    const result = await ctx.API.generateEmbedding('test text');
+    globalThis.fetch = async () => { throw new Error('network down'); };
+    const result = await API.generateEmbedding('test text');
     assert.equal(result, null);
   });
 
   it('generateEmbedding returns null when response has no embedding data', async () => {
-    ctx.fetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
-    const result = await ctx.API.generateEmbedding('test text');
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
+    const result = await API.generateEmbedding('test text');
     assert.equal(result, null);
   });
 
   it('generateImageCaption returns null when no API key is set', async () => {
-    await ctx.DB.setSetting('apiKey', '');
-    const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
+    await DB.setSetting('apiKey', '');
+    const result = await API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
     assert.equal(result, null);
   });
 
   it('generateImageCaption returns null (silently) for non-vision models without calling fetch', async () => {
     // Seed the model cache with a model that explicitly has supports_vision = false
-    await ctx.DB.setSetting('cachedTextModels', [
+    await DB.setSetting('cachedTextModels', [
       { id: 'no-vision-model', supports_vision: false, supports_tools: false },
     ]);
-    await ctx.DB.setSetting('cachedTextModelsAt', Date.now());
-    await ctx.DB.setSetting('captionModel', 'no-vision-model');
+    await DB.setSetting('cachedTextModelsAt', Date.now());
+    await DB.setSetting('captionModel', 'no-vision-model');
     let fetchCalled = false;
-    ctx.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }); };
-    const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
+    globalThis.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }); };
+    const result = await API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
     assert.equal(result, null, 'should return null without calling fetch');
     assert.equal(fetchCalled, false, 'should not call fetch for non-vision model');
   });
 
   it('generateImageCaption uses captionModel setting when set, falls back to text model', async () => {
     const calls = [];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
       return new Response(JSON.stringify({ choices: [{ message: { content: 'A hero in red armor.' } }] }), { status: 200 });
     };
     // With explicit captionModel
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    const r1 = await ctx.API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose' });
+    await DB.setSetting('captionModel', 'gpt-4o');
+    const r1 = await API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose' });
     assert.equal(r1, 'A hero in red armor.');
     assert.equal(calls[0].body.model, 'gpt-4o');
     // Without captionModel, falls back to text model from settings
-    await ctx.DB.setSetting('captionModel', '');
-    await ctx.API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man' });
+    await DB.setSetting('captionModel', '');
+    await API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man' });
     assert.equal(calls[1].body.model, 'gpt-4o-mini'); // default from beforeEach
   });
 
   it('generateImageCaption sends vision message with compressed image and context', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'Neon skyline at dusk.' } }] }), { status: 200 });
     };
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    const result = await ctx.API.generateImageCaption(
+    await DB.setSetting('captionModel', 'gpt-4o');
+    const result = await API.generateImageCaption(
       'data:image/png;base64,aGVsbG8=',
       { type: 'world', name: 'Neo-Tokyo', era: '2099', tag: 'night' },
     );
@@ -490,12 +491,12 @@ describe('API integration', () => {
 
   it('generateImageCaption anchors description to character name when provided', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'Iron Man stands in red and gold armor.' } }] }), { status: 200 });
     };
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    await ctx.API.generateImageCaption(
+    await DB.setSetting('captionModel', 'gpt-4o');
+    await API.generateImageCaption(
       'data:image/png;base64,aGVsbG8=',
       { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose', appearance: 'red and gold armor' },
     );
@@ -508,20 +509,20 @@ describe('API integration', () => {
   });
 
   it('generateImageCaption returns null on API error', async () => {
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    ctx.fetch = async () => { throw new Error('network down'); };
-    const result = await ctx.API.generateImageCaption('data:image/png;base64,abc', {});
+    await DB.setSetting('captionModel', 'gpt-4o');
+    globalThis.fetch = async () => { throw new Error('network down'); };
+    const result = await API.generateImageCaption('data:image/png;base64,abc', {});
     assert.equal(result, null);
   });
 
   it('generateImageCaption uses character-sheet prompt with higher token limit', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova shown from front, side, and back views wearing silver armor.' } }] }), { status: 200 });
     };
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    const result = await ctx.API.generateImageCaption(
+    await DB.setSetting('captionModel', 'gpt-4o');
+    const result = await API.generateImageCaption(
       'data:image/png;base64,aGVsbG8=',
       { type: 'character', name: 'Nova', role: 'hero', tag: 'character-sheet', appearance: 'silver armor, blue cape' },
     );
@@ -537,12 +538,12 @@ describe('API integration', () => {
 
   it('generateImageCaption uses character-in-world prompt with worldName context', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova stands amid the neon towers of Neo-Tokyo.' } }] }), { status: 200 });
     };
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    const result = await ctx.API.generateImageCaption(
+    await DB.setSetting('captionModel', 'gpt-4o');
+    const result = await API.generateImageCaption(
       'data:image/png;base64,aGVsbG8=',
       { type: 'character-in-world', name: 'Nova', tag: 'character-in-world', appearance: 'silver armor', worldName: 'Neo-Tokyo' },
     );
@@ -555,12 +556,12 @@ describe('API integration', () => {
 
   it('generateImageCaption uses character-interaction prompt with characterNames and worldName', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova and Blaze face off in the arena.' } }] }), { status: 200 });
     };
-    await ctx.DB.setSetting('captionModel', 'gpt-4o');
-    const result = await ctx.API.generateImageCaption(
+    await DB.setSetting('captionModel', 'gpt-4o');
+    const result = await API.generateImageCaption(
       'data:image/png;base64,aGVsbG8=',
       { type: 'character-interaction', name: 'Colosseum', tag: 'character-interaction', characterNames: 'Nova, Blaze', worldName: 'Colosseum' },
     );
@@ -573,104 +574,100 @@ describe('API integration', () => {
 });
 
 describe('generateImage negative prompt', () => {
-  let ctx;
-
   beforeEach(async () => {
-    ctx = loadApiContext(async () =>
-      new Response(JSON.stringify({ data: [{ b64_json: 'imgdata' }] }), { status: 200 }),
-    );
-    await ctx.DB.setSetting('apiKey', 'test-key');
-    await ctx.DB.setSetting('imageModel', 'flux-2-turbo');
+    await clearAllStores();
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ data: [{ b64_json: 'imgdata' }] }), { status: 200 });
+    await DB.setSetting('apiKey', 'test-key');
+    await DB.setSetting('imageModel', 'flux-2-turbo');
   });
 
   it('sends negative_prompt in body when negativePrompt option is set', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
     };
-    await ctx.API.generateImage('a hero', { negativePrompt: 'blurry, watermark' });
+    await API.generateImage('a hero', { negativePrompt: 'blurry, watermark' });
     assert.equal(requestBody.negative_prompt, 'blurry, watermark');
   });
 
   it('does not include negative_prompt when option is absent', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
     };
-    await ctx.API.generateImage('a hero');
+    await API.generateImage('a hero');
     assert.equal(requestBody.negative_prompt, undefined);
   });
 
   it('does not include negative_prompt when option is an empty string', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ data: [{ b64_json: 'img' }] }), { status: 200 });
     };
-    await ctx.API.generateImage('a hero', { negativePrompt: '   ' });
+    await API.generateImage('a hero', { negativePrompt: '   ' });
     assert.equal(requestBody.negative_prompt, undefined);
   });
 });
 
 describe('enrichImagePrompt', () => {
-  let ctx;
-
   beforeEach(async () => {
-    ctx = loadApiContext(async () =>
-      new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 }),
-    );
-    await ctx.DB.setSetting('apiKey', 'test-key');
-    await ctx.DB.setSetting('model', 'gpt-4o-mini');
+    await clearAllStores();
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
+    await DB.setSetting('apiKey', 'test-key');
+    await DB.setSetting('model', 'gpt-4o-mini');
   });
 
   it('returns null/empty input unchanged without making any API call', async () => {
     const calls = [];
-    ctx.fetch = async (url, opts) => {
+    globalThis.fetch = async (url, opts) => {
       calls.push({ url, opts });
       return new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
     };
-    assert.equal(await ctx.API.enrichImagePrompt(null), null);
-    assert.equal(await ctx.API.enrichImagePrompt(''), '');
-    assert.equal(await ctx.API.enrichImagePrompt(undefined), undefined);
+    assert.equal(await API.enrichImagePrompt(null), null);
+    assert.equal(await API.enrichImagePrompt(''), '');
+    assert.equal(await API.enrichImagePrompt(undefined), undefined);
     assert.equal(calls.length, 0, 'no fetch call should be made for falsy input');
   });
 
   it('returns rawPrompt unchanged when API key is missing', async () => {
-    await ctx.DB.setSetting('apiKey', '');
-    const result = await ctx.API.enrichImagePrompt('A hero in the city');
+    await DB.setSetting('apiKey', '');
+    const result = await API.enrichImagePrompt('A hero in the city');
     assert.equal(result, 'A hero in the city');
   });
 
   it('returns the enriched prompt from the LLM', async () => {
-    ctx.fetch = async () =>
+    globalThis.fetch = async () =>
       new Response(JSON.stringify({ choices: [{ message: { content: 'Cinematic wide shot — hero stands tall' } }] }), { status: 200 });
-    const result = await ctx.API.enrichImagePrompt('hero stands in city');
+    const result = await API.enrichImagePrompt('hero stands in city');
     assert.equal(result, 'Cinematic wide shot — hero stands tall');
   });
 
   it('falls back to rawPrompt on API error', async () => {
-    ctx.fetch = async () => new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
-    const result = await ctx.API.enrichImagePrompt('hero stands in city');
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'rate limit' } }), { status: 429 });
+    const result = await API.enrichImagePrompt('hero stands in city');
     assert.equal(result, 'hero stands in city');
   });
 
   it('includes genre context in the LLM request when provided', async () => {
     let requestBody;
-    ctx.fetch = async (_url, opts) => {
+    globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
     };
-    await ctx.API.enrichImagePrompt('dark alley scene', { genre: 'noir' });
+    await API.enrichImagePrompt('dark alley scene', { genre: 'noir' });
     const userMsg = requestBody.messages.find(m => m.role === 'user');
     assert.ok(userMsg.content.includes('noir'), 'genre should appear in the user message');
   });
 
   it('returns rawPrompt when API response has no content', async () => {
-    ctx.fetch = async () =>
+    globalThis.fetch = async () =>
       new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), { status: 200 });
-    const result = await ctx.API.enrichImagePrompt('a dragon flies');
+    const result = await API.enrichImagePrompt('a dragon flies');
     assert.equal(result, 'a dragon flies');
   });
 });

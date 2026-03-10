@@ -21,7 +21,7 @@ check_staged_syntax() {
     # Use the staged content from the index, not the working-tree file.
     if git cat-file -e ":$file" 2>/dev/null; then
       local tmpfile
-      tmpfile="$(mktemp "${TMPDIR:-/tmp}/staged-js-XXXXXX.js")"
+      tmpfile="$(mktemp "${REPO_ROOT}/.staged-js-XXXXXX.js")"
       if git show ":$file" >"$tmpfile" 2>&1; then
         if node --check "$tmpfile" 2>&1; then
           echo "  ✓ $file"
@@ -46,14 +46,12 @@ check_staged_syntax() {
 
 check_staged_syntax
 
-VERSION_JSON="$REPO_ROOT/version.json"
-SW_JS="$REPO_ROOT/sw.js"
-SETTINGS_JS="$REPO_ROOT/js/pages/settings.js"
+VERSION_JSON="$REPO_ROOT/public/version.json"
 PACKAGE_JSON="$REPO_ROOT/package.json"
 INDEX_HTML="$REPO_ROOT/index.html"
 
 # ---------- Verify files exist ----------
-for f in "$VERSION_JSON" "$SW_JS" "$SETTINGS_JS" "$PACKAGE_JSON" "$INDEX_HTML"; do
+for f in "$VERSION_JSON" "$PACKAGE_JSON" "$INDEX_HTML"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: expected file not found: $f" >&2
     exit 1
@@ -64,18 +62,6 @@ done
 VER_JSON="$(grep '"version"' "$VERSION_JSON" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
 if [ -z "${VER_JSON:-}" ]; then
   echo 'ERROR: Could not extract version from version.json (missing "version" field?)' >&2
-  exit 1
-fi
-
-VER_SW="$(grep "const CACHE_NAME" "$SW_JS" | sed "s/.*comic-creator-v\([^']*\)'.*/\1/" || true)"
-if [ -z "${VER_SW:-}" ]; then
-  echo "ERROR: Could not extract CACHE_NAME version from $SW_JS" >&2
-  exit 1
-fi
-
-VER_SETTINGS="$(grep "const APP_VERSION" "$SETTINGS_JS" | sed "s/.*APP_VERSION = '\([^']*\)'.*/\1/" || true)"
-if [ -z "${VER_SETTINGS:-}" ]; then
-  echo "ERROR: Could not extract APP_VERSION from $SETTINGS_JS" >&2
   exit 1
 fi
 
@@ -107,8 +93,6 @@ check() {
 
 echo "Version consistency check:"
 echo "  ✓ version.json: $VER_JSON"
-check "sw.js (CACHE_NAME)" "$VER_SW"
-check "js/pages/settings.js (APP_VERSION)" "$VER_SETTINGS"
 check "package.json" "$VER_PKG"
 check "index.html (footer)" "$VER_INDEX"
 

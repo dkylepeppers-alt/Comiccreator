@@ -1,7 +1,9 @@
 
 node_modules/
+dist/
 test-results/
 playwright-report/
 coverage/
 cloud-sync-*.png
 dropdown-panel-preview.png
+.staged-js-*.js

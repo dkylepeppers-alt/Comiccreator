@@ -1,23 +1,26 @@
 {
   "name": "comic-creator",
   "version": "1.6.61",
+  "type": "module",
   "private": true,
-  "description": "AI Comic Creator - A vanilla JS PWA for generating AI-powered comic books",
+  "description": "AI Comic Creator - A Vite-powered PWA for generating AI-powered comic books",
   "scripts": {
     "prepare": "bash scripts/install-hooks.sh",
-    "lint": "eslint js/",
-    "lint:fix": "eslint js/ --fix",
-    "format": "prettier --write 'js/**/*.js' 'css/**/*.css'",
-    "format:check": "prettier --check 'js/**/*.js' 'css/**/*.css'",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview --port 8080",
+    "lint": "eslint src/js/",
+    "lint:fix": "eslint src/js/ --fix",
+    "format": "prettier --write 'src/**/*.js' 'src/**/*.css'",
+    "format:check": "prettier --check 'src/**/*.js' 'src/**/*.css'",
     "test": "node --test test/*.test.js",
     "coverage": "npx c8 --reporter=text --reporter=lcov node --test test/*.test.js",
     "coverage:ci": "npx c8 --reporter=text --reporter=lcov node --test test/*.test.js",
     "test:e2e": "playwright test",
-    "check-syntax": "for f in js/*.js js/pages/*.js; do node --check \"$f\" || exit 1; done",
+    "check-syntax": "node -e \"import('node:fs').then(f=>{const files=f.readdirSync('src/js',{recursive:true}).filter(x=>x.endsWith('.js')).map(x=>'src/js/'+x);console.log('Checking',files.length,'files...');})\" && echo 'Syntax check delegated to Vite build' && npm run build -- --logLevel error",
     "update-docs": "bash scripts/update-docs.sh",
     "lint:actions": "bash scripts/check-actions.sh",
     "validate:workflows": "bash scripts/validate-workflows.sh",
-    "serve": "python3 -m http.server 8080",
     "version:patch": "bash scripts/bump-version.sh patch",
     "version:minor": "bash scripts/bump-version.sh minor",
     "version:major": "bash scripts/bump-version.sh major"
@@ -29,6 +32,8 @@
     "fake-indexeddb": "^6.2.5",
     "nanogptjs": "^1.0.4",
     "prettier": "^3.0.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "vite": "^7.3.1",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

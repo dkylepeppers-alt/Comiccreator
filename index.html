@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <title>AI Comic Creator</title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="/src/css/app.css">
 </head>
 <body>
   <div id="app">
@@ -99,18 +99,7 @@
     <div id="error-panel-body"></div>
   </div>
 
-  <!-- Scripts -->
-  <script src="js/utils.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/pages/home.js"></script>
-  <script src="js/pages/characters.js"></script>
-  <script src="js/pages/worlds.js"></script>
-  <script src="js/pages/create.js"></script>
-  <script src="js/pages/library.js"></script>
-  <script src="js/pages/presets.js"></script>
-  <script src="js/pages/image-presets.js"></script>
-  <script src="js/pages/settings.js"></script>
-  <script src="js/app.js"></script>
+  <!-- Entry point (Vite resolves all imports from here) -->
+  <script type="module" src="/src/js/app.js"></script>
 </body>
 </html>

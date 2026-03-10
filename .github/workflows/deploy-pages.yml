@@ -29,21 +29,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-node-env
+
+      - name: Build
+        run: npm run build
+
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
         with:
           enablement: true
 
-      - name: Prepare site directory
-        run: |
-          mkdir _site
-          cp index.html sw.js manifest.json version.json .nojekyll _site/
-          cp -r css js icons _site/
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
-          path: _site
+          path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -5,20 +5,18 @@ on:
     branches:
       - '**'
     paths:
-      - 'js/**'
-      - 'css/**'
+      - 'src/**'
       - 'index.html'
-      - 'sw.js'
+      - 'vite.config.js'
       - 'test/e2e/**'
       - 'playwright.config.js'
       - '.github/workflows/playwright.yml'
       - '.github/actions/setup-playwright/**'
   pull_request:
     paths:
-      - 'js/**'
-      - 'css/**'
+      - 'src/**'
       - 'index.html'
-      - 'sw.js'
+      - 'vite.config.js'
       - 'test/e2e/**'
       - 'playwright.config.js'
       - '.github/workflows/playwright.yml'
@@ -43,6 +41,9 @@ jobs:
 
       - name: Setup Playwright
         uses: ./.github/actions/setup-playwright
+
+      - name: Build
+        run: npm run build
 
       - name: Run Playwright E2E tests
         run: npm run test:e2e

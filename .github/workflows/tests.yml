@@ -26,8 +26,8 @@ jobs:
       - name: Setup Node.js Environment
         uses: ./.github/actions/setup-node-env
 
-      - name: Syntax check
-        run: npm run check-syntax
+      - name: Syntax check (Vite build)
+        run: npm run build
 
       - name: Lint
         run: npm run lint

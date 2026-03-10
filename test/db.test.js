@@ -1,16 +1,8 @@
-const { describe, it, beforeEach } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const { indexedDB } = require('fake-indexeddb');
+import { describe, it, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import 'fake-indexeddb/auto';
 
-globalThis.indexedDB = indexedDB;
-globalThis.crypto = globalThis.crypto || require('node:crypto').webcrypto;
-
-const dbCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'db.js'), 'utf8');
-vm.runInThisContext(`${dbCode}\n;globalThis.__TEST_DB__ = DB;`, { filename: 'db.js' });
-const DB = globalThis.__TEST_DB__;
+const { default: DB } = await import('../src/js/db.js');
 
 beforeEach(async () => {
   const db = await DB.open();
