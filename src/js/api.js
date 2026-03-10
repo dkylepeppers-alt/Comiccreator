@@ -1173,5 +1173,7 @@ const API = {
   FALLBACK_IMAGE_MODELS,
   KNOWN_IMAGE_SIZES,
   BASE_URL,
+  /** @internal Reset in-memory caches (for testing only) */
+  _resetCacheForTesting() { _modelSizesCache = null; },
 };
 export default API;

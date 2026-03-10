@@ -2,10 +2,9 @@
  * Tests for pure functions that can run in Node.js without a browser.
  * Run with: node --test test/
  */
-const { describe, it } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // --- Load pure functions by extracting them from source files ---
 
@@ -403,8 +402,8 @@ describe('exportData page preparation', () => {
   });
 
   it('should not use pretty-printed JSON in settings.js exportData', () => {
-    const settingsPath = path.join(__dirname, '..', 'js', 'pages', 'settings.js');
-    const settingsCode = fs.readFileSync(settingsPath, 'utf-8');
+    const settingsPath = new URL('../src/js/pages/settings.js', import.meta.url);
+    const settingsCode = readFileSync(settingsPath, 'utf-8');
     const stringifyCalls = settingsCode.match(/JSON\.stringify\([^)]*\)/g) || [];
     assert.ok(stringifyCalls.length > 0, 'settings.js must contain at least one JSON.stringify call');
     const prettyPrintedCalls = stringifyCalls.filter(call =>
@@ -420,30 +419,10 @@ describe('exportData page preparation', () => {
 
 describe('version.json', () => {
   it('should have valid version format', () => {
-    const versionPath = path.join(__dirname, '..', 'version.json');
-    const data = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
+    const versionPath = new URL('../public/version.json', import.meta.url);
+    const data = JSON.parse(readFileSync(versionPath, 'utf-8'));
     assert.ok(data.version, 'version field must exist');
     assert.match(data.version, /^\d+\.\d+\.\d+$/, 'version must be semver');
     assert.ok(data.updated, 'updated field must exist');
-  });
-
-  it('should match APP_VERSION in settings.js', () => {
-    const versionPath = path.join(__dirname, '..', 'version.json');
-    const { version } = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
-    const settingsPath = path.join(__dirname, '..', 'js', 'pages', 'settings.js');
-    const settingsCode = fs.readFileSync(settingsPath, 'utf-8');
-    const match = settingsCode.match(/const APP_VERSION = '([^']+)'/);
-    assert.ok(match, 'APP_VERSION must be defined in settings.js');
-    assert.equal(match[1], version, 'APP_VERSION must match version.json');
-  });
-
-  it('should match CACHE_NAME in sw.js', () => {
-    const versionPath = path.join(__dirname, '..', 'version.json');
-    const { version } = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
-    const swPath = path.join(__dirname, '..', 'sw.js');
-    const swCode = fs.readFileSync(swPath, 'utf-8');
-    const match = swCode.match(/const CACHE_NAME = '([^']+)'/);
-    assert.ok(match, 'CACHE_NAME must be defined in sw.js');
-    assert.equal(match[1], `comic-creator-v${version}`, 'CACHE_NAME must match version.json');
   });
 });

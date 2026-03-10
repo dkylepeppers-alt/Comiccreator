@@ -1,6 +1,6 @@
-const { describe, it } = require('node:test');
-const assert = require('node:assert/strict');
-const { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt, buildImageEmbeddingText } = require('../js/utils');
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt, buildImageEmbeddingText } from '../src/js/utils.js';
 
 describe('utils escHtml', () => {
   it('handles nullish and empty', () => {

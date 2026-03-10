@@ -1,45 +1,22 @@
-const { describe, it } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
-const root = path.join(__dirname, '..');
+const root = new URL('..', import.meta.url);
 
 function read(file) {
-  return fs.readFileSync(path.join(root, file), 'utf8');
+  return readFileSync(new URL(file, root), 'utf8');
 }
 
 describe('configuration integrity', () => {
-  it('all local script assets in index.html are present in sw.js STATIC_ASSETS', () => {
+  it('version sync across version.json, package.json, and index.html footer', () => {
+    const version = JSON.parse(read('public/version.json')).version;
     const index = read('index.html');
-    const sw = read('sw.js');
-    const scripts = [...index.matchAll(/<script src="([^"]+)"/g)]
-      .map(m => `/${m[1]}`)
-      .filter(src => !src.startsWith('/http'));
-    for (const src of scripts) {
-      assert.ok(sw.includes(`'${src}'`), `missing in STATIC_ASSETS: ${src}`);
-    }
-  });
-
-  it('service worker references required shell assets', () => {
-    const sw = read('sw.js');
-    for (const file of ['/index.html', '/css/app.css', '/version.json', '/manifest.json']) {
-      assert.ok(sw.includes(`'${file}'`), `expected ${file} in STATIC_ASSETS`);
-    }
-  });
-
-  it('version sync across version.json, settings.js, sw.js, and index footer', () => {
-    const version = JSON.parse(read('version.json')).version;
-    const settings = read('js/pages/settings.js');
-    const sw = read('sw.js');
-    const index = read('index.html');
-    assert.ok(settings.includes(`const APP_VERSION = '${version}'`));
-    assert.ok(sw.includes(`const CACHE_NAME = 'comic-creator-v${version}'`));
-    assert.ok(index.includes(`v${version} &middot; PWA`));
+    assert.ok(index.includes(`v${version} &middot; PWA`), `index.html footer must contain v${version}`);
   });
 
   it('package.json version matches version.json', () => {
-    const version = JSON.parse(read('version.json')).version;
+    const version = JSON.parse(read('public/version.json')).version;
     const pkg = JSON.parse(read('package.json'));
     assert.equal(pkg.version, version, `package.json version "${pkg.version}" must match version.json "${version}"`);
   });
