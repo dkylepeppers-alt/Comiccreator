@@ -6,6 +6,7 @@ import API from '../api.js';
  * Settings Page
  * Dynamically loads all available text and image models from NanoGPT API.
  */
+// Injected by Vite's define plugin at build time; falls back to 'dev' in unbundled environments
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
 
