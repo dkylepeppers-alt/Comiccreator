@@ -136,9 +136,9 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-032 | Add CI status badges to `README.md` for all key workflows: Tests, Playwright E2E, Deploy Pages, Security Audit, and CodeQL. Place them in a new "CI Status" section below the title. Use the standard GitHub Actions badge URL format: `https://github.com/{owner}/{repo}/actions/workflows/{workflow}/badge.svg`. | | |
-| TASK-033 | Create `.github/workflows/ci-metrics.yml` workflow that runs weekly (cron) and uses `actions/github-script@v7` to: (1) fetch the last 20 workflow runs for `tests.yml` and `playwright.yml`, (2) calculate average duration, (3) post a summary as a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`). This provides ongoing visibility into CI efficiency. | | |
-| TASK-034 | Add a `timeout-minutes` field to all workflow jobs to prevent stuck jobs from consuming unlimited CI minutes. Recommended values: unit tests = 10 min, Playwright E2E = 15 min, deploy = 10 min, release = 15 min, security = 5 min. | | |
+| TASK-032 | Add CI status badges to `README.md` for all key workflows: Tests, Playwright E2E, Deploy Pages, Security Audit, and CodeQL. Place them in a new "CI Status" section below the title. Use the standard GitHub Actions badge URL format: `https://github.com/{owner}/{repo}/actions/workflows/{workflow}/badge.svg`. | ✅ | 2026-03-10 |
+| TASK-033 | Create `.github/workflows/ci-metrics.yml` workflow that runs weekly (cron) and uses `actions/github-script@v7` to: (1) fetch the last 20 workflow runs for `tests.yml` and `playwright.yml`, (2) calculate average duration, (3) post a summary as a GitHub Actions job summary (`$GITHUB_STEP_SUMMARY`). This provides ongoing visibility into CI efficiency. | ✅ | 2026-03-10 |
+| TASK-034 | Add a `timeout-minutes` field to all workflow jobs to prevent stuck jobs from consuming unlimited CI minutes. Recommended values: unit tests = 10 min, Playwright E2E = 15 min, deploy = 10 min, release = 15 min, security = 5 min. | ✅ | 2026-03-10 |
 
 ### Implementation Phase 9 — Frontend Build System (Vite + ES Modules)
 
