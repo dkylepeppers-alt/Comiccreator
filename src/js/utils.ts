@@ -118,7 +118,7 @@ export function sanitizeImagePrompt(rawPrompt: string | null | undefined): strin
     .trim();
 
   if (!cleaned) {
-    if (typeof globalThis.App !== 'undefined')
+    if (typeof (globalThis as any).App !== 'undefined')
       (globalThis as any).App.logError(
         'sanitizeImagePrompt',
         new Error('Sanitization fallback'),

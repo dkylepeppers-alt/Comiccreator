@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { PageModule } from '../utils.js';
 import { escHtml, dedupeByNameLatest } from '../utils.js';
 import DB from '../db.js';

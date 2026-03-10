@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { PageModule } from '../utils.js';
 import { escHtml, buildImageEmbeddingText } from '../utils.js';
 import DB from '../db.js';

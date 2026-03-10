@@ -76,14 +76,14 @@ function setupNavigation() {
   document.querySelectorAll('.nav-link').forEach((link) => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      navigate(link.dataset.page);
+      navigate((link as HTMLElement).dataset.page);
       closeSidebar();
     });
   });
 
   // Bottom nav
   document.querySelectorAll('.bnav-btn').forEach((btn) => {
-    btn.addEventListener('click', () => navigate(btn.dataset.page));
+    btn.addEventListener('click', () => navigate((btn as HTMLElement).dataset.page));
   });
 
   // Settings button -> settings
@@ -134,10 +134,10 @@ async function navigate(page: string, param: string | null = null): Promise<void
 
   // Update active states
   document.querySelectorAll('.nav-link').forEach((l) => {
-    l.classList.toggle('active', l.dataset.page === page);
+    l.classList.toggle('active', (l as HTMLElement).dataset.page === page);
   });
   document.querySelectorAll('.bnav-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.page === page);
+    b.classList.toggle('active', (b as HTMLElement).dataset.page === page);
   });
 
   // Render page
@@ -238,7 +238,7 @@ function updateErrorBadge(): void {
     badge.classList.add('hidden');
   } else {
     badge.classList.remove('hidden');
-    badge.textContent = errorLog.length > 99 ? '99+' : errorLog.length;
+    badge.textContent = errorLog.length > 99 ? '99+' : String(errorLog.length);
   }
 }
 

@@ -394,8 +394,8 @@ async function enrichImagePrompt(rawPrompt: string, options: ChatCompletionOptio
     const trimmed = typeof enriched === 'string' ? enriched.trim() : '';
     return trimmed || rawPrompt;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined') {
+      (globalThis as any).App.logError(
         'enrichImagePrompt',
         err,
         `Prompt enrichment failed — using original. Prompt: "${rawPrompt.slice(0, 80)}..."`,
@@ -728,8 +728,8 @@ function parseComicResponse(text: string): ComicPageResult | null {
     try {
       return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
     } catch (_e2) {
-      if (typeof globalThis.App !== 'undefined')
-        globalThis.App.logError('parseComicResponse', _e2, text?.substring(0, 200));
+      if (typeof (globalThis as any).App !== 'undefined')
+        (globalThis as any).App.logError('parseComicResponse', _e2, text?.substring(0, 200));
       return null;
     }
   }
@@ -772,7 +772,7 @@ async function fetchTextModels(forceRefresh: boolean = false): Promise<TextModel
     await DB.setSetting(CACHE_TS_KEY, Date.now());
     return models;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') globalThis.App.logError('fetchTextModels', err);
+    if (typeof (globalThis as any).App !== 'undefined') (globalThis as any).App.logError('fetchTextModels', err);
     // Return cache even if expired, or fallback
     const cached = await DB.getSetting(CACHE_KEY, null);
     if (cached) return cached;
@@ -819,7 +819,7 @@ async function fetchImageModels(forceRefresh: boolean = false): Promise<ImageMod
     _modelSizesCache = models; // Update in-memory cache immediately
     return models;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') globalThis.App.logError('fetchImageModels', err);
+    if (typeof (globalThis as any).App !== 'undefined') (globalThis as any).App.logError('fetchImageModels', err);
     const cached = await DB.getSetting(CACHE_KEY, null);
     if (cached) return cached;
     return FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
@@ -950,8 +950,8 @@ async function generateImageCaption(
     });
     return caption?.trim() || null;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined') {
+      (globalThis as any).App.logError(
         'generateImageCaption',
         err,
         `Caption generation failed for ${type} "${name || 'unknown'}"`,
@@ -992,8 +992,8 @@ async function generateEmbedding(text: string, options: EmbeddingOptions = {}): 
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      if (typeof globalThis.App !== 'undefined')
-        globalThis.App.logError(
+      if (typeof (globalThis as any).App !== 'undefined')
+        (globalThis as any).App.logError(
           'generateEmbedding',
           new Error(`HTTP ${res.status}`),
           `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`,
@@ -1003,8 +1003,8 @@ async function generateEmbedding(text: string, options: EmbeddingOptions = {}): 
     const data = await res.json();
     return data?.data?.[0]?.embedding || null;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined')
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined')
+      (globalThis as any).App.logError(
         'generateEmbedding',
         err,
         `Embedding API call failed for text: "${text.slice(0, 80)}..."`,
@@ -1282,8 +1282,8 @@ async function generateRefVariation(
     if (result.startsWith('data:')) return result;
     return `data:image/png;base64,${result}`;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError('generateRefVariation', err, `Failed to generate variation: ${prompt.slice(0, 80)}`);
+    if (typeof (globalThis as any).App !== 'undefined') {
+      (globalThis as any).App.logError('generateRefVariation', err, `Failed to generate variation: ${prompt.slice(0, 80)}`);
     }
     return null;
   }
