@@ -37,9 +37,9 @@ The pipeline has six stages:
 
 | File | Key functions / constants |
 |---|---|
-| `js/pages/characters.js` | `handleImage()`, `addImageSlot()`, `pickImageForSlot()`, `generateReferences()`, `regenerateImage()` |
-| `js/pages/worlds.js` | `handleImage()`, `addImageSlot()`, `pickImageForSlot()`, `generateReferences()`, `regenerateImage()` |
-| `js/db.js` | `DB.fileToDataURL()`, `DB.migrateCharacter()`, `DB.migrateWorld()` |
+| `src/js/pages/characters.ts` | `handleImage()`, `addImageSlot()`, `pickImageForSlot()`, `generateReferences()`, `regenerateImage()` |
+| `src/js/pages/worlds.ts` | `handleImage()`, `addImageSlot()`, `pickImageForSlot()`, `generateReferences()`, `regenerateImage()` |
+| `src/js/db.ts` | `DB.fileToDataURL()`, `DB.migrateCharacter()`, `DB.migrateWorld()` |
 
 ### How it works
 
@@ -97,9 +97,9 @@ One image can be marked as **primary** via the ⭐ button (`setPrimary(idx)`). C
 
 | File | Key functions |
 |---|---|
-| `js/api.js` | `generateImageCaption()`, `compressDataUrl()`, `chatCompletion()` |
-| `js/pages/characters.js` | `handleImage()` (auto-trigger), `recaptionImage()`, `recaptionAll()` |
-| `js/pages/worlds.js` | `handleImage()` (auto-trigger), `recaptionImage()`, `recaptionAll()` |
+| `src/js/api.ts` | `generateImageCaption()`, `compressDataUrl()`, `chatCompletion()` |
+| `src/js/pages/characters.ts` | `handleImage()` (auto-trigger), `recaptionImage()`, `recaptionAll()` |
+| `src/js/pages/worlds.ts` | `handleImage()` (auto-trigger), `recaptionImage()`, `recaptionAll()` |
 
 ### When captioning happens
 
@@ -174,10 +174,10 @@ The returned caption is stored in `img.description`. Any existing `embedding` an
 
 | File | Key functions |
 |---|---|
-| `js/utils.js` | `buildImageEmbeddingText()` |
-| `js/api.js` | `generateEmbedding()` |
-| `js/pages/characters.js` | `saveCharacter()` |
-| `js/pages/worlds.js` | `saveWorld()` |
+| `src/js/utils.ts` | `buildImageEmbeddingText()` |
+| `src/js/api.ts` | `generateEmbedding()` |
+| `src/js/pages/characters.ts` | `saveCharacter()` |
+| `src/js/pages/worlds.ts` | `saveWorld()` |
 
 ### When embeddings are generated
 
@@ -243,11 +243,11 @@ The gallery UI shows badges per image to indicate embedding status:
 
 | File | Key functions / constants |
 |---|---|
-| `js/pages/create.js` | `selectBestImage()`, `buildPanelImageOpts()`, `buildCompositeSheet()`, `nameInPrompt()`, `getPromptEmbedding()`, `TAG_KEYWORDS` |
+| `src/js/pages/create.ts` | `selectBestImage()`, `buildPanelImageOpts()`, `buildCompositeSheet()`, `nameInPrompt()`, `getPromptEmbedding()`, `TAG_KEYWORDS` |
 
 ### When it runs
 
-During `generatePage()` in `create.js`, after the LLM returns a page JSON with panels. For each panel that has an `imagePrompt`, the function `buildPanelImageOpts(panel)` is called to determine which reference images to attach.
+During `generatePage()` in `create.ts`, after the LLM returns a page JSON with panels. For each panel that has an `imagePrompt`, the function `buildPanelImageOpts(panel)` is called to determine which reference images to attach.
 
 ### Reference collection at comic start
 
@@ -371,9 +371,9 @@ The output is an options object:
 
 | File | Key functions |
 |---|---|
-| `js/pages/create.js` | `buildEnhancedImagePrompt()` |
-| `js/utils.js` | `sanitizeImagePrompt()` |
-| `js/api.js` | `generateImage()` — reference legend construction, `enrichImagePrompt()` — LLM prompt expansion |
+| `src/js/pages/create.ts` | `buildEnhancedImagePrompt()` |
+| `src/js/utils.ts` | `sanitizeImagePrompt()` |
+| `src/js/api.ts` | `generateImage()` — reference legend construction, `enrichImagePrompt()` — LLM prompt expansion |
 
 ### `buildEnhancedImagePrompt(panel)`
 
@@ -457,7 +457,7 @@ Reference image 2: …
 
 | File | Key functions |
 |---|---|
-| `js/api.js` | `generateImage()`, `compressDataUrl()` |
+| `src/js/api.ts` | `generateImage()`, `compressDataUrl()` |
 
 ### `generateImage(prompt, options)`
 

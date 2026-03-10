@@ -70,22 +70,21 @@ Open the URL in Chrome or Brave, enter your NanoGPT API key in Settings, and sta
 
 ### Running locally (developers)
 
-Any static HTTP server works. The app is pure HTML/CSS/JS with zero build dependencies.
+The app uses a Vite build pipeline. Install dependencies first, then start the dev server:
 
 ```bash
-# Python
-python3 -m http.server 8080
+npm install
+npm run dev        # Vite dev server with HMR on http://localhost:8080
+```
 
-# Node.js
-npx serve -s -l 8080
+To preview the production build locally:
 
-# PHP
-php -S 0.0.0.0:8080
+```bash
+npm run build      # Build to dist/
+npm run serve      # Vite preview server on http://localhost:8080
 ```
 
 Then open `http://localhost:8080` in Chrome or Brave.
-
-> **Testing locally vs. GitHub Pages:** When running locally, `sw.js` is served from `/sw.js` so `BASE_PATH` is `""` and all assets are cached with absolute root paths (e.g. `/index.html`). On GitHub Pages, `sw.js` is served from `/Comiccreator/sw.js` so `BASE_PATH` is `/Comiccreator` and assets are cached with subpath-prefixed URLs. The same `sw.js` file handles both cases automatically.
 
 ### Installing as a PWA
 
@@ -384,7 +383,7 @@ Requires a browser with support for:
 
 **Every merge to `Main` must include a version bump.** This keeps the service worker cache in sync and ensures users always receive the latest assets.
 
-The version appears in **five places** that must all match. Use the bump script to update them atomically:
+The version appears in **three places** that must all match. Use the bump script to update them atomically:
 
 ```bash
 bash scripts/bump-version.sh patch   # e.g. 1.6.30 → 1.6.31
@@ -392,9 +391,9 @@ bash scripts/bump-version.sh minor   # e.g. 1.6.30 → 1.7.0
 bash scripts/bump-version.sh major   # e.g. 1.6.30 → 2.0.0
 ```
 
-If you must update manually, change all five locations:
+If you must update manually, change all three locations:
 
-1. **`version.json`** — increment the version number and update the date:
+1. **`public/version.json`** — increment the version number and update the date:
    ```json
    {
      "version": "1.6.31",
@@ -402,22 +401,12 @@ If you must update manually, change all five locations:
    }
    ```
 
-2. **`sw.js`** — set `CACHE_NAME` to match:
-   ```js
-   const CACHE_NAME = 'comic-creator-v1.6.31';
-   ```
-
-3. **`js/pages/settings.js`** — set `APP_VERSION` to match:
-   ```js
-   const APP_VERSION = '1.6.31';
-   ```
-
-4. **`index.html`** — update the sidebar footer:
+2. **`index.html`** — update the sidebar footer:
    ```html
    <small>v1.6.31 &middot; PWA</small>
    ```
 
-5. **`package.json`** — set `"version"` to match:
+3. **`package.json`** — set `"version"` to match:
    ```json
    "version": "1.6.31"
    ```
@@ -425,13 +414,13 @@ If you must update manually, change all five locations:
 > **Versioning convention:** Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`.
 > Increment `PATCH` for bug fixes, `MINOR` for new features, `MAJOR` for breaking changes.
 
-Keeping `CACHE_NAME` and `APP_VERSION` in sync with `version.json` ensures the service worker invalidates the old cache on next load, forcing browsers to fetch updated assets. The Settings page uses `APP_VERSION` to display the current version number.
+The service worker version is managed automatically by Workbox via `vite-plugin-pwa` — no manual `CACHE_NAME` update is needed. The `APP_VERSION` displayed in Settings is injected at build time via Vite's `define` plugin, which reads `public/version.json`.
 
-On every push to `Main`, `.github/workflows/auto-bump.yml` automatically runs a patch bump and pushes the result, so manual bumps are only needed before merging features that warrant a minor or major increment.
+On every push to `Main`, `.github/workflows/post-merge.yml` automatically runs a patch bump and pushes the result, so manual bumps are only needed before merging features that warrant a minor or major increment.
 
 ### Auto-Updating Documentation
 
-Sections of this README wrapped in `<!-- AUTO-GENERATED-CONTENT:START (NAME) -->` / `<!-- AUTO-GENERATED-CONTENT:END (NAME) -->` comments are regenerated automatically. On every push to `Main`, `.github/workflows/auto-update-docs.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
+Sections of this README wrapped in `<!-- AUTO-GENERATED-CONTENT:START (NAME) -->` / `<!-- AUTO-GENERATED-CONTENT:END (NAME) -->` comments are regenerated automatically. On every push to `Main`, `.github/workflows/post-merge.yml` runs `scripts/update-docs.sh` and commits any changes. The currently auto-generated sections are:
 
 - **Architecture directory tree** — reflects the actual file structure of the repository
 - **CI Workflows table** — lists all workflow files with their triggers and names
@@ -449,19 +438,19 @@ The script is idempotent — running it multiple times with no file changes prod
 
 ### GitHub Pages Deployment
 
-The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `Main` branch or via manual `workflow_dispatch`. The workflow uses the official GitHub Pages actions:
+The app is automatically deployed to GitHub Pages via `.github/workflows/deploy-pages.yml` on every push to the `Main` branch or via manual `workflow_dispatch`. The workflow runs `npm run build` then deploys the `dist/` output using the official GitHub Pages actions:
 
 - `actions/configure-pages` — configures the Pages environment
-- `actions/upload-pages-artifact` — uploads only the runtime site assets (HTML, CSS, JS, icons, SW, manifest)
+- `actions/upload-pages-artifact` — uploads the `dist/` build output
 - `actions/deploy-pages` — publishes the artifact
 
 The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 
 **Subpath caveats:**
 - `manifest.json` uses `"start_url": "./"` (relative) so it resolves correctly under `/Comiccreator/`.
-- `sw.js` computes `BASE_PATH` from `new URL(self.registration.scope).pathname` at runtime, so all cached asset URLs are automatically prefixed with `/Comiccreator` on GitHub Pages and with `""` when running locally.
-- `.nojekyll` at the repo root prevents GitHub Pages from treating underscore-prefixed files specially.
-- After a new deployment, users may need to hard-refresh (`Ctrl+Shift+R`) or clear site data to force the service worker to pick up the new cache version.
+- Vite's `base: './'` config ensures all asset URLs in the build are relative, so the app works on both GitHub Pages and local preview.
+- `.nojekyll` in `public/` prevents GitHub Pages from treating underscore-prefixed files specially.
+- After a new deployment, users may need to hard-refresh (`Ctrl+Shift+R`) or use **Settings → App Updates → Check for Updates** to force the service worker to pick up the new build.
 
 ### CI Workflows
 
