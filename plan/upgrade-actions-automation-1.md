@@ -11,18 +11,19 @@ tags: [upgrade, automation, ci-cd, actions, mcp, efficiency, infrastructure, vit
 # Introduction
 
 
-Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions workflows, MCP toolsets, automation scripts, CI/CD efficiency, and frontend architecture. The current pipeline consists of 7 workflows, 8+ Copilot agents, 4 automation scripts, and a Dependabot configuration. The app itself is built with vanilla HTML/CSS/JS globals (no build step, no module system, no type checking) which limits developer velocity and code quality. This plan identifies gaps, inefficiencies, and architectural debt across both the CI/CD pipeline and the application itself, then prescribes concrete, phased improvements.
+Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions workflows, MCP toolsets, automation scripts, CI/CD efficiency, and frontend architecture. The current pipeline consists of 12 workflows, 2 composite actions, 15 Copilot agents, 6 automation scripts, and a Dependabot configuration. The app itself is built with vanilla HTML/CSS/JS globals (no build step, no module system, no type checking) which limits developer velocity and code quality. This plan identifies gaps, inefficiencies, and architectural debt across both the CI/CD pipeline and the application itself, then prescribes concrete, phased improvements.
 
 ### Current State Summary
 
 | Area | Count | Key Observations |
 |------|-------|------------------|
-| Workflows | 7 | tests.yml, playwright.yml, auto-bump.yml, auto-update-docs.yml, deploy-pages.yml, release.yml, security.yml |
-| Agents | 14 | 8 gem-team agents + Bugfixer, Docs-agent, Readme, my-agent, Anotherplanner, architect-innovator |
-| Scripts | 4 | bump-version.sh, update-docs.sh, install-hooks.sh, pre-commit |
-| Dependabot | 2 ecosystems | npm (weekly), github-actions (weekly) -- no labels, no PR limits, no commit message prefix |
-| Pre-commit hook | 1 check | Version consistency only -- no syntax, lint, or format checks |
-| Test runners | 2 | Node built-in test runner (unit) + Playwright (E2E) -- no coverage reporting |
+| Workflows | 12 | tests.yml, playwright.yml, post-merge.yml, deploy-pages.yml, release.yml, security.yml, security-pr.yml, codeql-analysis.yml, auto-merge-dependabot.yml, pr-labeler.yml, stale.yml, ci-metrics.yml |
+| Composite Actions | 2 | setup-node-env, setup-playwright |
+| Agents | 15 | 8 gem-team agents + ci-optimizer, Bugfixer, Docs-agent, Readme, my-agent, Anotherplanner, architect-innovator |
+| Scripts | 6 | bump-version.sh, update-docs.sh, install-hooks.sh, pre-commit-version-check.sh, check-actions.sh, validate-workflows.sh |
+| Dependabot | 2 ecosystems | npm (weekly), github-actions (weekly) -- labels, chore commit prefix, 10 PR limit, minor/patch groups |
+| Pre-commit hook | 2 checks | Version consistency + JS syntax checks on staged files |
+| Test runners | 2 | Node built-in test runner (unit) + Playwright (E2E) -- c8 coverage reporting with Codecov upload |
 | Frontend architecture | Vanilla | Browser globals (IIFEs), no module system, no bundler, no TypeScript, no build step, manual `<script>` ordering |
 ## 1. Requirements & Constraints
 
