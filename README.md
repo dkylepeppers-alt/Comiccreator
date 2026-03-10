@@ -188,12 +188,9 @@ Comiccreator/
         stale.yml
         tests.yml
 .gitignore
-.nojekyll
 .prettierrc
 README.md
 TEST_COVERAGE_ANALYSIS.md
-css
-    app.css
 docs
     image-generation-pipeline.md
     plan
@@ -201,32 +198,21 @@ docs
             plan.yaml
 eslint.config.js
 generate-icons.html
-icons
-    icon-192.png
-    icon-512.png
-    icon.svg
 index.html
-js
-    api.js
-    app.js
-    db.js
-    pages
-        characters.js
-        create.js
-        home.js
-        image-presets.js
-        library.js
-        presets.js
-        settings.js
-        worlds.js
-    utils.js
-manifest.json
 package-lock.json
 package.json
 plan
     feature-reference-image-prompts-world-tags-1.md
     upgrade-actions-automation-1.md
 playwright.config.js
+public
+    .nojekyll
+    icons
+        icon-192.png
+        icon-512.png
+        icon.svg
+    manifest.json
+    version.json
 scripts
     bump-version.sh
     check-actions.sh
@@ -234,7 +220,23 @@ scripts
     pre-commit-version-check.sh
     update-docs.sh
     validate-workflows.sh
-sw.js
+src
+    css
+        app.css
+    js
+        api.js
+        app.js
+        db.js
+        pages
+            characters.js
+            create.js
+            home.js
+            image-presets.js
+            library.js
+            presets.js
+            settings.js
+            worlds.js
+        utils.js
 test
     api-integration.test.js
     api-pure.test.js
@@ -244,7 +246,7 @@ test
         smoke.spec.js
     pure-functions.test.js
     utils.test.js
-version.json
+vite.config.js
 ```
 <!-- AUTO-GENERATED-CONTENT:END (DIRECTORY_TREE) -->
 
