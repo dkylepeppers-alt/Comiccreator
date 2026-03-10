@@ -2,7 +2,8 @@ name: CI Metrics
 
 on:
   schedule:
-    - cron: '0 9 * * 1'  # Every Monday at 09:00 UTC
+    - cron: '0 8 * * 1'  # Every Monday at 08:00 UTC
+  workflow_dispatch:
 
 # Deny all permissions by default; grant only what each job needs.
 permissions: {}
@@ -10,59 +11,55 @@ permissions: {}
 jobs:
   metrics:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     permissions:
       actions: read
+    timeout-minutes: 5
     steps:
-      - name: Collect and report CI metrics
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+      - name: Collect CI metrics
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const workflows = ['tests.yml', 'playwright.yml'];
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
+            const lines = [];
 
-            let report = '# Weekly CI Metrics Report\n\n';
-            report += `Generated: ${new Date().toISOString()}\n\n`;
-
-            for (const workflow of workflows) {
+            for (const wf of workflows) {
               const runs = await github.rest.actions.listWorkflowRuns({
-                owner,
-                repo,
-                workflow_id: workflow,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: wf,
                 per_page: 20,
                 status: 'completed',
               });
 
-              const completed = runs.data.workflow_runs.filter(
-                r => r.conclusion === 'success' || r.conclusion === 'failure'
-              );
-
-              if (completed.length === 0) {
-                report += `## ${workflow}\nNo completed runs in the last 20 runs.\n\n`;
+              const allRuns = runs.data.workflow_runs;
+              if (allRuns.length === 0) {
+                lines.push(`### ${wf}\nNo completed runs found.\n`);
                 continue;
               }
 
-              const durations = completed.map(r => {
-                const start = new Date(r.run_started_at).getTime();
-                const end = new Date(r.updated_at).getTime();
-                return (end - start) / 1000 / 60; // minutes
+              const succeeded = allRuns.filter(r => r.conclusion === 'success').length;
+              const failed = allRuns.filter(r => r.conclusion === 'failure').length;
+              const other = allRuns.length - succeeded - failed;
+
+              const durations = allRuns.map(r => {
+                const start = new Date(r.run_started_at);
+                const end = new Date(r.updated_at);
+                return (end - start) / 1000;
               });
 
               const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
-              const max = Math.max(...durations);
               const min = Math.min(...durations);
-              const successCount = completed.filter(r => r.conclusion === 'success').length;
-              const successRate = ((successCount / completed.length) * 100).toFixed(1);
+              const max = Math.max(...durations);
 
-              report += `## ${workflow}\n`;
-              report += `| Metric | Value |\n|--------|-------|\n`;
-              report += `| Runs analyzed | ${completed.length} |\n`;
-              report += `| Avg duration | ${avg.toFixed(1)} min |\n`;
-              report += `| Min duration | ${min.toFixed(1)} min |\n`;
-              report += `| Max duration | ${max.toFixed(1)} min |\n`;
-              report += `| Success rate | ${successRate}% |\n\n`;
+              lines.push(`### ${wf}`);
+              lines.push(`- Completed runs analyzed: ${allRuns.length}`);
+              lines.push(`- ✅ Succeeded: ${succeeded} · ❌ Failed: ${failed} · ⚠️ Other: ${other}`);
+              lines.push(`- Average duration: ${(avg / 60).toFixed(1)} min`);
+              lines.push(`- Min duration: ${(min / 60).toFixed(1)} min`);
+              lines.push(`- Max duration: ${(max / 60).toFixed(1)} min`);
+              lines.push('');
             }
 
-            core.summary.addRaw(report);
+            const summary = `# CI Metrics Report\n\n${lines.join('\n')}`;
+            core.summary.addRaw(summary);
             await core.summary.write();

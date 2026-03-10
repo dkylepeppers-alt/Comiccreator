@@ -43,7 +43,7 @@ You are a specialized implementation agent for the AI Comic Creator repository. 
 The following tasks are marked complete in the plan document. **Always verify the implementation is correct before treating them as done.**
 
 ### Phase 1 — Composite Actions & Shared Setup (TASK-001–006) ✅
-- `TASK-001`: `.github/actions/setup-node-env/action.yml` — composite action (checkout + setup-node@v4 + npm ci)
+- `TASK-001`: `.github/actions/setup-node-env/action.yml` — composite action (setup-node@v4 + npm ci; workflows still run actions/checkout before using it)
 - `TASK-002`: `.github/actions/setup-playwright/action.yml` — composite action with browser caching
 - `TASK-003`: `tests.yml` refactored to use `setup-node-env`
 - `TASK-004`: `playwright.yml` refactored to use `setup-playwright`
@@ -116,7 +116,7 @@ cat .github/dependabot.yml
 # Check post-merge.yml exists (TASK-024)
 cat .github/workflows/post-merge.yml
 # Check old auto-bump/auto-update-docs are removed (TASK-025)
-ls .github/workflows/ | grep -E "auto-bump|auto-update"
+ls .github/workflows/ | grep -E "auto-bump|auto-update" || echo "No auto-bump/auto-update workflows found (expected)"
 # Check copilot-instructions updated (TASK-026)
 grep -c "post-merge\|security-pr\|codeql" .github/copilot-instructions.md
 ```
@@ -128,7 +128,7 @@ grep -c "badge.svg" README.md
 # Check ci-metrics.yml exists (TASK-033)
 ls .github/workflows/ci-metrics.yml 2>/dev/null || echo "NOT FOUND"
 # Check timeout-minutes on all jobs (TASK-034)
-grep -L "timeout-minutes" .github/workflows/*.yml
+grep -L "timeout-minutes" .github/workflows/*.yml || echo "OK: all workflows define timeout-minutes"
 ```
 
 ---
@@ -152,7 +152,7 @@ Place after the `Lint` step and before `Run tests`.
 - Install: `npm install -D c8`
 - Add scripts to `package.json`: `"coverage": "npx c8 --reporter=text --reporter=lcov node --test test/*.test.js"`, `"coverage:ci": "npx c8 --reporter=text --reporter=lcov node --test test/*.test.js"`
 - Create `.c8rc.json` with `{ "lines": 60, "branches": 60 }`
-- Update `tests.yml` to use `npm run coverage:ci` and upload `coverage/lcov.info` via `codecov/codecov-action@v4`
+- Update `tests.yml` to use `npm run coverage:ci` and upload `coverage/lcov.info` via the repository's existing pinned `codecov/codecov-action` version (do not change the pin)
 - Add `coverage/` artifact upload step
 
 **TASK-010**: Add `concurrency` block to `tests.yml` and `playwright.yml`:

@@ -1,10 +1,12 @@
 # AI Comic Creator
 
+## CI Status
+
 [![Tests](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/tests.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/tests.yml)
-[![Playwright E2E](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/playwright.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/playwright.yml)
-[![Deploy Pages](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/deploy-pages.yml)
+[![Playwright E2E Tests](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/playwright.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/playwright.yml)
+[![Deploy to GitHub Pages](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/deploy-pages.yml)
 [![Security Audit](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/security.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/security.yml)
-[![CodeQL](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/codeql-analysis.yml)
+[![CodeQL Analysis](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/dkylepeppers-alt/Comiccreator/actions/workflows/codeql-analysis.yml)
 
 A fully installable Progressive Web App for creating AI-generated comic books with interactive narratives, custom characters, and detailed world-building. Powered by [NanoGPT](https://nano-gpt.com).
 
