@@ -1,3 +1,5 @@
+// @ts-nocheck
+import type { PageModule } from '../utils.js';
 import { escHtml, timeAgo, getGenreEmoji, GENRES } from '../utils.js';
 import DB from '../db.js';
 
@@ -5,15 +7,15 @@ import DB from '../db.js';
  * Library Page - View, resume, export, and delete comics
  * Includes PDF export using browser print or jsPDF-like canvas rendering
  */
-let viewingComicId = null;
+let viewingComicId: string | null = null;
 
 // Search / filter state — persists within a session, reset on unmount
-let _searchQuery = '';
-let _genreFilter = '';
+let _searchQuery: string = '';
+let _genreFilter: string = '';
 // Cached comics array — populated by renderList() for in-place search filtering
-let _allComics = [];
+let _allComics: any[] = [];
 
-async function render(param) {
+async function render(param?: string | null): Promise<string> {
   if (param && param.length > 10) {
     viewingComicId = param;
     return renderComic(param);
@@ -22,7 +24,7 @@ async function render(param) {
   return renderList();
 }
 
-function applyFilter(comics) {
+function applyFilter(comics: any[]): any[] {
   const q = _searchQuery.toLowerCase().trim();
   return comics.filter((c) => {
     const matchesSearch =
@@ -33,7 +35,7 @@ function applyFilter(comics) {
 }
 
 /** Renders the filterable comic list items (or a "no results" state). */
-function renderComicItems(filtered) {
+function renderComicItems(filtered: any[]): string {
   if (filtered.length === 0) {
     return `
       <div class="empty-state">
@@ -68,7 +70,7 @@ function renderComicItems(filtered) {
  * Update the search query and re-render only the list container in-place,
  * preserving input focus and caret position.
  */
-function setSearch(query) {
+function setSearch(query: string): void {
   _searchQuery = query;
   const container = document.getElementById('library-comics-list');
   if (container) {
@@ -78,12 +80,12 @@ function setSearch(query) {
   }
 }
 
-function setGenre(genre) {
+function setGenre(genre: string): void {
   _genreFilter = genre;
   App.refreshPage();
 }
 
-function clearFilter() {
+function clearFilter(): void {
   _searchQuery = '';
   _genreFilter = '';
   App.refreshPage();
@@ -141,7 +143,7 @@ async function renderList() {
   `;
 }
 
-async function renderComic(comicId) {
+async function renderComic(comicId: string): Promise<string> {
   const comic = await DB.get(DB.STORES.comics, comicId);
   if (!comic) return '<p class="text-muted">Comic not found</p>';
 
@@ -189,7 +191,7 @@ async function renderComic(comicId) {
   `;
 }
 
-function renderPanels(pageData) {
+function renderPanels(pageData: any): string {
   if (!pageData || !pageData.panels) return '<p class="text-muted">Empty page</p>';
 
   return pageData.panels
@@ -224,7 +226,7 @@ function renderPanels(pageData) {
  * Open a panel image full-size in the modal lightbox.
  * src is set via DOM after the modal renders to safely handle data URLs.
  */
-function zoomImage(src) {
+function zoomImage(src: string): void {
   App.showModal(`
     <div style="text-align:center;padding:8px;">
       <img id="zoom-img" style="max-width:100%;max-height:75vh;border-radius:8px;display:block;margin:0 auto 12px;">
@@ -236,7 +238,7 @@ function zoomImage(src) {
 }
 
 /** Bind zoom click handlers after the comic reader HTML is in the DOM. */
-function onMount() {
+function onMount(): void {
   document.querySelectorAll('.zoomable-panel').forEach((img) => {
     img.addEventListener('click', function () {
       zoomImage(this.src);
@@ -244,18 +246,18 @@ function onMount() {
   });
 }
 
-function onUnmount() {
+function onUnmount(): void {
   _searchQuery = '';
   _genreFilter = '';
   _allComics = [];
 }
 
-function backToList() {
+function backToList(): void {
   viewingComicId = null;
   App.refreshPage();
 }
 
-async function deleteComic(id, title) {
+async function deleteComic(id: string, title: string): Promise<void> {
   App.showModal(`
     <div class="modal-title">Delete Comic</div>
     <p>Delete <strong>${escHtml(title)}</strong> and all its pages?</p>
@@ -266,7 +268,7 @@ async function deleteComic(id, title) {
   `);
 }
 
-async function confirmDelete(id) {
+async function confirmDelete(id: string): Promise<void> {
   // Delete all pages for this comic
   const pages = await DB.getByIndex(DB.STORES.pages, 'comicId', id);
   for (const p of pages) await DB.del(DB.STORES.pages, p.id);
@@ -281,7 +283,7 @@ async function confirmDelete(id) {
  * PDF Export using canvas rendering
  * Creates a printable PDF-like output using window.print() or canvas-based approach
  */
-async function exportPDF(comicId) {
+async function exportPDF(comicId: string): Promise<void> {
   const comic = await DB.get(DB.STORES.comics, comicId);
   if (!comic) return App.toast('Comic not found', 'error');
 
@@ -324,7 +326,7 @@ async function exportPDF(comicId) {
   };
 }
 
-function buildPrintHTML(comic, pages) {
+function buildPrintHTML(comic: any, pages: any[]): string {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -405,7 +407,7 @@ ${pages
 /**
  * Render a comic page to Canvas and download as PNG image.
  */
-async function downloadPageImage(pageIdx) {
+async function downloadPageImage(pageIdx: number): Promise<void> {
   if (!viewingComicId) return;
 
   const pages = await DB.getByIndex(DB.STORES.pages, 'comicId', viewingComicId);
@@ -568,7 +570,7 @@ async function downloadPageImage(pageIdx) {
   }, 'image/png');
 }
 
-const LibraryPage = {
+const LibraryPage: PageModule & Record<string, any> = {
   render,
   onMount,
   onUnmount,

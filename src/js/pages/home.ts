@@ -1,3 +1,5 @@
+// @ts-nocheck
+import type { PageModule } from '../utils.js';
 import { GENRES, escHtml, timeAgo, getGenreEmoji } from '../utils.js';
 import DB from '../db.js';
 
@@ -104,5 +106,5 @@ async function render() {
   `;
 }
 
-const HomePage = { render };
+const HomePage: PageModule = { render };
 export default HomePage;

@@ -1,3 +1,5 @@
+// @ts-nocheck
+import type { PageModule } from '../utils.js';
 import { sanitizeImagePrompt, escHtml, GENRES, dedupeByNameLatest, cosineSimilarity } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
@@ -5,7 +7,7 @@ import API from '../api.js';
 /**
  * Create Comic Page - The core comic generation experience
  */
-let state = {
+let state: any = {
   step: 'setup', // 'setup', 'generating', 'reading'
   genre: '',
   customGenre: '',
@@ -28,11 +30,11 @@ let state = {
 };
 
 // Track timeouts and abort controllers for cleanup
-let streamTimeout = null;
-let abortController = null;
+let streamTimeout: ReturnType<typeof setTimeout> | null = null;
+let abortController: AbortController | null = null;
 
 // Backup used to restore the current page if a re-roll is cancelled or fails
-let _rerollBackup = null;
+let _rerollBackup: any = null;
 
 // Keyword-to-tag affinity map used for fallback ref image selection when embeddings are unavailable
 const TAG_KEYWORDS = {
@@ -86,7 +88,7 @@ const TAG_KEYWORDS = {
   ],
 };
 
-async function render(param) {
+async function render(param?: string | null): Promise<string> {
   // Always honour active state — must come BEFORE param checks so that
   // App.refreshPage() during re-roll/generation of a resumed comic does not
   // re-invoke renderResume() and reset isGenerating / step.
@@ -381,7 +383,7 @@ function renderReading() {
   `;
 }
 
-function renderComicPage(page) {
+function renderComicPage(page: any): string {
   if (!page || !page.panels) return '<p class="text-muted">Empty page</p>';
 
   return page.panels
@@ -412,7 +414,7 @@ function renderComicPage(page) {
     .join('');
 }
 
-async function renderResume(comicId) {
+async function renderResume(comicId: string): Promise<string> {
   const comic = await DB.get(DB.STORES.comics, comicId);
   if (!comic) return '<p class="text-muted">Comic not found</p>';
 
@@ -478,12 +480,12 @@ async function renderResume(comicId) {
 
 // --- User Actions ---
 
-function setTitle(value) {
+function setTitle(value: string): void {
   state.title = value;
   scheduleDraftSave();
 }
 
-function setStoryPrompt(value) {
+function setStoryPrompt(value: string): void {
   state.storyPrompt = value;
   scheduleDraftSave();
 }
@@ -551,7 +553,7 @@ async function resetSetup() {
   App.refreshPage();
 }
 
-function selectGenre(id) {
+function selectGenre(id: string): void {
   state.genre = id;
   document.querySelectorAll('.genre-card').forEach((el) => {
     el.classList.toggle('active', el.dataset.genre === id);
@@ -563,12 +565,12 @@ function selectGenre(id) {
   }
 }
 
-function setCustomGenre(value) {
+function setCustomGenre(value: string): void {
   state.customGenre = value;
   scheduleDraftSave();
 }
 
-function toggleCharacter(id) {
+function toggleCharacter(id: string): void {
   const idx = state.selectedCharacters.indexOf(id);
   if (idx >= 0) state.selectedCharacters.splice(idx, 1);
   else state.selectedCharacters.push(id);
@@ -576,25 +578,25 @@ function toggleCharacter(id) {
   App.refreshPage();
 }
 
-function selectWorld(id) {
+function selectWorld(id: string): void {
   state.selectedWorld = id;
   scheduleDraftSave();
   App.refreshPage();
 }
 
-function selectPreset(id) {
+function selectPreset(id: string): void {
   state.selectedPreset = id;
   scheduleDraftSave();
   App.refreshPage();
 }
 
-function selectImagePreset(id) {
+function selectImagePreset(id: string): void {
   state.selectedImagePreset = id;
   scheduleDraftSave();
   App.refreshPage();
 }
 
-function toggleAdvanced(el) {
+function toggleAdvanced(el: any): void {
   el.classList.toggle('collapsed');
   const body = el.nextElementSibling;
   if (body) body.classList.toggle('collapsed');
@@ -731,7 +733,7 @@ async function startGenerating() {
  * Trim conversation history to prevent payload overflow.
  * Keeps system prompt, first user message, and the most recent exchanges.
  */
-function trimConversationHistory(maxExchanges) {
+function trimConversationHistory(maxExchanges: number): void {
   if (state.conversationHistory.length <= 2 + maxExchanges * 2) return;
   const system = state.conversationHistory[0];
   const firstUser = state.conversationHistory[1];
@@ -745,7 +747,7 @@ function trimConversationHistory(maxExchanges) {
  * @param {Object} pageData - page object with panels array
  * @param {HTMLElement|null} uiMsg   - optional element for status message updates
  */
-async function generatePanelImages(pageData, uiMsg) {
+async function generatePanelImages(pageData: any, uiMsg: string): Promise<void> {
   const imageResolution = await DB.getSetting('imageSize', '1024x1024');
   const dynamicSizesEnabled = await DB.getSetting('dynamicImageSizes', false);
   const includeAppearance = await DB.getSetting('includeAppearanceText', true);
@@ -1040,7 +1042,7 @@ async function generatePanelImages(pageData, uiMsg) {
   );
 }
 
-async function generatePage(presetData) {
+async function generatePage(presetData: any): Promise<void> {
   try {
     const contextExchanges = await DB.getSetting('contextExchanges', 6);
     trimConversationHistory(contextExchanges);
@@ -1162,7 +1164,7 @@ async function generatePage(presetData) {
   }
 }
 
-async function makeChoice(idx) {
+async function makeChoice(idx: number): Promise<void> {
   if (state.isGenerating) return;
   const currentPage = state.pages[state.pages.length - 1];
   if (!currentPage || !currentPage.choices || !currentPage.choices[idx]) return;
@@ -1458,7 +1460,7 @@ async function rerollImages() {
  * Uses the panel index to look up from the current page in state (avoids
  * embedding data URLs in onclick attributes).
  */
-function zoomPanel(panelIndex) {
+function zoomPanel(panelIndex: number): void {
   const currentPage = state.pages[state.pages.length - 1];
   const panel = currentPage?.panels?.[panelIndex];
   if (!panel?.imageUrl) return;
@@ -1498,7 +1500,7 @@ function resetState() {
   };
 }
 
-function onUnmount() {
+function onUnmount(): void {
   // Flush any pending debounced draft save when navigating away via SPA router.
   // (does not run on full page reload/close; reload-safe persistence is handled
   // by the debounced saveDraft() calls in every setup setter)
@@ -1516,7 +1518,7 @@ function onUnmount() {
   }
 }
 
-const CreatePage = {
+const CreatePage: PageModule & Record<string, any> = {
   render,
   onUnmount,
   selectGenre,

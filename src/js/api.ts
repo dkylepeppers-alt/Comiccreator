@@ -4,13 +4,125 @@ import DB from './db.js';
  * NanoGPT API Integration
  * Handles chat completions with streaming support via the NanoGPT OpenAI-compatible API.
  */
-const BASE_URL = 'https://nano-gpt.com/api/v1';
+
+// ── Exported interfaces ──────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string | any[];
+}
+
+export interface ImageGenOptions {
+  model?: string;
+  resolution?: string;
+  imageDataUrls?: string[];
+  imageDataUrl?: string;
+  labeledRefs?: LabeledRef[];
+  signal?: AbortSignal;
+  negativePrompt?: string;
+  showExplicitContent?: boolean;
+  stylePrefix?: string;
+}
+
+export interface LabeledRef {
+  dataUrl: string;
+  label?: string;
+  description?: string;
+  type?: string;
+  tag?: string;
+}
+
+export interface RefVariation {
+  tag: string;
+  prompt: string;
+  key?: string;
+  desc?: string;
+}
+
+export interface ChatCompletionOptions {
+  model?: string;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+}
+
+export interface TextModel {
+  id: string;
+  name: string;
+  owned_by: string;
+  context_length?: number | null;
+  pricing?: any;
+  supports_vision?: boolean;
+  supports_tools?: boolean;
+}
+
+export interface ImageModel {
+  id: string;
+  name: string;
+  owned_by: string;
+  pricing?: any;
+  supports_edit?: boolean;
+  sizes?: string[] | null;
+}
+
+export interface ComicPanel {
+  narration: string;
+  imagePrompt: string;
+  imageSize?: string;
+  dialogue: { speaker: string; text: string }[];
+}
+
+export interface ComicPageResult {
+  title: string;
+  panels: ComicPanel[];
+  choices: { text: string; summary: string }[];
+}
+
+export interface ModelParams {
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+}
+
+export interface BuildSystemPromptOptions {
+  imageSizes?: string[];
+  includeAppearanceText?: boolean;
+  imageStylePreset?: string;
+}
+
+export interface CaptionContextHints {
+  type?: 'character' | 'character-in-world' | 'character-interaction' | 'world';
+  name?: string;
+  role?: string;
+  tag?: string;
+  era?: string;
+  appearance?: string;
+  characterNames?: string;
+  worldName?: string;
+}
+
+export interface EmbeddingOptions {
+  model?: string;
+  dimensions?: number;
+  signal?: AbortSignal;
+}
+
+export interface RefVariationOptions {
+  model?: string;
+  resolution?: string;
+  imageDataUrls?: string[];
+}
+
+// ── Constants ────────────────────────────────────────────────────────
+
+const BASE_URL: string = 'https://nano-gpt.com/api/v1';
 // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
-let _modelSizesCache = null;
+let _modelSizesCache: ImageModel[] | null = null;
 
 // Static fallback sizes for well-known models when the live API doesn't return size info.
 // Keys are model IDs (or ID prefixes), values are arrays of supported WxH strings.
-const KNOWN_IMAGE_SIZES = {
+const KNOWN_IMAGE_SIZES: Record<string, string[]> = {
   'gpt-image-1': ['1024x1024', '1536x1024', '1024x1536', 'auto'],
   'gpt-image-1.5': ['1024x1024', '1536x1024', '1024x1536', 'auto'],
   'gpt-image-1-mini': ['1024x1024', 'auto'],
@@ -44,7 +156,7 @@ const KNOWN_IMAGE_SIZES = {
  * Returns null when no size information is available, indicating the caller
  * should allow free-form size entry.
  */
-async function getModelSizes(modelId) {
+async function getModelSizes(modelId: string): Promise<string[] | null> {
   if (!modelId) return null;
 
   try {
@@ -69,15 +181,15 @@ async function getModelSizes(modelId) {
   return null;
 }
 
-async function getApiKey() {
+async function getApiKey(): Promise<string> {
   return DB.getSetting('apiKey', '');
 }
 
-async function getModel() {
+async function getModel(): Promise<string> {
   return DB.getSetting('model', 'gpt-4o-mini');
 }
 
-async function getModelParams() {
+async function getModelParams(): Promise<ModelParams> {
   return {
     temperature: await DB.getSetting('temperature', 0.7),
     topP: await DB.getSetting('topP', 0.9),
@@ -88,7 +200,7 @@ async function getModelParams() {
 /**
  * Non-streaming chat completion
  */
-async function chatCompletion(messages, options = {}) {
+async function chatCompletion(messages: ChatMessage[], options: ChatCompletionOptions = {}): Promise<string> {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
@@ -126,7 +238,11 @@ async function chatCompletion(messages, options = {}) {
  * onChunk receives each text delta as it arrives.
  * Returns the full accumulated text.
  */
-async function chatCompletionStream(messages, onChunk, options = {}) {
+async function chatCompletionStream(
+  messages: ChatMessage[],
+  onChunk: (delta: string, fullText: string) => void,
+  options: ChatCompletionOptions = {},
+): Promise<string> {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
@@ -142,7 +258,7 @@ async function chatCompletionStream(messages, onChunk, options = {}) {
     max_tokens: options.maxTokens ?? params.maxTokens,
   };
 
-  const fetchOpts = {
+  const fetchOpts: any = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -198,7 +314,7 @@ async function chatCompletionStream(messages, onChunk, options = {}) {
  * Compress a base64 data URL to a smaller JPEG to avoid 413 payloads.
  * Resizes so neither dimension exceeds maxDim, re-encodes as JPEG at given quality.
  */
-function compressDataUrl(dataUrl, maxDim = 1024, quality = 0.85) {
+function compressDataUrl(dataUrl: string, maxDim: number = 1024, quality: number = 0.85): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -236,7 +352,10 @@ function compressDataUrl(dataUrl, maxDim = 1024, quality = 0.85) {
  * @param {Object} [options]  - { genre, model, signal }
  * @returns {Promise<string>} - Enriched prompt, or rawPrompt on failure
  */
-async function enrichImagePrompt(rawPrompt, options = {}) {
+async function enrichImagePrompt(
+  rawPrompt: string,
+  options: ChatCompletionOptions & { genre?: string } = {},
+): Promise<string> {
   // Return falsy inputs (null, undefined, '') unchanged — mirrors how other
   // API helpers handle missing input without throwing.
   if (!rawPrompt) return rawPrompt;
@@ -246,7 +365,7 @@ async function enrichImagePrompt(rawPrompt, options = {}) {
   const model = options.model || (await getModel());
   const genre = options.genre ? ` The comic genre is "${options.genre}".` : '';
 
-  const messages = [
+  const messages: ChatMessage[] = [
     {
       role: 'system',
       content:
@@ -278,8 +397,8 @@ async function enrichImagePrompt(rawPrompt, options = {}) {
     const trimmed = typeof enriched === 'string' ? enriched.trim() : '';
     return trimmed || rawPrompt;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined') {
+      (globalThis as any).App.logError(
         'enrichImagePrompt',
         err,
         `Prompt enrichment failed — using original. Prompt: "${rawPrompt.slice(0, 80)}..."`,
@@ -296,7 +415,7 @@ async function enrichImagePrompt(rawPrompt, options = {}) {
  * exact model, size, and prompt that were used so the caller can diagnose
  * the problem without guessing.
  */
-async function generateImage(prompt, options = {}) {
+async function generateImage(prompt: string, options: ImageGenOptions = {}): Promise<string> {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
 
@@ -350,7 +469,7 @@ async function generateImage(prompt, options = {}) {
     finalPrompt = `${legend} ${prompt}`;
   }
 
-  const body = { model: modelId, prompt: finalPrompt, size: resolution, n: 1 };
+  const body: any = { model: modelId, prompt: finalPrompt, size: resolution, n: 1 };
   if (showExplicitContent) body.showExplicitContent = true;
   if (compressedRefs?.length > 0) body.imageDataUrls = compressedRefs;
   // Pass caller-supplied negative prompt to models that support it (ignored by models that don't)
@@ -373,7 +492,7 @@ async function generateImage(prompt, options = {}) {
         `Model: ${modelId}  Size: ${resolution}\n` +
         `API: ${apiMsg}\n` +
         `Prompt: ${prompt}`,
-    );
+    ) as any;
     error.status = res.status;
     error.model = modelId;
     error.resolution = resolution;
@@ -399,7 +518,13 @@ async function generateImage(prompt, options = {}) {
  * @param {boolean} [options.includeAppearanceText] - whether to include character appearance text (default: true)
  * @param {string} [options.imageStylePreset] - image style prompt prefix from the selected image preset (e.g. "watercolor painting, soft edges").
  */
-function buildSystemPrompt(genre, characters, world, customSystemPrompt, options) {
+function buildSystemPrompt(
+  genre: string,
+  characters: any[],
+  world: any,
+  customSystemPrompt: string | null,
+  options?: BuildSystemPromptOptions,
+): string {
   const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
 
   const imageSizes = options?.imageSizes;
@@ -520,7 +645,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
  * removing trailing commas, and appending missing closing brackets/braces.
  * Returns the repaired string (which may still be invalid if truncation was severe).
  */
-function repairTruncatedJson(str) {
+function repairTruncatedJson(str: string): string {
   let s = str.trimEnd();
   const stack = [];
   let inString = false;
@@ -561,7 +686,7 @@ function repairTruncatedJson(str) {
   return s;
 }
 
-function parseComicResponse(text) {
+function parseComicResponse(text: string): ComicPageResult | null {
   // Try to extract JSON from the response
   let jsonStr = text.trim();
 
@@ -578,13 +703,13 @@ function parseComicResponse(text) {
     jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   }
 
-  const buildResult = (parsed) => ({
+  const buildResult = (parsed: any): ComicPageResult => ({
     title: parsed.title || 'Untitled Page',
-    panels: (parsed.panels || []).map((p) => {
-      const panel = {
+    panels: (parsed.panels || []).map((p: any) => {
+      const panel: any = {
         narration: p.narration || '',
         imagePrompt: p.imagePrompt || p.image_prompt || '',
-        dialogue: (p.dialogue || []).map((d) => ({
+        dialogue: (p.dialogue || []).map((d: any) => ({
           speaker: d.speaker || 'Unknown',
           text: d.text || '',
         })),
@@ -592,7 +717,7 @@ function parseComicResponse(text) {
       if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
       return panel;
     }),
-    choices: (parsed.choices || []).map((c) => ({
+    choices: (parsed.choices || []).map((c: any) => ({
       text: c.text || c.description || '',
       summary: c.summary || '',
     })),
@@ -606,8 +731,8 @@ function parseComicResponse(text) {
     try {
       return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
     } catch (_e2) {
-      if (typeof globalThis.App !== 'undefined')
-        globalThis.App.logError('parseComicResponse', _e2, text?.substring(0, 200));
+      if (typeof (globalThis as any).App !== 'undefined')
+        (globalThis as any).App.logError('parseComicResponse', _e2, text?.substring(0, 200));
       return null;
     }
   }
@@ -618,7 +743,7 @@ function parseComicResponse(text) {
  * Endpoint does not require authentication.
  * Returns array of model objects with id, name, owned_by, etc.
  */
-async function fetchTextModels(forceRefresh = false) {
+async function fetchTextModels(forceRefresh: boolean = false): Promise<TextModel[]> {
   const CACHE_KEY = 'cachedTextModels';
   const CACHE_TS_KEY = 'cachedTextModelsAt';
   const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
@@ -634,7 +759,7 @@ async function fetchTextModels(forceRefresh = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const models = (data.data || data || [])
-      .map((m) => ({
+      .map((m: any) => ({
         id: m.id,
         name: m.name || m.id,
         owned_by: m.owned_by || '',
@@ -644,13 +769,13 @@ async function fetchTextModels(forceRefresh = false) {
         supports_vision: m.capabilities?.vision ?? m.supports_vision ?? false,
         supports_tools: m.capabilities?.tool_calling ?? m.supports_tools ?? false,
       }))
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a: TextModel, b: TextModel) => a.id.localeCompare(b.id));
 
     await DB.setSetting(CACHE_KEY, models);
     await DB.setSetting(CACHE_TS_KEY, Date.now());
     return models;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') globalThis.App.logError('fetchTextModels', err);
+    if (typeof (globalThis as any).App !== 'undefined') (globalThis as any).App.logError('fetchTextModels', err);
     // Return cache even if expired, or fallback
     const cached = await DB.getSetting(CACHE_KEY, null);
     if (cached) return cached;
@@ -662,7 +787,7 @@ async function fetchTextModels(forceRefresh = false) {
  * Fetch all available image generation models from NanoGPT.
  * Requires authentication so the API returns detailed info including supported sizes.
  */
-async function fetchImageModels(forceRefresh = false) {
+async function fetchImageModels(forceRefresh: boolean = false): Promise<ImageModel[]> {
   const CACHE_KEY = 'cachedImageModels';
   const CACHE_TS_KEY = 'cachedImageModelsAt';
   const CACHE_TTL = 6 * 60 * 60 * 1000;
@@ -680,7 +805,7 @@ async function fetchImageModels(forceRefresh = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const models = (data.data || data || [])
-      .map((m) => ({
+      .map((m: any) => ({
         id: m.id || m.model,
         name: m.name || m.id || m.model,
         owned_by: m.owned_by || m.provider || '',
@@ -690,14 +815,14 @@ async function fetchImageModels(forceRefresh = false) {
         // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
         sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
       }))
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a: ImageModel, b: ImageModel) => a.id.localeCompare(b.id));
 
     await DB.setSetting(CACHE_KEY, models);
     await DB.setSetting(CACHE_TS_KEY, Date.now());
     _modelSizesCache = models; // Update in-memory cache immediately
     return models;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') globalThis.App.logError('fetchImageModels', err);
+    if (typeof (globalThis as any).App !== 'undefined') (globalThis as any).App.logError('fetchImageModels', err);
     const cached = await DB.getSetting(CACHE_KEY, null);
     if (cached) return cached;
     return FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
@@ -705,7 +830,7 @@ async function fetchImageModels(forceRefresh = false) {
 }
 
 // Models that support the `dimensions` parameter for dimension reduction
-const DIMENSION_REDUCTION_MODELS = new Set([
+const DIMENSION_REDUCTION_MODELS: Set<string> = new Set([
   'text-embedding-3-small',
   'text-embedding-3-large',
   'Qwen/Qwen3-Embedding-0.6B',
@@ -726,7 +851,11 @@ const DIMENSION_REDUCTION_MODELS = new Set([
  * text model.  Returns a trimmed string, or null on failure / missing API key /
  * non-vision model.
  */
-async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
+async function generateImageCaption(
+  dataUrl: string,
+  contextHints: CaptionContextHints = {},
+  options: ChatCompletionOptions = {},
+): Promise<string | null> {
   const apiKey = await getApiKey();
   if (!apiKey) return null;
 
@@ -798,7 +927,7 @@ async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
   // Compress the image before sending to avoid 413 payloads on large camera photos.
   const compressedUrl = await compressDataUrl(dataUrl, 512, 0.75);
 
-  const messages = [
+  const messages: ChatMessage[] = [
     {
       role: 'system',
       content:
@@ -824,8 +953,8 @@ async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
     });
     return caption?.trim() || null;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined') {
+      (globalThis as any).App.logError(
         'generateImageCaption',
         err,
         `Caption generation failed for ${type} "${name || 'unknown'}"`,
@@ -841,12 +970,12 @@ async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
  * Only sends `dimensions` for models that support dimension reduction.
  * Returns a plain number array, or null if the call fails.
  */
-async function generateEmbedding(text, options = {}) {
+async function generateEmbedding(text: string, options: EmbeddingOptions = {}): Promise<number[] | null> {
   const apiKey = await getApiKey();
   if (!apiKey) return null;
 
   const model = options.model || (await DB.getSetting('embeddingModel', 'text-embedding-3-small'));
-  const body = {
+  const body: any = {
     input: text,
     model,
     encoding_format: 'float',
@@ -866,8 +995,8 @@ async function generateEmbedding(text, options = {}) {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      if (typeof globalThis.App !== 'undefined')
-        globalThis.App.logError(
+      if (typeof (globalThis as any).App !== 'undefined')
+        (globalThis as any).App.logError(
           'generateEmbedding',
           new Error(`HTTP ${res.status}`),
           `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`,
@@ -877,8 +1006,8 @@ async function generateEmbedding(text, options = {}) {
     const data = await res.json();
     return data?.data?.[0]?.embedding || null;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined')
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined')
+      (globalThis as any).App.logError(
         'generateEmbedding',
         err,
         `Embedding API call failed for text: "${text.slice(0, 80)}..."`,
@@ -888,7 +1017,7 @@ async function generateEmbedding(text, options = {}) {
 }
 
 // Fallback lists used only when API is unreachable and no cache exists
-const FALLBACK_TEXT_MODELS = [
+const FALLBACK_TEXT_MODELS: string[] = [
   'openai/gpt-5-mini',
   'openai/gpt-5-nano',
   'openai/gpt-5',
@@ -909,7 +1038,7 @@ const FALLBACK_TEXT_MODELS = [
   'command-r-plus',
 ];
 
-const FALLBACK_IMAGE_MODELS = [
+const FALLBACK_IMAGE_MODELS: string[] = [
   'gpt-image-1',
   'gpt-image-1.5',
   'gpt-image-1-mini',
@@ -931,7 +1060,7 @@ const FALLBACK_IMAGE_MODELS = [
  * appearance from the visual reference, not from text.
  * World templates use {name} and {description} placeholders.
  */
-const CHARACTER_REF_VARIATIONS = [
+const CHARACTER_REF_VARIATIONS: RefVariation[] = [
   {
     key: 'front-view-main',
     tag: 'front-view',
@@ -1004,7 +1133,7 @@ const CHARACTER_REF_VARIATIONS = [
   },
 ];
 
-const WORLD_REF_VARIATIONS = [
+const WORLD_REF_VARIATIONS: RefVariation[] = [
   {
     tag: 'establishing',
     prompt:
@@ -1083,7 +1212,7 @@ const WORLD_REF_VARIATIONS = [
  * Variation prompts for generating images of a character interacting within a world.
  * Uses {charName}, {charAppearanceNote}, {worldName}, {worldDescription} placeholders.
  */
-const CHARACTER_WORLD_VARIATIONS = [
+const CHARACTER_WORLD_VARIATIONS: RefVariation[] = [
   {
     key: 'in-world-establishing',
     tag: 'character-in-world',
@@ -1121,12 +1250,16 @@ const CHARACTER_WORLD_VARIATIONS = [
  * @param {Object} [options] - Optional overrides (model, resolution)
  * @returns {Promise<string|null>} - The generated image as a data URL, or null on failure
  */
-async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
+async function generateRefVariation(
+  sourceDataUrl: string,
+  prompt: string,
+  options: RefVariationOptions = {},
+): Promise<string | null> {
   try {
     // Use the user's configured image size rather than a hardcoded default
     const resolution = options.resolution || (await DB.getSetting('imageSize', '1024x1024'));
     // Support multiple reference images via options.imageDataUrls (array) or single sourceDataUrl
-    const imageGenOpts = { resolution, model: options.model };
+    const imageGenOpts: ImageGenOptions = { resolution, model: options.model };
     if (options.imageDataUrls && options.imageDataUrls.length > 0) {
       imageGenOpts.imageDataUrls = options.imageDataUrls;
     } else if (sourceDataUrl) {
@@ -1141,7 +1274,7 @@ async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
         const blob = await resp.blob();
         return await new Promise((resolve) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
+          reader.onload = () => resolve(reader.result as string);
           reader.onerror = () => resolve(null);
           reader.readAsDataURL(blob);
         });
@@ -1152,8 +1285,12 @@ async function generateRefVariation(sourceDataUrl, prompt, options = {}) {
     if (result.startsWith('data:')) return result;
     return `data:image/png;base64,${result}`;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError('generateRefVariation', err, `Failed to generate variation: ${prompt.slice(0, 80)}`);
+    if (typeof (globalThis as any).App !== 'undefined') {
+      (globalThis as any).App.logError(
+        'generateRefVariation',
+        err,
+        `Failed to generate variation: ${prompt.slice(0, 80)}`,
+      );
     }
     return null;
   }

@@ -1,13 +1,15 @@
+// @ts-nocheck
+import type { PageModule } from '../utils.js';
 import { escHtml, dedupeByNameLatest } from '../utils.js';
 import DB from '../db.js';
 
 /**
  * Prompt Presets Page
  */
-let currentView = 'list';
-let editingId = null;
+let currentView: string = 'list';
+let editingId: string | null = null;
 
-async function render(param) {
+async function render(param?: string | null): Promise<string> {
   if (param === 'new') {
     currentView = 'edit';
     editingId = null;
@@ -175,7 +177,7 @@ function newPreset() {
   App.navigate('presets', 'new');
 }
 
-async function editPreset(id) {
+async function editPreset(id: string): Promise<void> {
   App.navigate('presets', id);
 }
 
@@ -206,7 +208,7 @@ async function savePreset() {
   backToList();
 }
 
-async function deletePreset(id, name) {
+async function deletePreset(id: string, name: string): Promise<void> {
   App.showModal(`
     <div class="modal-title">Delete Preset</div>
     <p>Delete preset <strong>${escHtml(name)}</strong>?</p>
@@ -217,17 +219,26 @@ async function deletePreset(id, name) {
   `);
 }
 
-async function confirmDelete(id) {
+async function confirmDelete(id: string): Promise<void> {
   await DB.del(DB.STORES.presets, id);
   App.hideModal();
   App.toast('Preset deleted', 'info');
   App.refreshPage();
 }
 
-function onUnmount() {
+function onUnmount(): void {
   currentView = 'list';
   editingId = null;
 }
 
-const PresetsPage = { render, onUnmount, newPreset, editPreset, backToList, savePreset, deletePreset, confirmDelete };
+const PresetsPage: PageModule & Record<string, any> = {
+  render,
+  onUnmount,
+  newPreset,
+  editPreset,
+  backToList,
+  savePreset,
+  deletePreset,
+  confirmDelete,
+};
 export default PresetsPage;

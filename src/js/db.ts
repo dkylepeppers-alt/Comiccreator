@@ -2,9 +2,83 @@
  * IndexedDB Storage Layer
  * Handles all local persistence for characters, worlds, comics, presets, and settings.
  */
+import type { ImageRef } from './utils.js';
+
+export interface Character {
+  id: string;
+  name: string;
+  genre?: string;
+  role?: string;
+  description?: string;
+  appearance?: string;
+  powers?: string;
+  imageData?: string;
+  images: ImageRef[];
+  primaryImageIndex: number;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface World {
+  id: string;
+  name: string;
+  description?: string;
+  details?: string;
+  atmosphere?: string;
+  era?: string;
+  images: ImageRef[];
+  primaryImageIndex: number;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface Comic {
+  id: string;
+  title?: string;
+  genre?: string;
+  characterIds?: string[];
+  worldId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ComicPage {
+  id: string;
+  comicId: string;
+  pageNum?: number;
+  data?: any;
+  createdAt?: number;
+}
+
+export interface Preset {
+  id: string;
+  name: string;
+  description?: string;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  systemPrompt?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ImagePreset {
+  id: string;
+  name: string;
+  description?: string;
+  promptPrefix: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface Setting {
+  key: string;
+  value: any;
+}
+
 const DB_NAME = 'ComicCreatorDB';
 const DB_VERSION = 3;
-let db = null;
+let db: IDBDatabase | null = null;
 
 const STORES = {
   characters: 'characters',
@@ -14,14 +88,14 @@ const STORES = {
   presets: 'presets',
   imagePresets: 'imagePresets',
   settings: 'settings',
-};
+} as const;
 
-function open() {
+function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (db) return resolve(db);
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const d = e.target.result;
+    req.onupgradeneeded = (e: IDBVersionChangeEvent) => {
+      const d = (e.target as IDBOpenDBRequest).result;
       if (!d.objectStoreNames.contains(STORES.characters)) {
         d.createObjectStore(STORES.characters, { keyPath: 'id' });
       }
@@ -46,55 +120,55 @@ function open() {
         d.createObjectStore(STORES.settings, { keyPath: 'key' });
       }
     };
-    req.onsuccess = (e) => {
-      db = e.target.result;
-      resolve(db);
+    req.onsuccess = (e: Event) => {
+      db = (e.target as IDBOpenDBRequest).result;
+      resolve(db!);
     };
-    req.onerror = (e) => reject(e.target.error);
+    req.onerror = (e: Event) => reject((e.target as IDBOpenDBRequest).error);
   });
 }
 
-function tx(storeName, mode = 'readonly') {
-  return db.transaction(storeName, mode).objectStore(storeName);
+function tx(storeName: string, mode: IDBTransactionMode = 'readonly'): IDBObjectStore {
+  return db!.transaction(storeName, mode).objectStore(storeName);
 }
 
-function promisify(req) {
+function promisify<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function getAll(storeName) {
+async function getAll(storeName: string): Promise<any[]> {
   await open();
   return promisify(tx(storeName).getAll());
 }
 
-async function get(storeName, id) {
+async function get(storeName: string, id: string | null | undefined): Promise<any> {
   if (id == null || id === '') return undefined;
   await open();
   return promisify(tx(storeName).get(id));
 }
 
-async function put(storeName, data) {
+async function put(storeName: string, data: any): Promise<IDBValidKey> {
   await open();
   return promisify(tx(storeName, 'readwrite').put(data));
 }
 
-async function del(storeName, id) {
+async function del(storeName: string, id: string | null | undefined): Promise<void> {
   if (id == null || id === '') return;
   await open();
-  return promisify(tx(storeName, 'readwrite').delete(id));
+  await promisify(tx(storeName, 'readwrite').delete(id));
 }
 
-async function getByIndex(storeName, indexName, value) {
+async function getByIndex(storeName: string, indexName: string, value: any): Promise<any[]> {
   await open();
   const store = tx(storeName);
   const index = store.index(indexName);
   return promisify(index.getAll(value));
 }
 
-function uuid() {
+function uuid(): string {
   return crypto.randomUUID
     ? crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -104,20 +178,20 @@ function uuid() {
 }
 
 // Settings helpers
-async function getSetting(key, defaultValue = null) {
-  const row = await get(STORES.settings, key);
+async function getSetting<T>(key: string, defaultValue: T | null = null): Promise<T | null> {
+  const row = (await get(STORES.settings, key)) as Setting | undefined;
   return row ? row.value : defaultValue;
 }
 
-async function setSetting(key, value) {
+async function setSetting(key: string, value: any): Promise<IDBValidKey> {
   return put(STORES.settings, { key, value });
 }
 
 // Image helpers: store as data URLs
-function fileToDataURL(file) {
+function fileToDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
@@ -129,7 +203,7 @@ function fileToDataURL(file) {
  * Does NOT persist the change — callers should call DB.put() if they wish
  * to store the migration result.
  */
-function migrateCharacter(char) {
+function migrateCharacter(char: any): any {
   if (!char) return char;
   if (Array.isArray(char.images) && char.images.length > 0) return char;
   const images = char.imageData ? [{ dataUrl: char.imageData, tag: 'default', description: '', embedding: null }] : [];
@@ -143,11 +217,11 @@ function migrateCharacter(char) {
  * Does NOT persist the change — callers should call DB.put() if they wish
  * to store the migration result.
  */
-function migrateWorld(world) {
+function migrateWorld(world: any): any {
   if (!world) return world;
   const images = (world.images || [])
-    .filter((img) => img)
-    .map((img) =>
+    .filter((img: any) => img)
+    .map((img: any) =>
       typeof img === 'string'
         ? { dataUrl: img, tag: 'establishing', description: '', embedding: null }
         : Object.assign({ embedding: null }, img),
@@ -157,7 +231,7 @@ function migrateWorld(world) {
 
 // Seed default presets on first run (idempotent — stable IDs prevent duplicates)
 // Low, stable timestamps ensure seed presets sort to the bottom of the list (below user-created presets)
-const SEED_PRESETS = [
+const SEED_PRESETS: Preset[] = [
   {
     id: 'seed-preset-balanced',
     name: 'Balanced',
@@ -194,7 +268,7 @@ const SEED_PRESETS = [
 ];
 
 // Seed default image style presets on first run (idempotent — stable IDs prevent duplicates)
-const SEED_IMAGE_PRESETS = [
+const SEED_IMAGE_PRESETS: ImagePreset[] = [
   {
     id: 'seed-imgpreset-comic',
     name: 'Comic Book Ink',
@@ -232,7 +306,7 @@ const SEED_IMAGE_PRESETS = [
   },
 ];
 
-async function seedDefaults() {
+async function seedDefaults(): Promise<void> {
   for (const p of SEED_PRESETS) {
     const existing = await get(STORES.presets, p.id);
     if (!existing) await put(STORES.presets, p);
@@ -243,11 +317,11 @@ async function seedDefaults() {
   }
 }
 
-async function dedupePresets() {
-  const all = await getAll(STORES.presets);
+async function dedupePresets(): Promise<any[]> {
+  const all: any[] = await getAll(STORES.presets);
   const sorted = [...all].sort((a, b) => (b?.updatedAt ?? b?.createdAt ?? 0) - (a?.updatedAt ?? a?.createdAt ?? 0));
-  const seen = new Set();
-  const unique = [];
+  const seen = new Set<string>();
+  const unique: any[] = [];
   for (const item of sorted) {
     const key = (item?.name || '').trim().toLowerCase() || item?.id || '';
     if (seen.has(key)) continue;

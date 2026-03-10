@@ -1,9 +1,7 @@
 /**
  * Tests for pure functions that can run in Node.js without a browser.
- * Run with: node --test test/
  */
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 // --- Load pure functions by extracting them from source files ---
@@ -103,73 +101,73 @@ function parseComicResponse(text) {
 
 describe('escHtml', () => {
   it('should return empty string for null/undefined', () => {
-    assert.equal(escHtml(null), '');
-    assert.equal(escHtml(undefined), '');
+    expect(escHtml(null)).toBe('');
+    expect(escHtml(undefined)).toBe('');
   });
 
   it('should return empty string for empty string', () => {
-    assert.equal(escHtml(''), '');
+    expect(escHtml('')).toBe('');
   });
 
   it('should escape HTML special characters', () => {
-    assert.equal(escHtml('<script>alert("xss")</script>'), '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+    expect(escHtml('<script>alert("xss")</script>')).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
   });
 
   it('should escape ampersands', () => {
-    assert.equal(escHtml('foo & bar'), 'foo &amp; bar');
+    expect(escHtml('foo & bar')).toBe('foo &amp; bar');
   });
 
   it('should escape single quotes', () => {
-    assert.equal(escHtml("it's"), 'it&#039;s');
+    expect(escHtml("it's")).toBe('it&#039;s');
   });
 
   it('should handle numbers by converting to string', () => {
-    assert.equal(escHtml(42), '42');
-    assert.equal(escHtml(0), '0');
+    expect(escHtml(42)).toBe('42');
+    expect(escHtml(0)).toBe('0');
   });
 
   it('should pass through safe strings unchanged', () => {
-    assert.equal(escHtml('Hello World'), 'Hello World');
+    expect(escHtml('Hello World')).toBe('Hello World');
   });
 
   it('should handle strings with all special chars', () => {
-    assert.equal(escHtml('<>&"\''), '&lt;&gt;&amp;&quot;&#039;');
+    expect(escHtml('<>&"\'')).toBe('&lt;&gt;&amp;&quot;&#039;');
   });
 });
 
 describe('timeAgo', () => {
   it('should return empty string for falsy input', () => {
-    assert.equal(timeAgo(0), '');
-    assert.equal(timeAgo(null), '');
-    assert.equal(timeAgo(undefined), '');
+    expect(timeAgo(0)).toBe('');
+    expect(timeAgo(null)).toBe('');
+    expect(timeAgo(undefined)).toBe('');
   });
 
   it('should return "just now" for recent timestamps', () => {
-    assert.equal(timeAgo(Date.now()), 'just now');
-    assert.equal(timeAgo(Date.now() - 30000), 'just now'); // 30 seconds ago
+    expect(timeAgo(Date.now())).toBe('just now');
+    expect(timeAgo(Date.now() - 30000)).toBe('just now'); // 30 seconds ago
   });
 
   it('should return minutes for timestamps under 1 hour', () => {
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;
-    assert.equal(timeAgo(fiveMinAgo), '5m ago');
+    expect(timeAgo(fiveMinAgo)).toBe('5m ago');
   });
 
   it('should return hours for timestamps under 1 day', () => {
     const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
-    assert.equal(timeAgo(threeHoursAgo), '3h ago');
+    expect(timeAgo(threeHoursAgo)).toBe('3h ago');
   });
 
   it('should return days for timestamps under 30 days', () => {
     const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
-    assert.equal(timeAgo(fiveDaysAgo), '5d ago');
+    expect(timeAgo(fiveDaysAgo)).toBe('5d ago');
   });
 
   it('should return formatted date for timestamps over 30 days', () => {
     const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
     const result = timeAgo(sixtyDaysAgo);
     // Should be a locale date string (not relative)
-    assert.ok(!result.includes('ago'), `Expected date string, got: ${result}`);
-    assert.ok(result.length > 0);
+    expect(!result.includes('ago')).toBeTruthy();
+    expect(result.length > 0).toBeTruthy();
   });
 });
 
@@ -188,40 +186,40 @@ describe('parseComicResponse', () => {
     });
 
     const result = parseComicResponse(input);
-    assert.ok(result);
-    assert.equal(result.title, 'Test Page');
-    assert.equal(result.panels.length, 1);
-    assert.equal(result.panels[0].narration, 'A dark night...');
-    assert.equal(result.panels[0].dialogue[0].speaker, 'Hero');
-    assert.equal(result.choices.length, 1);
-    assert.equal(result.choices[0].text, 'Go left');
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Test Page');
+    expect(result.panels.length).toBe(1);
+    expect(result.panels[0].narration).toBe('A dark night...');
+    expect(result.panels[0].dialogue[0].speaker).toBe('Hero');
+    expect(result.choices.length).toBe(1);
+    expect(result.choices[0].text).toBe('Go left');
   });
 
   it('should handle JSON wrapped in markdown code fences', () => {
     const input = '```json\n{"title":"Fenced","panels":[],"choices":[]}\n```';
     const result = parseComicResponse(input);
-    assert.ok(result);
-    assert.equal(result.title, 'Fenced');
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Fenced');
   });
 
   it('should handle JSON with surrounding text', () => {
     const input = 'Here is the comic page:\n{"title":"Embedded","panels":[],"choices":[]}\nDone!';
     const result = parseComicResponse(input);
-    assert.ok(result);
-    assert.equal(result.title, 'Embedded');
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Embedded');
   });
 
   it('should return null for completely invalid input', () => {
-    assert.equal(parseComicResponse('not json at all'), null);
+    expect(parseComicResponse('not json at all')).toBe(null);
   });
 
   it('should provide defaults for missing fields', () => {
     const input = JSON.stringify({});
     const result = parseComicResponse(input);
-    assert.ok(result);
-    assert.equal(result.title, 'Untitled Page');
-    assert.deepEqual(result.panels, []);
-    assert.deepEqual(result.choices, []);
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Untitled Page');
+    expect(result.panels).toEqual([]);
+    expect(result.choices).toEqual([]);
   });
 
   it('should handle alternative field names (image_prompt)', () => {
@@ -231,9 +229,9 @@ describe('parseComicResponse', () => {
       choices: [{ description: 'Alternative text' }],
     });
     const result = parseComicResponse(input);
-    assert.ok(result);
-    assert.equal(result.panels[0].imagePrompt, 'A sunset scene');
-    assert.equal(result.choices[0].text, 'Alternative text');
+    expect(result).toBeTruthy();
+    expect(result.panels[0].imagePrompt).toBe('A sunset scene');
+    expect(result.choices[0].text).toBe('Alternative text');
   });
 
   it('should handle missing dialogue array', () => {
@@ -241,8 +239,8 @@ describe('parseComicResponse', () => {
       panels: [{ narration: 'No dialogue here' }],
     });
     const result = parseComicResponse(input);
-    assert.ok(result);
-    assert.deepEqual(result.panels[0].dialogue, []);
+    expect(result).toBeTruthy();
+    expect(result.panels[0].dialogue).toEqual([]);
   });
 
   it('should recover from truncation after a complete panel object (trailing comma)', () => {
@@ -250,10 +248,10 @@ describe('parseComicResponse', () => {
     const truncated =
       '{"title":"Page 1","panels":[{"narration":"Scene one.","imagePrompt":"A city","dialogue":[]},';
     const result = parseComicResponse(truncated);
-    assert.ok(result, 'should recover truncated JSON');
-    assert.equal(result.title, 'Page 1');
-    assert.equal(result.panels.length, 1);
-    assert.equal(result.panels[0].narration, 'Scene one.');
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Page 1');
+    expect(result.panels.length).toBe(1);
+    expect(result.panels[0].narration).toBe('Scene one.');
   });
 
   it('should recover from truncation mid-string inside a panel', () => {
@@ -261,18 +259,18 @@ describe('parseComicResponse', () => {
     const truncated =
       '{"title":"Anthony gets Fester","panels":[{"narration":"As Fester waddles off to the bathroom';
     const result = parseComicResponse(truncated);
-    assert.ok(result, 'should recover truncated JSON mid-string');
-    assert.equal(result.title, 'Anthony gets Fester');
-    assert.equal(result.panels.length, 1);
-    assert.ok(result.panels[0].narration.startsWith('As Fester waddles off'));
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Anthony gets Fester');
+    expect(result.panels.length).toBe(1);
+    expect(result.panels[0].narration.startsWith('As Fester waddles off')).toBeTruthy();
   });
 
   it('should recover from truncation with missing outer closing brace', () => {
     // Outer object is never closed
     const truncated = '{"title":"Test","panels":[],"choices":[]';
     const result = parseComicResponse(truncated);
-    assert.ok(result, 'should recover missing outer brace');
-    assert.equal(result.title, 'Test');
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Test');
   });
 
   it('should handle truncation ending on a dangling backslash inside a string', () => {
@@ -280,8 +278,8 @@ describe('parseComicResponse', () => {
     // backslash must be dropped so the closing quote is not accidentally escaped.
     const truncated = '{"title":"Anthony\\';
     const result = parseComicResponse(truncated);
-    assert.ok(result, 'should recover dangling-backslash truncation');
-    assert.equal(result.title, 'Anthony');
+    expect(result).toBeTruthy();
+    expect(result.title).toBe('Anthony');
   });
 });
 
@@ -333,11 +331,11 @@ describe('exportData page preparation', () => {
       },
     ];
     const result = prepareExportPages(pages);
-    assert.equal(result.length, 2);
-    assert.equal(result[0].data.panels[0].imageUrl, undefined);
-    assert.equal(result[0].data.panels[1].imageUrl, undefined);
-    assert.equal(result[1].data.panels[0].imageUrl, undefined);
-    assert.equal(result[1].data.panels[1].imageUrl, undefined);
+    expect(result.length).toBe(2);
+    expect(result[0].data.panels[0].imageUrl).toBe(undefined);
+    expect(result[0].data.panels[1].imageUrl).toBe(undefined);
+    expect(result[1].data.panels[0].imageUrl).toBe(undefined);
+    expect(result[1].data.panels[1].imageUrl).toBe(undefined);
   });
 
   it('should retain all other page fields', () => {
@@ -357,13 +355,13 @@ describe('exportData page preparation', () => {
       },
     ];
     const result = prepareExportPages(pages);
-    assert.equal(result[0].id, '1');
-    assert.equal(result[0].comicId, 'c1');
-    assert.equal(result[0].pageNum, 1);
-    assert.equal(result[0].title, 'Page 1');
-    assert.equal(result[0].createdAt, '2024-01-01T12:00:00.000Z');
-    assert.equal(result[0].data.extraMeta, 'meta');
-    assert.deepEqual(result[0].data.panels, [{ narration: 'Test narration' }]);
+    expect(result[0].id).toBe('1');
+    expect(result[0].comicId).toBe('c1');
+    expect(result[0].pageNum).toBe(1);
+    expect(result[0].title).toBe('Page 1');
+    expect(result[0].createdAt).toBe('2024-01-01T12:00:00.000Z');
+    expect(result[0].data.extraMeta).toBe('meta');
+    expect(result[0].data.panels).toEqual([{ narration: 'Test narration' }]);
   });
 
   it('should not modify pages when panels have no imageUrl', () => {
@@ -380,7 +378,7 @@ describe('exportData page preparation', () => {
       },
     ];
     const result = prepareExportPages(pages);
-    assert.deepEqual(result[0], pages[0]);
+    expect(result[0]).toEqual(pages[0]);
   });
 
   it('should not mutate the original page objects', () => {
@@ -397,23 +395,19 @@ describe('exportData page preparation', () => {
     };
     const pages = [original];
     const result = prepareExportPages(pages);
-    assert.equal(original.data.panels[0].imageUrl, 'data:image/png;base64,big');
-    assert.equal(result[0].data.panels[0].imageUrl, undefined);
+    expect(original.data.panels[0].imageUrl).toBe('data:image/png;base64,big');
+    expect(result[0].data.panels[0].imageUrl).toBe(undefined);
   });
 
-  it('should not use pretty-printed JSON in settings.js exportData', () => {
-    const settingsPath = new URL('../src/js/pages/settings.js', import.meta.url);
+  it('should not use pretty-printed JSON in settings.ts exportData', () => {
+    const settingsPath = new URL('../src/js/pages/settings.ts', import.meta.url);
     const settingsCode = readFileSync(settingsPath, 'utf-8');
     const stringifyCalls = settingsCode.match(/JSON\.stringify\([^)]*\)/g) || [];
-    assert.ok(stringifyCalls.length > 0, 'settings.js must contain at least one JSON.stringify call');
+    expect(stringifyCalls.length > 0).toBeTruthy();
     const prettyPrintedCalls = stringifyCalls.filter(call =>
       /JSON\.stringify\([^)]*,\s*null\s*,\s*\d+\s*\)/.test(call),
     );
-    assert.equal(
-      prettyPrintedCalls.length,
-      0,
-      'settings.js must not call JSON.stringify with an indentation argument',
-    );
+    expect(prettyPrintedCalls.length).toBe(0);
   });
 });
 
@@ -421,8 +415,8 @@ describe('version.json', () => {
   it('should have valid version format', () => {
     const versionPath = new URL('../public/version.json', import.meta.url);
     const data = JSON.parse(readFileSync(versionPath, 'utf-8'));
-    assert.ok(data.version, 'version field must exist');
-    assert.match(data.version, /^\d+\.\d+\.\d+$/, 'version must be semver');
-    assert.ok(data.updated, 'updated field must exist');
+    expect(data.version).toBeTruthy();
+    expect(data.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(data.updated).toBeTruthy();
   });
 });

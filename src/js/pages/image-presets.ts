@@ -1,3 +1,5 @@
+// @ts-nocheck
+import type { PageModule } from '../utils.js';
 import { escHtml, dedupeByNameLatest } from '../utils.js';
 import DB from '../db.js';
 
@@ -5,10 +7,10 @@ import DB from '../db.js';
  * Image Style Presets Page
  * Manage reusable image style prompt prefixes for comic generation.
  */
-let currentView = 'list';
-let editingId = null;
+let currentView: string = 'list';
+let editingId: string | null = null;
 
-async function render(param) {
+async function render(param?: string | null): Promise<string> {
   if (param === 'new') {
     currentView = 'edit';
     editingId = null;
@@ -109,7 +111,7 @@ function newPreset() {
   App.navigate('image-presets', 'new');
 }
 
-async function editPreset(id) {
+async function editPreset(id: string): Promise<void> {
   App.navigate('image-presets', id);
 }
 
@@ -138,7 +140,7 @@ async function savePreset() {
   backToList();
 }
 
-async function deletePreset(id) {
+async function deletePreset(id: string): Promise<void> {
   const preset = await DB.get(DB.STORES.imagePresets, id);
   const name = preset?.name || 'this preset';
   App.showModal(`
@@ -151,19 +153,19 @@ async function deletePreset(id) {
   `);
 }
 
-async function confirmDelete(id) {
+async function confirmDelete(id: string): Promise<void> {
   await DB.del(DB.STORES.imagePresets, id);
   App.hideModal();
   App.toast('Image preset deleted', 'info');
   App.refreshPage();
 }
 
-function onUnmount() {
+function onUnmount(): void {
   currentView = 'list';
   editingId = null;
 }
 
-const ImagePresetsPage = {
+const ImagePresetsPage: PageModule & Record<string, any> = {
   render,
   onUnmount,
   newPreset,

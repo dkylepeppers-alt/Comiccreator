@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-A fully installable Progressive Web App (PWA) for generating AI-powered comic books. It is a **Vite-powered PWA using vanilla JavaScript ES modules**. Vite handles bundling, dev server (with HMR), and service worker generation via `vite-plugin-pwa` (Workbox). A NanoGPT API key is required for AI generation features.
+A fully installable Progressive Web App (PWA) for generating AI-powered comic books. It is a **Vite-powered PWA using TypeScript ES modules**. Vite handles bundling, dev server (with HMR), TypeScript transpilation, and service worker generation via `vite-plugin-pwa` (Workbox). A NanoGPT API key is required for AI generation features.
 
 ---
 
@@ -11,6 +11,8 @@ A fully installable Progressive Web App (PWA) for generating AI-powered comic bo
 ```
 index.html              Main app shell (SPA, single module entry point)
 vite.config.js          Vite configuration (PWA plugin, __APP_VERSION__ define)
+vitest.config.ts        Vitest test configuration (extends vite.config.js)
+tsconfig.json           TypeScript configuration (strict: false, allowJs: true)
 public/
   manifest.json         PWA manifest (served as-is by Vite)
   version.json          Single source of truth for app version
@@ -19,20 +21,20 @@ public/
 src/
   css/app.css           All styles (dark theme, mobile-first, no preprocessor)
   js/
-    utils.js            Shared helpers (named exports: escHtml, timeAgo, getGenreEmoji,
-                        dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt, GENRES)
-    db.js               IndexedDB layer (default export: DB)
-    api.js              NanoGPT API client (default export: API)
-    app.js              SPA router + entry point (imports all modules, sets window globals)
+    global.d.ts         Global type declarations (App, __APP_VERSION__, Window extensions)
+    utils.ts            Shared helpers + interfaces (Genre, Timestamped, ImageRef, PageModule)
+    db.ts               IndexedDB layer + interfaces (Character, World, Comic, Preset, etc.)
+    api.ts              NanoGPT API client + interfaces (ChatMessage, ImageGenOptions, etc.)
+    app.ts              SPA router + entry point (imports all modules, sets window globals)
     pages/
-      home.js           Dashboard
-      characters.js     Character CRUD + multi-image upload (up to 20 images per character)
-      worlds.js         World CRUD + multi-image upload (up to 20 images per world)
-      create.js         Comic generation engine
-      library.js        Comic viewer + PDF export
-      presets.js         Prompt preset editor
-      image-presets.js   Image style preset editor (reusable art-style prompt prefixes)
-      settings.js        API config, model params, data management (APP_VERSION injected by Vite define)
+      home.ts           Dashboard
+      characters.ts     Character CRUD + multi-image upload (up to 20 images per character)
+      worlds.ts         World CRUD + multi-image upload (up to 20 images per world)
+      create.ts         Comic generation engine
+      library.ts        Comic viewer + PDF export
+      presets.ts         Prompt preset editor
+      image-presets.ts   Image style preset editor (reusable art-style prompt prefixes)
+      settings.ts        API config, model params, data management (APP_VERSION injected by Vite define)
 test/
   config-integrity.test.js   Version sync across source files
   db.test.js                 IndexedDB layer tests (uses fake-indexeddb)
@@ -66,24 +68,24 @@ dist/                    Vite production build output (not committed)
 `index.html` has a single module entry point:
 
 ```html
-<script type="module" src="/src/js/app.js"></script>
+<script type="module" src="/src/js/app.ts"></script>
 ```
 
-`app.js` imports all modules and exposes them on `window` for HTML `onclick` handlers:
+`app.ts` imports all modules and exposes them on `window` for HTML `onclick` handlers:
 
-```js
+```ts
 import { escHtml, GENRES, ... } from './utils.js';
 import DB from './db.js';
-import { HomePage } from './pages/home.js';
+import HomePage from './pages/home.js';
 // ... all other pages
 window.App = App;
 window.HomePage = HomePage;
 // etc.
 ```
 
-**Dependency graph:** `utils.js` → `db.js` → `api.js` → pages → `app.js`. Vite resolves the import graph automatically — no manual script load order is needed.
+**Dependency graph:** `utils.ts` → `db.ts` → `api.ts` → pages → `app.ts`. Vite resolves the import graph automatically — no manual script load order is needed. Import paths use `.js` extensions (TypeScript with `moduleResolution: "bundler"` resolves `.js` to `.ts`).
 
-All source modules use standard ES `import`/`export`. The `package.json` has `"type": "module"` so Node.js tests also use ESM.
+All source modules use standard ES `import`/`export` with TypeScript type annotations. The `package.json` has `"type": "module"` so tests also use ESM.
 
 ---
 
@@ -97,7 +99,7 @@ The app version appears in **three source files** and CI tests enforce that they
 | `package.json` | `"version": "X.Y.Z"` |
 | `index.html` | sidebar footer: `vX.Y.Z &middot; PWA` |
 
-`settings.js` gets `APP_VERSION` via Vite's `define` plugin at build time — `vite.config.js` reads `public/version.json` and injects `__APP_VERSION__` as a global constant. In dev mode it falls back to `'dev'`.
+`settings.ts` gets `APP_VERSION` via Vite's `define` plugin at build time — `vite.config.js` reads `public/version.json` and injects `__APP_VERSION__` as a global constant. In dev mode it falls back to `'dev'`.
 
 The service worker version is managed automatically by Workbox (`vite-plugin-pwa`) — no manual `CACHE_NAME` update is needed.
 
@@ -128,13 +130,22 @@ npm run build
 # Preview production build on port 8080
 npm run serve
 
-# Run all tests (Node.js built-in test runner, ESM)
+# Run all tests (Vitest)
 npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run coverage
 
 # Run Playwright E2E tests (requires build first)
 npm run test:e2e
 
-# Lint JS (ESLint, scoped to src/js/)
+# Type check (TypeScript, no emit)
+npm run typecheck
+
+# Lint TS/JS (ESLint with @typescript-eslint, scoped to src/js/)
 npm run lint
 npm run lint:fix
 
@@ -146,7 +157,7 @@ npm run format:check
 npm run update-docs
 ```
 
-Tests live in `test/*.test.js` and use the Node.js built-in `node:test` / `node:assert` modules with ESM imports. `fake-indexeddb` is used to mock IndexedDB in tests (imported via `import 'fake-indexeddb/auto'`). Always run `npm install` first in a fresh environment.
+Tests live in `test/*.test.js` and use Vitest (`describe`/`it`/`expect` API). `fake-indexeddb` is used to mock IndexedDB in tests (imported via `import 'fake-indexeddb/auto'`). Always run `npm install` first in a fresh environment.
 
 ---
 
@@ -160,10 +171,11 @@ Two **composite actions** eliminate duplicated setup steps across workflows:
 
 1. `npm ci` — install dependencies (via `setup-node-env` composite action)
 2. `npm run build` — Vite production build (also serves as a syntax/import check)
-3. `npm run lint` — ESLint checks
-4. `npm run format:check` — Prettier formatting enforcement
-5. `npm run coverage:ci` — all unit/integration tests with `c8` coverage reporting
-6. Coverage artifact upload (14-day retention) and optional Codecov upload
+3. `npm run lint` — ESLint checks (with `@typescript-eslint`)
+4. `npm run typecheck` — TypeScript type checking (`tsc --noEmit`)
+5. `npm run format:check` — Prettier formatting enforcement
+6. `npm run coverage:ci` — all unit/integration tests with Vitest + `@vitest/coverage-v8`
+7. Coverage artifact upload (14-day retention) and optional Codecov upload
 
 `.github/workflows/playwright.yml` runs on pushes and PRs that change relevant files (`src/**`, `index.html`, `vite.config.js`, `test/e2e/**`, `playwright.config.js`, `.github/workflows/playwright.yml`, `.github/actions/setup-playwright/**`). Steps: `npm run build` then `npm run test:e2e` (Playwright uses the Vite preview server). E2E test artifacts (reports) are uploaded with 14-day retention.
 
@@ -185,7 +197,7 @@ All steps must pass before merging. If CI is red, check the workflow run logs.
 
 ## App Architecture Patterns
 
-### SPA Router (`src/js/app.js`)
+### SPA Router (`src/js/app.ts`)
 
 `App.navigate(page, param)` is the only way to change pages:
 1. Calls `previousPage.onUnmount()` if present
@@ -193,15 +205,15 @@ All steps must pass before merging. If CI is red, check the workflow run logs.
 3. Calls `pages[page].postRender(param)` if present — called without `await` (fire-and-forget); may be async but its Promise is not awaited by the router
 4. Calls `await pages[page].onMount(param)` if present
 
-Each page module uses ES `export` to expose its page object (e.g., `export const HomePage = { render() {…} }`). Page objects must provide `render(param)` (required), and optionally `postRender(param)`, `onMount(param)`, `onUnmount()`.
+Each page module uses ES `export` to expose its page object (e.g., `export const HomePage: PageModule = { render() {…} }`). Page objects must implement the `PageModule` interface from `utils.ts`: `render(param)` (required), and optionally `postRender(param)`, `onMount(param)`, `onUnmount()`.
 
-`app.js` imports all page modules and assigns them to `window` (e.g., `window.HomePage = HomePage`) so that HTML `onclick` handlers in rendered templates can reference them.
+`app.ts` imports all page modules and assigns them to `window` (e.g., `window.HomePage = HomePage`) so that HTML `onclick` handlers in rendered templates can reference them.
 
 ### HTML Safety
 
-**Always use `escHtml(str)`** (import from `src/js/utils.js`) when inserting user-controlled or API-returned data into HTML strings. Never use `.innerHTML = userInput` directly. The function escapes `&`, `<`, `>`, `"`, and `'`.
+**Always use `escHtml(str)`** (import from `src/js/utils.ts`) when inserting user-controlled or API-returned data into HTML strings. Never use `.innerHTML = userInput` directly. The function escapes `&`, `<`, `>`, `"`, and `'`.
 
-### Utility Helpers (`src/js/utils.js`)
+### Utility Helpers (`src/js/utils.ts`)
 
 - `escHtml(str)` — HTML-escapes a string (see HTML Safety above)
 - `timeAgo(ts)` — formats a timestamp as a human-readable relative string (e.g., "3h ago")
@@ -211,7 +223,7 @@ Each page module uses ES `export` to expose its page object (e.g., `export const
 - `sanitizeImagePrompt(rawPrompt)` — strips narrative noise (dialogue, story text, internal states) from an image prompt so only visual descriptors remain
 - `GENRES` — array of `{ id, name, emoji }` genre objects
 
-### IndexedDB (`src/js/db.js`)
+### IndexedDB (`src/js/db.ts`)
 
 Seven object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `imagePresets`, `settings`.
 
@@ -226,7 +238,7 @@ Seven object stores: `characters`, `worlds`, `comics`, `pages`, `presets`, `imag
 - `DB.seedDefaults()` — inserts the three built-in prompt presets on first run (idempotent)
 - `DB.dedupePresets()` — removes duplicate presets by name, keeping the most recently updated one
 
-### API Client (`src/js/api.js`)
+### API Client (`src/js/api.ts`)
 
 All methods are async and read the API key and model settings from IndexedDB automatically.
 
@@ -251,20 +263,21 @@ Use `App.logError(context, error, extraDetails)` to record errors to the in-app 
 
 ## Adding a New Page
 
-1. Create `src/js/pages/mypage.js` exporting a `MyPage` object with at minimum a `render()` method using ES module syntax.
-2. Import it in `src/js/app.js` (e.g., `import { MyPage } from './pages/mypage.js';`).
-3. Register the page in `app.js`: add to `pages` and `pageTitles` objects.
-4. Add `window.MyPage = MyPage;` in `app.js` so HTML `onclick` handlers can reference it.
+1. Create `src/js/pages/mypage.ts` exporting a `MyPage` object implementing the `PageModule` interface (import from `'../utils.js'`). At minimum provide a `render()` method.
+2. Import it in `src/js/app.ts` (e.g., `import MyPage from './pages/mypage.js';`).
+3. Register the page in `app.ts`: add to `pages` and `pageTitles` objects.
+4. Add `window.MyPage = MyPage;` in `app.ts` so HTML `onclick` handlers can reference it.
 5. Add navigation links as needed in `index.html`.
 
 ---
 
 ## Errors Encountered and Workarounds
 
-- **`__APP_VERSION__` Vite define**: `vite.config.js` reads `public/version.json` and injects `__APP_VERSION__` at build time via `define`. In dev mode or tests where Vite's define is unavailable, `settings.js` falls back to `'dev'`. The `eslint.config.js` declares `__APP_VERSION__` as a readonly global so ESLint does not flag it as undefined.
+- **`__APP_VERSION__` Vite define**: `vite.config.js` reads `public/version.json` and injects `__APP_VERSION__` at build time via `define`. In dev mode or tests where Vite's define is unavailable, `settings.ts` falls back to `'dev'`. The type is declared in `src/js/global.d.ts`.
 - **`fake-indexeddb` in tests**: Import `'fake-indexeddb/auto'` at the top of each test file that exercises IndexedDB. Use dynamic `await import()` for source modules to ensure the polyfill is active before DB initialization. See `test/db.test.js` for the pattern.
-- **`node_modules` not present in fresh sandbox**: Run `npm install` before `npm test`. The `fake-indexeddb` and `vite` devDependencies are not installed by default.
+- **`node_modules` not present in fresh sandbox**: Run `npm install` before `npm test`. The `fake-indexeddb`, `vitest`, `typescript`, and `vite` devDependencies are not installed by default.
 - **Service worker**: The service worker is auto-generated by Workbox via `vite-plugin-pwa`. Old hand-written `comic-creator-*` caches are cleaned up automatically on activation. No manual cache versioning is needed.
+- **TypeScript `@ts-nocheck`**: Page modules (`src/js/pages/*.ts`) use `// @ts-nocheck` at the top because they contain extensive DOM manipulation that would require many type assertions. Core modules (`utils.ts`, `db.ts`, `api.ts`, `app.ts`) are fully type-checked.
 
 ---
 

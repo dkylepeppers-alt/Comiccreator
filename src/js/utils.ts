@@ -1,4 +1,24 @@
-export const GENRES = [
+export interface Genre {
+  id: string;
+  name: string;
+  emoji: string;
+}
+
+export interface Timestamped {
+  id?: string;
+  name?: string;
+  updatedAt?: number;
+  createdAt?: number;
+}
+
+export interface ImageRef {
+  tag?: string;
+  description?: string;
+  dataUrl?: string;
+  embedding?: number[] | null;
+}
+
+export const GENRES: Genre[] = [
   { id: 'classic-horror', name: 'Classic Horror', emoji: '&#128123;' },
   { id: 'superhero', name: 'Superhero Action', emoji: '&#129464;' },
   { id: 'dark-scifi', name: 'Dark Sci-Fi', emoji: '&#128125;' },
@@ -10,7 +30,7 @@ export const GENRES = [
   { id: 'custom', name: 'Custom', emoji: '&#9999;' },
 ];
 
-export function escHtml(str) {
+export function escHtml(str: unknown): string {
   if (str == null) return '';
   return String(str)
     .replace(/&/g, '&amp;')
@@ -20,7 +40,7 @@ export function escHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-export function timeAgo(ts) {
+export function timeAgo(ts: number | null | undefined): string {
   if (!ts) return '';
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
@@ -33,16 +53,16 @@ export function timeAgo(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-export function getGenreEmoji(genre) {
+export function getGenreEmoji(genre: string | null | undefined): string {
   const g = GENRES.find((x) => x.id === genre);
   return g ? g.emoji : '&#128214;';
 }
 
-export function dedupeByNameLatest(list) {
+export function dedupeByNameLatest(list: Timestamped[]): Timestamped[] {
   if (!Array.isArray(list)) return [];
   const sorted = [...list].sort((a, b) => (b?.updatedAt ?? b?.createdAt ?? 0) - (a?.updatedAt ?? a?.createdAt ?? 0));
-  const seen = new Set();
-  const unique = [];
+  const seen = new Set<string>();
+  const unique: Timestamped[] = [];
   for (const item of sorted) {
     const key = (item?.name || '').trim().toLowerCase() || item?.id || '';
     if (seen.has(key)) continue;
@@ -56,7 +76,7 @@ export function dedupeByNameLatest(list) {
  * Compute cosine similarity between two numeric arrays.
  * Returns 0 if inputs are null, empty, or mismatched in length.
  */
-export function cosineSimilarity(a, b) {
+export function cosineSimilarity(a: number[] | null | undefined, b: number[] | null | undefined): number {
   if (!a?.length || !b?.length || a.length !== b.length) return 0;
   let dot = 0,
     magA = 0,
@@ -73,7 +93,7 @@ export function cosineSimilarity(a, b) {
  * Strip narrative/story noise from an image prompt so that only
  * visual descriptors (poses, lighting, composition, appearance) remain.
  */
-export function sanitizeImagePrompt(rawPrompt) {
+export function sanitizeImagePrompt(rawPrompt: string | null | undefined): string | null | undefined {
   if (!rawPrompt) return rawPrompt;
   let cleaned = rawPrompt;
 
@@ -98,8 +118,8 @@ export function sanitizeImagePrompt(rawPrompt) {
     .trim();
 
   if (!cleaned) {
-    if (typeof globalThis.App !== 'undefined')
-      globalThis.App.logError(
+    if (typeof (globalThis as any).App !== 'undefined')
+      (globalThis as any).App.logError(
         'sanitizeImagePrompt',
         new Error('Sanitization fallback'),
         `Sanitization removed all content, falling back to original prompt: "${rawPrompt.slice(0, 100)}..."`,
@@ -123,8 +143,16 @@ export function sanitizeImagePrompt(rawPrompt) {
  *   buildImageEmbeddingText({tag:'interior', description:'Dimly lit lab'}, 'Gotham')
  *     → "interior Gotham: Dimly lit lab"
  */
-export function buildImageEmbeddingText(img, contextName) {
-  const parts = [];
+/** Contract for SPA page modules consumed by the router in app.ts. */
+export interface PageModule {
+  render(param?: string | null): string | Promise<string>;
+  postRender?(param?: string | null): void;
+  onMount?(param?: string | null): Promise<void> | void;
+  onUnmount?(): void;
+}
+
+export function buildImageEmbeddingText(img: ImageRef | null | undefined, contextName: string): string {
+  const parts: string[] = [];
   const tag = img?.tag;
   if (tag && tag !== 'default' && tag !== 'establishing' && tag !== 'custom') {
     parts.push(tag);

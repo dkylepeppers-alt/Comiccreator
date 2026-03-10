@@ -1,3 +1,5 @@
+// @ts-nocheck
+import type { PageModule } from '../utils.js';
 import { escHtml, buildImageEmbeddingText } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
@@ -5,17 +7,17 @@ import API from '../api.js';
 /**
  * World Builder Page
  */
-let currentView = 'list';
-let editingId = null;
+let currentView: string = 'list';
+let editingId: string | null = null;
 
 // In-editor image list: [{ dataUrl, tag, description, embedding }]
-let editorImages = [];
-let editorPrimaryIndex = 0;
-let editorName = '';
+let editorImages: any[] = [];
+let editorPrimaryIndex: number = 0;
+let editorName: string = '';
 // Index of the image slot currently being filled (for file picker)
-let _pendingSlotIdx = -1;
+let _pendingSlotIdx: number = -1;
 
-const IMAGE_TAGS = [
+const IMAGE_TAGS: string[] = [
   'establishing',
   'exterior',
   'exterior-street',
@@ -41,9 +43,9 @@ const IMAGE_TAGS = [
   'character-interaction',
   'custom',
 ];
-const MAX_IMAGES = 20;
+const MAX_IMAGES: number = 20;
 
-async function render(param) {
+async function render(param?: string | null): Promise<string> {
   if (param === 'new') {
     currentView = 'edit';
     editingId = null;
@@ -203,7 +205,7 @@ async function renderEditor() {
   `;
 }
 
-function renderGallerySlots(images, primaryIdx) {
+function renderGallerySlots(images: any[], primaryIdx: number): string {
   const worldName = editorName;
   return images
     .map((img, i) => {
@@ -307,7 +309,7 @@ function addImageSlot() {
   pickImageForSlot(editorImages.length - 1);
 }
 
-function pickImageForSlot(idx) {
+function pickImageForSlot(idx: number): void {
   _pendingSlotIdx = idx;
   document.getElementById('world-img-input').click();
 }
@@ -316,7 +318,7 @@ function newWorld() {
   App.navigate('worlds', 'new');
 }
 
-async function editWorld(id) {
+async function editWorld(id: string): Promise<void> {
   App.navigate('worlds', id);
 }
 
@@ -325,11 +327,11 @@ function backToList() {
 }
 
 // Legacy handler kept for backward compat
-function pickImage(idx) {
+function pickImage(idx: number): void {
   pickImageForSlot(idx);
 }
 
-async function handleImage(event) {
+async function handleImage(event: any): Promise<void> {
   const file = event.target.files[0];
   if (!file) {
     // File picker was cancelled — remove the empty slot created by addImageSlot()
@@ -381,7 +383,7 @@ async function handleImage(event) {
   }
 }
 
-async function recaptionImage(idx) {
+async function recaptionImage(idx: number): Promise<void> {
   const img = editorImages[idx];
   if (!img || !img.dataUrl) return App.toast('No image to caption', 'error');
 
@@ -629,7 +631,7 @@ async function _doGenerateReferences() {
  * Regenerate a single AI-generated reference image.
  * Uses the primary uploaded image as the source and the stored generation prompt.
  */
-async function regenerateImage(idx) {
+async function regenerateImage(idx: number): Promise<void> {
   const img = editorImages[idx];
   if (!img || !img.aiGenerated) return App.toast('This image was not AI-generated', 'error');
 
@@ -877,7 +879,7 @@ async function _doGenerateCharacterInteractions() {
   }
 }
 
-function updateTag(idx, value) {
+function updateTag(idx: number, value: string): void {
   if (editorImages[idx]) {
     editorImages[idx].tag = value;
     editorImages[idx].embedding = null; // tag is part of enriched embedding text
@@ -885,7 +887,7 @@ function updateTag(idx, value) {
   }
 }
 
-function updateDesc(idx, value) {
+function updateDesc(idx: number, value: string): void {
   if (editorImages[idx]) {
     editorImages[idx].description = value;
     editorImages[idx].embedding = null; // invalidate stale embedding
@@ -893,7 +895,7 @@ function updateDesc(idx, value) {
   }
 }
 
-function setPrimary(idx) {
+function setPrimary(idx: number): void {
   // Toggle: clicking the already-active star deselects it
   editorPrimaryIndex = idx === editorPrimaryIndex ? -1 : idx;
   document.querySelectorAll('#world-img-gallery .char-img-primary').forEach((btn, i) => {
@@ -901,7 +903,7 @@ function setPrimary(idx) {
   });
 }
 
-function removeImage(idx) {
+function removeImage(idx: number): void {
   editorImages.splice(idx, 1);
   if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
   refreshGallery();
@@ -970,7 +972,7 @@ async function saveWorld() {
   backToList();
 }
 
-async function exportWorld(id) {
+async function exportWorld(id: string): Promise<void> {
   const world = await DB.get(DB.STORES.worlds, id);
   if (!world) return App.toast('World not found', 'error');
   const data = {
@@ -988,7 +990,7 @@ async function exportWorld(id) {
   App.toast('World exported!', 'success');
 }
 
-async function deleteWorld(id, name) {
+async function deleteWorld(id: string, name: string): Promise<void> {
   App.showModal(`
     <div class="modal-title">Delete World</div>
     <p>Are you sure you want to delete <strong>${escHtml(name)}</strong>?</p>
@@ -999,14 +1001,14 @@ async function deleteWorld(id, name) {
   `);
 }
 
-async function confirmDelete(id) {
+async function confirmDelete(id: string): Promise<void> {
   await DB.del(DB.STORES.worlds, id);
   App.hideModal();
   App.toast('World deleted', 'info');
   App.refreshPage();
 }
 
-const WorldsPage = {
+const WorldsPage: PageModule & Record<string, any> = {
   render,
   newWorld,
   editWorld,

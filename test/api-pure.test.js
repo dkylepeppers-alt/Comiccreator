@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 
 // --- Inline the static fallback lookup from api.js (no DB dependency) ---
 const KNOWN_IMAGE_SIZES = {
@@ -266,184 +265,184 @@ function buildModelDetails(m) {
 
 describe('api pure parsing and prompt helpers', () => {
   it('parseComicResponse handles valid, fenced, embedded, invalid and defaults', () => {
-    assert.equal(parseComicResponse('nope'), null);
-    assert.equal(parseComicResponse('{"title":"x","panels":[],"choices":[]}').title, 'x');
-    assert.equal(parseComicResponse('```json\n{"title":"fenced","panels":[],"choices":[]}\n```').title, 'fenced');
-    assert.equal(parseComicResponse('prefix {"title":"embed","panels":[],"choices":[]} suffix').title, 'embed');
-    assert.equal(parseComicResponse('{}').title, 'Untitled Page');
+    expect(parseComicResponse('nope')).toBe(null);
+    expect(parseComicResponse('{"title":"x","panels":[],"choices":[]}').title).toBe('x');
+    expect(parseComicResponse('```json\n{"title":"fenced","panels":[],"choices":[]}\n```').title).toBe('fenced');
+    expect(parseComicResponse('prefix {"title":"embed","panels":[],"choices":[]} suffix').title).toBe('embed');
+    expect(parseComicResponse('{}').title).toBe('Untitled Page');
     const alt = parseComicResponse('{"panels":[{"image_prompt":"img"}],"choices":[{"description":"choice"}]}');
-    assert.equal(alt.panels[0].imagePrompt, 'img');
-    assert.equal(alt.choices[0].text, 'choice');
-    assert.deepEqual(parseComicResponse('{"panels":[{}]}').panels[0].dialogue, []);
+    expect(alt.panels[0].imagePrompt).toBe('img');
+    expect(alt.choices[0].text).toBe('choice');
+    expect(parseComicResponse('{"panels":[{}]}').panels[0].dialogue).toEqual([]);
   });
 
   it('parseComicResponse extracts imageSize from panels when present', () => {
     const withSize = parseComicResponse('{"panels":[{"imagePrompt":"scene","imageSize":"1024x1536"}],"choices":[]}');
-    assert.equal(withSize.panels[0].imageSize, '1024x1536');
+    expect(withSize.panels[0].imageSize).toBe('1024x1536');
 
     // Also accepts image_size (snake_case alternative)
     const snakeCase = parseComicResponse('{"panels":[{"imagePrompt":"scene","image_size":"1536x1024"}],"choices":[]}');
-    assert.equal(snakeCase.panels[0].imageSize, '1536x1024');
+    expect(snakeCase.panels[0].imageSize).toBe('1536x1024');
 
     // imageSize is omitted when not present in source
     const noSize = parseComicResponse('{"panels":[{"imagePrompt":"scene"}],"choices":[]}');
-    assert.equal(noSize.panels[0].imageSize, undefined);
+    expect(noSize.panels[0].imageSize).toBe(undefined);
   });
 
   it('buildSystemPrompt includes expected sections', () => {
     const p = buildSystemPrompt('superhero', [], null, '');
-    assert.ok(p.includes('superhero'));
-    assert.ok(p.includes('valid JSON only'));
-    assert.ok(!p.includes('CHARACTERS:'));
+    expect(p.includes('superhero')).toBeTruthy();
+    expect(p.includes('valid JSON only')).toBeTruthy();
+    expect(!p.includes('CHARACTERS:')).toBeTruthy();
     const custom = buildSystemPrompt('x', [], null, 'Custom');
-    assert.ok(custom.startsWith('Custom'));
+    expect(custom.startsWith('Custom')).toBeTruthy();
     const withAll = buildSystemPrompt('x', [{ name: 'A', description: 'B', role: 'Hero', appearance: 'Cape' }], { name: 'W', description: 'D', details: 'Fog' });
-    assert.ok(withAll.includes('CHARACTERS:'));
-    assert.ok(withAll.includes('WORLD SETTING:'));
-    assert.ok(withAll.includes('Details: Fog'));
+    expect(withAll.includes('CHARACTERS:')).toBeTruthy();
+    expect(withAll.includes('WORLD SETTING:')).toBeTruthy();
+    expect(withAll.includes('Details: Fog')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes VISUAL CONSISTENCY RULES when characters have appearance', () => {
     const prompt = buildSystemPrompt('action', [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }], null);
-    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section');
-    assert.ok(prompt.includes('APPEARANCE: Silver hair, black armor'), 'should include appearance details');
-    assert.ok(prompt.includes('identical across all panels'), 'should instruct consistency across panels');
+    expect(prompt.includes('VISUAL CONSISTENCY RULES:')).toBeTruthy();
+    expect(prompt.includes('APPEARANCE: Silver hair, black armor')).toBeTruthy();
+    expect(prompt.includes('identical across all panels')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes VISUAL CONSISTENCY RULES even for characters without appearance', () => {
     const prompt = buildSystemPrompt('action', [{ name: 'Bob', description: 'A sidekick' }], null);
-    assert.ok(prompt.includes('CHARACTERS:'), 'should include characters section');
-    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section even without appearance');
-    assert.ok(!prompt.includes('APPEARANCE:'), 'should not include APPEARANCE line when field is missing');
+    expect(prompt.includes('CHARACTERS:')).toBeTruthy();
+    expect(prompt.includes('VISUAL CONSISTENCY RULES:')).toBeTruthy();
+    expect(!prompt.includes('APPEARANCE:')).toBeTruthy();
   });
 
   it('buildSystemPrompt omits VISUAL CONSISTENCY RULES when no characters provided', () => {
     const noChars = buildSystemPrompt('action', [], null);
-    assert.ok(!noChars.includes('VISUAL CONSISTENCY RULES:'), 'should not include visual consistency section without characters');
-    assert.ok(!noChars.includes('CHARACTERS:'), 'should not include characters section');
+    expect(!noChars.includes('VISUAL CONSISTENCY RULES:')).toBeTruthy();
+    expect(!noChars.includes('CHARACTERS:')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes world atmosphere when provided', () => {
     const prompt = buildSystemPrompt('action', [], { name: 'Gotham', description: 'A dark city', atmosphere: 'Gritty noir' });
-    assert.ok(prompt.includes('Atmosphere: Gritty noir'), 'should include world atmosphere');
+    expect(prompt.includes('Atmosphere: Gritty noir')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes IMAGE SIZES section when imageSizes option has multiple entries', () => {
     const sizes = ['1024x1024', '1536x1024', '1024x1536'];
     const prompt = buildSystemPrompt('action', [], null, null, { imageSizes: sizes });
-    assert.ok(prompt.includes('IMAGE SIZES:'));
-    assert.ok(prompt.includes('1024x1024'));
-    assert.ok(prompt.includes('1536x1024'));
-    assert.ok(prompt.includes('1024x1536'));
-    assert.ok(prompt.includes('"imageSize"'));
-    assert.ok(prompt.includes('landscape'));
-    assert.ok(prompt.includes('portrait'));
+    expect(prompt.includes('IMAGE SIZES:')).toBeTruthy();
+    expect(prompt.includes('1024x1024')).toBeTruthy();
+    expect(prompt.includes('1536x1024')).toBeTruthy();
+    expect(prompt.includes('1024x1536')).toBeTruthy();
+    expect(prompt.includes('"imageSize"')).toBeTruthy();
+    expect(prompt.includes('landscape')).toBeTruthy();
+    expect(prompt.includes('portrait')).toBeTruthy();
   });
 
   it('buildSystemPrompt omits IMAGE SIZES when imageSizes is missing, empty, or single-entry', () => {
     // No options
     const noOpts = buildSystemPrompt('action', [], null, null);
-    assert.ok(!noOpts.includes('IMAGE SIZES:'));
+    expect(!noOpts.includes('IMAGE SIZES:')).toBeTruthy();
 
     // Empty array
     const emptyArr = buildSystemPrompt('action', [], null, null, { imageSizes: [] });
-    assert.ok(!emptyArr.includes('IMAGE SIZES:'));
+    expect(!emptyArr.includes('IMAGE SIZES:')).toBeTruthy();
 
     // Single-entry array (no benefit to picking)
     const singleArr = buildSystemPrompt('action', [], null, null, { imageSizes: ['1024x1024'] });
-    assert.ok(!singleArr.includes('IMAGE SIZES:'));
+    expect(!singleArr.includes('IMAGE SIZES:')).toBeTruthy();
   });
 
   it('buildSystemPrompt omits APPEARANCE when includeAppearanceText is false', () => {
     const chars = [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }];
     const prompt = buildSystemPrompt('action', chars, null, null, { includeAppearanceText: false });
-    assert.ok(prompt.includes('CHARACTERS:'), 'should still include characters section');
-    assert.ok(!prompt.includes('APPEARANCE: Silver hair, black armor'), 'should not include appearance text');
-    assert.ok(prompt.includes('VISUAL CONSISTENCY RULES:'), 'should include visual consistency section');
-    assert.ok(prompt.includes('Reference images will be provided'), 'should use reference-image-centric rules');
-    assert.ok(!prompt.includes('repeat each visible character'), 'should not instruct appearance repetition');
-    assert.ok(prompt.includes('name every visible character'), 'should still require character naming for embedding matching');
+    expect(prompt.includes('CHARACTERS:')).toBeTruthy();
+    expect(!prompt.includes('APPEARANCE: Silver hair, black armor')).toBeTruthy();
+    expect(prompt.includes('VISUAL CONSISTENCY RULES:')).toBeTruthy();
+    expect(prompt.includes('Reference images will be provided')).toBeTruthy();
+    expect(!prompt.includes('repeat each visible character')).toBeTruthy();
+    expect(prompt.includes('name every visible character')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes APPEARANCE by default when includeAppearanceText is not specified', () => {
     const chars = [{ name: 'Nova', description: 'A hero', appearance: 'Silver hair' }];
     const prompt = buildSystemPrompt('action', chars, null, null);
-    assert.ok(prompt.includes('APPEARANCE: Silver hair'), 'should include appearance by default');
-    assert.ok(prompt.includes('repeat each visible character'), 'should use standard consistency rules by default');
+    expect(prompt.includes('APPEARANCE: Silver hair')).toBeTruthy();
+    expect(prompt.includes('repeat each visible character')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes APPEARANCE when includeAppearanceText is true', () => {
     const chars = [{ name: 'Nova', description: 'A hero', appearance: 'Silver hair' }];
     const prompt = buildSystemPrompt('action', chars, null, null, { includeAppearanceText: true });
-    assert.ok(prompt.includes('APPEARANCE: Silver hair'), 'should include appearance when explicitly enabled');
+    expect(prompt.includes('APPEARANCE: Silver hair')).toBeTruthy();
   });
 
   it('buildSystemPrompt uses imageStylePreset in prompt instead of hardcoded comic book illustration', () => {
     const preset = 'watercolor painting, soft edges, gentle color washes, artistic';
     const prompt = buildSystemPrompt('action', [], null, null, { imageStylePreset: preset });
-    assert.ok(prompt.includes(preset), 'should include the image style preset text');
-    assert.ok(!prompt.toLowerCase().includes('comic book illustration'), 'should NOT include hardcoded comic book illustration when preset is set');
-    assert.ok(prompt.includes(`art style (use: ${preset})`), 'should use preset in art style instruction');
-    assert.ok(prompt.includes(`MUST begin with "${preset}"`), 'should instruct LLM to prefix imagePrompt with preset');
+    expect(prompt.includes(preset)).toBeTruthy();
+    expect(!prompt.toLowerCase().includes('comic book illustration')).toBeTruthy();
+    expect(prompt.includes(`art style (use: ${preset})`)).toBeTruthy();
+    expect(prompt.includes(`MUST begin with "${preset}"`)).toBeTruthy();
   });
 
   it('buildSystemPrompt uses generic art style examples when no imageStylePreset is provided', () => {
     const prompt = buildSystemPrompt('action', [], null, null);
-    assert.ok(prompt.includes('pick the style that fits the story'), 'should suggest picking style that fits story');
-    assert.ok(prompt.includes('[art style keywords matching the story genre]'), 'should use generic placeholder in example');
-    assert.ok(!prompt.includes('MUST begin with'), 'should not include prefix instruction when no preset');
+    expect(prompt.includes('pick the style that fits the story')).toBeTruthy();
+    expect(prompt.includes('[art style keywords matching the story genre]')).toBeTruthy();
+    expect(!prompt.includes('MUST begin with')).toBeTruthy();
   });
 
   it('buildSystemPrompt imageStylePreset works with dynamic image sizes', () => {
     const preset = 'anime style, manga art, cel shading';
     const sizes = ['1024x1024', '1536x1024'];
     const prompt = buildSystemPrompt('action', [], null, null, { imageStylePreset: preset, imageSizes: sizes });
-    assert.ok(prompt.includes(preset), 'should include preset with dynamic sizes');
-    assert.ok(prompt.includes('IMAGE SIZES:'), 'should include image sizes section');
-    assert.ok(prompt.includes('"imageSize"'), 'should include imageSize field in example');
-    assert.ok(!prompt.toLowerCase().includes('comic book illustration'), 'should not hardcode comic book illustration in example');
+    expect(prompt.includes(preset)).toBeTruthy();
+    expect(prompt.includes('IMAGE SIZES:')).toBeTruthy();
+    expect(prompt.includes('"imageSize"')).toBeTruthy();
+    expect(!prompt.toLowerCase().includes('comic book illustration')).toBeTruthy();
   });
 });
 
 describe('settings pure helpers', () => {
   it('compareVersions handles semantic comparisons', () => {
-    assert.equal(compareVersions('1.0.0', '1.0.0'), 0);
-    assert.equal(compareVersions('1.0.1', '1.0.0'), 1);
-    assert.equal(compareVersions('1.0.0', '1.0.1'), -1);
-    assert.equal(compareVersions('1.0', '1.0.1'), -1);
-    assert.equal(compareVersions('1.4.1', '1.4.0'), 1);
+    expect(compareVersions('1.0.0', '1.0.0')).toBe(0);
+    expect(compareVersions('1.0.1', '1.0.0')).toBe(1);
+    expect(compareVersions('1.0.0', '1.0.1')).toBe(-1);
+    expect(compareVersions('1.0', '1.0.1')).toBe(-1);
+    expect(compareVersions('1.4.1', '1.4.0')).toBe(1);
   });
 
   it('extractProvider applies priority and prefix mapping', () => {
-    assert.equal(extractProvider({ id: 'x', owned_by: 'Owned' }), 'Owned');
-    assert.equal(extractProvider({ id: 'openai/gpt-4o' }), 'openai');
-    assert.equal(extractProvider({ id: 'gpt-4o' }), 'OpenAI');
-    assert.equal(extractProvider({ id: 'claude-3' }), 'Anthropic');
-    assert.equal(extractProvider({ id: 'gemini-2.0' }), 'Google');
-    assert.equal(extractProvider({ id: 'nano-banana-pro' }), 'Google');
-    assert.equal(extractProvider({ id: 'llama-3' }), 'Meta');
-    assert.equal(extractProvider({ id: 'mistral-large' }), 'Mistral');
-    assert.equal(extractProvider({ id: 'deepseek-chat' }), 'DeepSeek');
-    assert.equal(extractProvider({ id: 'grok-2' }), 'xAI');
-    assert.equal(extractProvider({ id: 'qwen-image' }), 'Alibaba');
-    assert.equal(extractProvider({ id: 'wan-2.6-image-edit' }), 'Alibaba');
-    assert.equal(extractProvider({ id: 'z-image-turbo' }), 'Alibaba');
-    assert.equal(extractProvider({ id: 'flux-2-pro' }), 'Black Forest Labs');
-    assert.equal(extractProvider({ id: 'stable-diffusion-xl' }), 'Stability AI');
-    assert.equal(extractProvider({ id: 'seedream-v4' }), 'ByteDance');
-    assert.equal(extractProvider({ id: 'hunyuan-image-3' }), 'Tencent');
-    assert.equal(extractProvider({ id: 'cogview-4' }), 'Zhipu');
-    assert.equal(extractProvider({ id: 'glm-image' }), 'Zhipu');
-    assert.equal(extractProvider({ id: 'kling-image-o1' }), 'Kling');
-    assert.equal(extractProvider({ id: 'vidu-q2' }), 'Vidu');
-    assert.equal(extractProvider({ id: 'minimax-image-01' }), 'MiniMax');
-    assert.equal(extractProvider({ id: 'riverflow-2-fast' }), 'Sourceful');
-    assert.equal(extractProvider({ id: 'lucid-origin' }), 'Leonardo AI');
-    assert.equal(extractProvider({ id: 'unknown-model' }), 'Other');
+    expect(extractProvider({ id: 'x', owned_by: 'Owned' })).toBe('Owned');
+    expect(extractProvider({ id: 'openai/gpt-4o' })).toBe('openai');
+    expect(extractProvider({ id: 'gpt-4o' })).toBe('OpenAI');
+    expect(extractProvider({ id: 'claude-3' })).toBe('Anthropic');
+    expect(extractProvider({ id: 'gemini-2.0' })).toBe('Google');
+    expect(extractProvider({ id: 'nano-banana-pro' })).toBe('Google');
+    expect(extractProvider({ id: 'llama-3' })).toBe('Meta');
+    expect(extractProvider({ id: 'mistral-large' })).toBe('Mistral');
+    expect(extractProvider({ id: 'deepseek-chat' })).toBe('DeepSeek');
+    expect(extractProvider({ id: 'grok-2' })).toBe('xAI');
+    expect(extractProvider({ id: 'qwen-image' })).toBe('Alibaba');
+    expect(extractProvider({ id: 'wan-2.6-image-edit' })).toBe('Alibaba');
+    expect(extractProvider({ id: 'z-image-turbo' })).toBe('Alibaba');
+    expect(extractProvider({ id: 'flux-2-pro' })).toBe('Black Forest Labs');
+    expect(extractProvider({ id: 'stable-diffusion-xl' })).toBe('Stability AI');
+    expect(extractProvider({ id: 'seedream-v4' })).toBe('ByteDance');
+    expect(extractProvider({ id: 'hunyuan-image-3' })).toBe('Tencent');
+    expect(extractProvider({ id: 'cogview-4' })).toBe('Zhipu');
+    expect(extractProvider({ id: 'glm-image' })).toBe('Zhipu');
+    expect(extractProvider({ id: 'kling-image-o1' })).toBe('Kling');
+    expect(extractProvider({ id: 'vidu-q2' })).toBe('Vidu');
+    expect(extractProvider({ id: 'minimax-image-01' })).toBe('MiniMax');
+    expect(extractProvider({ id: 'riverflow-2-fast' })).toBe('Sourceful');
+    expect(extractProvider({ id: 'lucid-origin' })).toBe('Leonardo AI');
+    expect(extractProvider({ id: 'unknown-model' })).toBe('Other');
   });
 
   it('buildModelDetails renders context, capability and pricing fields', () => {
-    assert.equal(buildModelDetails({}), '');
+    expect(buildModelDetails({})).toBe('');
     // Text model with per-million-tokens pricing
     const rich = buildModelDetails({
       context_length: 128000,
@@ -452,80 +451,80 @@ describe('settings pure helpers', () => {
       supports_edit: true,
       pricing: { prompt: '0.01' },
     });
-    assert.ok(rich.includes('128K ctx'));
-    assert.ok(rich.includes('vision'));
-    assert.ok(rich.includes('tools'));
-    assert.ok(rich.includes('edit'));
-    assert.ok(rich.includes('$0.01/1M in'));
-    assert.equal(buildModelDetails({ pricing: '$0.05 flat' }), '$0.05 flat');
+    expect(rich.includes('128K ctx')).toBeTruthy();
+    expect(rich.includes('vision')).toBeTruthy();
+    expect(rich.includes('tools')).toBeTruthy();
+    expect(rich.includes('edit')).toBeTruthy();
+    expect(rich.includes('$0.01/1M in')).toBeTruthy();
+    expect(buildModelDetails({ pricing: '$0.05 flat' })).toBe('$0.05 flat');
     // Image model with per_image pricing
     const imgModel = buildModelDetails({
       supports_edit: true,
       pricing: { per_image: { '1024x1024': 0.04, '1024x1536': 0.06, 'auto': 0.04 }, currency: 'USD' },
     });
-    assert.ok(imgModel.includes('edit'));
-    assert.ok(imgModel.includes('$0.04/img'));
-    assert.ok(!imgModel.includes('/1M'));
+    expect(imgModel.includes('edit')).toBeTruthy();
+    expect(imgModel.includes('$0.04/img')).toBeTruthy();
+    expect(!imgModel.includes('/1M')).toBeTruthy();
     // Free/experimental model with pricing.prompt = 0 should still show pricing
     const freeModel = buildModelDetails({ pricing: { prompt: 0 } });
-    assert.ok(freeModel.includes('$0/1M in'), 'pricing.prompt of 0 should still be displayed');
+    expect(freeModel.includes('$0/1M in')).toBeTruthy();
   });
 });
 
 describe('api getModelSizes static fallback', () => {
   it('returns null for null/undefined/empty model ID', () => {
-    assert.equal(getModelSizesStatic(null), null);
-    assert.equal(getModelSizesStatic(undefined), null);
-    assert.equal(getModelSizesStatic(''), null);
+    expect(getModelSizesStatic(null)).toBe(null);
+    expect(getModelSizesStatic(undefined)).toBe(null);
+    expect(getModelSizesStatic('')).toBe(null);
   });
 
   it('returns correct sizes for exact known model IDs', () => {
     const sizes = getModelSizesStatic('gpt-image-1');
-    assert.ok(Array.isArray(sizes));
-    assert.ok(sizes.includes('1024x1024'));
-    assert.ok(sizes.includes('1536x1024'));
+    expect(Array.isArray(sizes)).toBeTruthy();
+    expect(sizes.includes('1024x1024')).toBeTruthy();
+    expect(sizes.includes('1536x1024')).toBeTruthy();
 
     const gpt15 = getModelSizesStatic('gpt-image-1.5');
-    assert.ok(gpt15.includes('1024x1024'));
-    assert.ok(gpt15.includes('auto'));
+    expect(gpt15.includes('1024x1024')).toBeTruthy();
+    expect(gpt15.includes('auto')).toBeTruthy();
 
     const flux2 = getModelSizesStatic('flux-2-turbo');
-    assert.ok(flux2.includes('1024*1024'));
-    assert.ok(flux2.includes('1280*720'));
+    expect(flux2.includes('1024*1024')).toBeTruthy();
+    expect(flux2.includes('1280*720')).toBeTruthy();
 
     const seedream = getModelSizesStatic('seedream-v4');
-    assert.ok(seedream.includes('1024x1024'));
-    assert.ok(seedream.includes('2048x2048'));
+    expect(seedream.includes('1024x1024')).toBeTruthy();
+    expect(seedream.includes('2048x2048')).toBeTruthy();
 
     // Legacy entries still work
     const dall3 = getModelSizesStatic('dall-e-3');
-    assert.ok(dall3.includes('1024x1024'));
-    assert.ok(dall3.includes('1024x1792'));
+    expect(dall3.includes('1024x1024')).toBeTruthy();
+    expect(dall3.includes('1024x1792')).toBeTruthy();
 
     const fluxLegacy = getModelSizesStatic('flux-pro');
-    assert.ok(fluxLegacy.includes('1024x1024'));
-    assert.ok(fluxLegacy.includes('1280x768'));
+    expect(fluxLegacy.includes('1024x1024')).toBeTruthy();
+    expect(fluxLegacy.includes('1280x768')).toBeTruthy();
   });
 
   it('returns sizes via prefix match for versioned model IDs', () => {
     // "flux-2-turbo-image-to-image" should match the "flux-2-turbo" prefix entry
     const sizes = getModelSizesStatic('flux-2-turbo-image-to-image');
-    assert.ok(Array.isArray(sizes));
-    assert.deepEqual(sizes, getModelSizesStatic('flux-2-turbo'));
+    expect(Array.isArray(sizes)).toBeTruthy();
+    expect(sizes).toEqual(getModelSizesStatic('flux-2-turbo'));
 
     // "seedream-v4.5" matches "seedream-v4" prefix
     const seedream45 = getModelSizesStatic('seedream-v4.5');
-    assert.ok(Array.isArray(seedream45));
-    assert.deepEqual(seedream45, getModelSizesStatic('seedream-v4'));
+    expect(Array.isArray(seedream45)).toBeTruthy();
+    expect(seedream45).toEqual(getModelSizesStatic('seedream-v4'));
 
     // Legacy: "stable-diffusion-xl-turbo" matches "stable-diffusion-xl"
     const sdxl = getModelSizesStatic('stable-diffusion-xl-turbo');
-    assert.ok(Array.isArray(sdxl));
-    assert.deepEqual(sdxl, getModelSizesStatic('stable-diffusion-xl'));
+    expect(Array.isArray(sdxl)).toBeTruthy();
+    expect(sdxl).toEqual(getModelSizesStatic('stable-diffusion-xl'));
   });
 
   it('returns null for unknown model IDs', () => {
-    assert.equal(getModelSizesStatic('midjourney'), null);
-    assert.equal(getModelSizesStatic('some-unknown-model'), null);
+    expect(getModelSizesStatic('midjourney')).toBe(null);
+    expect(getModelSizesStatic('some-unknown-model')).toBe(null);
   });
 });
