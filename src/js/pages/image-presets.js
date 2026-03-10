@@ -163,5 +163,14 @@ function onUnmount() {
   editingId = null;
 }
 
-const ImagePresetsPage = { render, onUnmount, newPreset, editPreset, backToList, savePreset, deletePreset, confirmDelete };
+const ImagePresetsPage = {
+  render,
+  onUnmount,
+  newPreset,
+  editPreset,
+  backToList,
+  savePreset,
+  deletePreset,
+  confirmDelete,
+};
 export default ImagePresetsPage;

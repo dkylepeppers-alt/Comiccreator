@@ -314,9 +314,7 @@ async function generateImage(prompt, options = {}) {
         ? [options.imageDataUrl]
         : [];
   if (options.imageDataUrls?.length > maxRefImages) {
-    console.warn(
-      `[generateImage] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`,
-    );
+    console.warn(`[generateImage] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`);
   }
   const compressedRefs = rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u))) : null;
 
@@ -608,7 +606,8 @@ function parseComicResponse(text) {
     try {
       return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
     } catch (_e2) {
-      if (typeof globalThis.App !== 'undefined') globalThis.App.logError('parseComicResponse', _e2, text?.substring(0, 200));
+      if (typeof globalThis.App !== 'undefined')
+        globalThis.App.logError('parseComicResponse', _e2, text?.substring(0, 200));
       return null;
     }
   }
@@ -826,7 +825,11 @@ async function generateImageCaption(dataUrl, contextHints = {}, options = {}) {
     return caption?.trim() || null;
   } catch (err) {
     if (typeof globalThis.App !== 'undefined') {
-      globalThis.App.logError('generateImageCaption', err, `Caption generation failed for ${type} "${name || 'unknown'}"`);
+      globalThis.App.logError(
+        'generateImageCaption',
+        err,
+        `Caption generation failed for ${type} "${name || 'unknown'}"`,
+      );
     }
     return null;
   }
@@ -863,7 +866,8 @@ async function generateEmbedding(text, options = {}) {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      if (typeof globalThis.App !== 'undefined') globalThis.App.logError(
+      if (typeof globalThis.App !== 'undefined')
+        globalThis.App.logError(
           'generateEmbedding',
           new Error(`HTTP ${res.status}`),
           `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`,
@@ -873,7 +877,12 @@ async function generateEmbedding(text, options = {}) {
     const data = await res.json();
     return data?.data?.[0]?.embedding || null;
   } catch (err) {
-    if (typeof globalThis.App !== 'undefined') globalThis.App.logError('generateEmbedding', err, `Embedding API call failed for text: "${text.slice(0, 80)}..."`);
+    if (typeof globalThis.App !== 'undefined')
+      globalThis.App.logError(
+        'generateEmbedding',
+        err,
+        `Embedding API call failed for text: "${text.slice(0, 80)}..."`,
+      );
     return null;
   }
 }
@@ -1174,6 +1183,8 @@ const API = {
   KNOWN_IMAGE_SIZES,
   BASE_URL,
   /** @internal Reset in-memory caches (for testing only) */
-  _resetCacheForTesting() { _modelSizesCache = null; },
+  _resetCacheForTesting() {
+    _modelSizesCache = null;
+  },
 };
 export default API;

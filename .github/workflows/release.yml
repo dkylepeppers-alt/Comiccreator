@@ -37,7 +37,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Run tests
-        run: npm run check-syntax && npm run lint && npm test
+        run: npm run build && npm run lint && npm test
 
       - name: Bump version
         run: bash scripts/bump-version.sh ${{ github.event.inputs.bump }}
@@ -45,7 +45,7 @@ jobs:
       - name: Read new version
         id: version
         run: |
-          NEW_VERSION="$(node -p "require('./package.json').version")"
+          NEW_VERSION="$(jq -r .version package.json)"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Commit and tag

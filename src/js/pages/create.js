@@ -1,4 +1,4 @@
-import { sanitizeImagePrompt, escHtml, GENRES } from '../utils.js';
+import { sanitizeImagePrompt, escHtml, GENRES, dedupeByNameLatest, cosineSimilarity } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
 

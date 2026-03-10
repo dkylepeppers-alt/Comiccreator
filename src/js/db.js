@@ -132,9 +132,7 @@ function fileToDataURL(file) {
 function migrateCharacter(char) {
   if (!char) return char;
   if (Array.isArray(char.images) && char.images.length > 0) return char;
-  const images = char.imageData
-    ? [{ dataUrl: char.imageData, tag: 'default', description: '', embedding: null }]
-    : [];
+  const images = char.imageData ? [{ dataUrl: char.imageData, tag: 'default', description: '', embedding: null }] : [];
   return Object.assign({}, char, { images, primaryImageIndex: 0 });
 }
 

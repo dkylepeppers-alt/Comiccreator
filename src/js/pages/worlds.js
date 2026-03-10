@@ -211,8 +211,7 @@ function renderGallerySlots(images, primaryIdx) {
       let embBadge = '';
       if (img.dataUrl) {
         if (img.embedding && img.embeddingText) {
-          const enriched =
-            typeof buildImageEmbeddingText === 'function' ? buildImageEmbeddingText(img, worldName) : '';
+          const enriched = typeof buildImageEmbeddingText === 'function' ? buildImageEmbeddingText(img, worldName) : '';
           if (enriched && img.embeddingText === enriched) {
             embBadge =
               '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';

@@ -945,8 +945,7 @@ async function importData(event) {
     const data = JSON.parse(text);
 
     // Validate imported data: each collection must be an array of objects with id fields
-    const validArray = (arr) =>
-      Array.isArray(arr) && arr.every((item) => item && typeof item === 'object' && item.id);
+    const validArray = (arr) => Array.isArray(arr) && arr.every((item) => item && typeof item === 'object' && item.id);
     if (data.characters && !validArray(data.characters)) throw new Error('Invalid characters data');
     if (data.worlds && !validArray(data.worlds)) throw new Error('Invalid worlds data');
     if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
