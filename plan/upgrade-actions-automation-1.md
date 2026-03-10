@@ -2,9 +2,9 @@
 goal: Major upgrade of repository MCP toolsets, GitHub Actions, automation, CI/CD efficiency, and frontend architecture modernization
 version: 2.0
 date_created: 2026-03-09
-last_updated: 2026-03-09
+last_updated: 2026-03-10
 owner: dkylepeppers-alt
-status: 'Planned'
+status: 'In Progress'
 tags: [upgrade, automation, ci-cd, actions, mcp, efficiency, infrastructure, vite, typescript, modernization]
 ---
 
@@ -70,11 +70,11 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-007 | Add a `format-check` step to `tests.yml` that runs `npm run format:check` after the lint step. This enforces Prettier formatting on every push and PR. Currently, `format:check` exists as a script but is not run in CI. | | |
-| TASK-008 | Create `.github/workflows/security-pr.yml` workflow triggered on `pull_request` events that runs `npm audit --audit-level=high`. This supplements the weekly `security.yml` cron with PR-time checks so vulnerabilities are caught before merge. Use the `setup-node-env` composite action. | | |
-| TASK-009 | Add `c8` as a devDependency for test coverage reporting. Update the test command in `tests.yml` to run `npx c8 --reporter=text --reporter=lcov node --test test/*.test.js`. Add a `codecov/codecov-action@v4` step that uploads the `coverage/lcov.info` report to Codecov after tests pass. Add a `coverage` and `coverage:ci` script to `package.json`. Configure `c8` thresholds in `.c8rc.json` (e.g., 60% lines, 60% branches). Store the `coverage/` directory as a workflow artifact. **Note**: This is a temporary stepping stone — Phase 10 (TASK-045/054) will replace `c8` with Vitest's built-in `@vitest/coverage-v8` provider. At that point, `.c8rc.json` should be deleted and its thresholds moved into `vitest.config.ts`. | | |
-| TASK-010 | Add a `concurrency` block to `tests.yml` and `playwright.yml` keyed on `ci-${{ github.ref }}` with `cancel-in-progress: true` to cancel redundant CI runs when new commits are pushed to the same branch. This saves CI minutes. | | |
-| TASK-011 | Add a path filter to `playwright.yml` so E2E tests only run when relevant files change (i.e., `js/**`, `css/**`, `index.html`, `sw.js`, `test/e2e/**`, `playwright.config.js`). Use `paths` filter on the `push` and `pull_request` triggers. Add a `paths-ignore` for `docs/**`, `*.md`, `plan/**`. | | |
+| TASK-007 | Add a `format-check` step to `tests.yml` that runs `npm run format:check` after the lint step. This enforces Prettier formatting on every push and PR. Currently, `format:check` exists as a script but is not run in CI. | ✅ | 2026-03-09 |
+| TASK-008 | Create `.github/workflows/security-pr.yml` workflow triggered on `pull_request` events that runs `npm audit --audit-level=high`. This supplements the weekly `security.yml` cron with PR-time checks so vulnerabilities are caught before merge. Use the `setup-node-env` composite action. | ✅ | 2026-03-09 |
+| TASK-009 | Add `c8` as a devDependency for test coverage reporting. Update the test command in `tests.yml` to run `npx c8 --reporter=text --reporter=lcov node --test test/*.test.js`. Add a `codecov/codecov-action@v4` step that uploads the `coverage/lcov.info` report to Codecov after tests pass. Add a `coverage` and `coverage:ci` script to `package.json`. Configure `c8` thresholds in `.c8rc.json` (e.g., 60% lines, 60% branches). Store the `coverage/` directory as a workflow artifact. **Note**: This is a temporary stepping stone — Phase 10 (TASK-045/054) will replace `c8` with Vitest's built-in `@vitest/coverage-v8` provider. At that point, `.c8rc.json` should be deleted and its thresholds moved into `vitest.config.ts`. | ✅ | 2026-03-09 |
+| TASK-010 | Add a `concurrency` block to `tests.yml` and `playwright.yml` keyed on `ci-${{ github.ref }}` with `cancel-in-progress: true` to cancel redundant CI runs when new commits are pushed to the same branch. This saves CI minutes. | ✅ | 2026-03-09 |
+| TASK-011 | Add a path filter to `playwright.yml` so E2E tests only run when relevant files change (i.e., `js/**`, `css/**`, `index.html`, `sw.js`, `test/e2e/**`, `playwright.config.js`). Use `paths` filter on the `push` and `pull_request` triggers. Add a `paths-ignore` for `docs/**`, `*.md`, `plan/**`. | ✅ | 2026-03-09 |
 
 ### Implementation Phase 3 — Workflow Hardening & Security
 
@@ -82,10 +82,10 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-012 | Pin all third-party actions in every workflow file to their full SHA commit hash instead of floating version tags. Affected actions: `actions/checkout@v4`, `actions/setup-node@v4`, `actions/upload-artifact@v4`, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`, `actions/cache@v4`. Add a comment next to each SHA with the tag name for readability (e.g., `# v4.2.2`). | | |
-| TASK-013 | Add `permissions: {}` (empty/deny-all) as the top-level default for all workflow files, then explicitly grant only required permissions at the job level. This follows the principle of least privilege. Currently, `deploy-pages.yml` uses top-level permissions — keep that exception but add a comment explaining why. | | |
-| TASK-014 | Add a `codeql-analysis.yml` workflow that runs GitHub CodeQL analysis on push to `Main` and on PRs. Configure it for JavaScript and TypeScript analysis. This provides automated SAST scanning beyond npm audit. After Phase 10 (TypeScript migration), CodeQL's TypeScript support will provide even deeper analysis. | | |
-| TASK-015 | Update `dependabot.yml` to: (1) add `labels: ["dependencies"]` for npm updates and `labels: ["ci"]` for github-actions updates, (2) add `commit-message: { prefix: "chore" }` for consistent commit messages, (3) add `open-pull-requests-limit: 10` to prevent Dependabot from overwhelming the repo, (4) add `groups` to batch minor/patch updates together. | | |
+| TASK-012 | Pin all third-party actions in every workflow file to their full SHA commit hash instead of floating version tags. Affected actions: `actions/checkout@v4`, `actions/setup-node@v4`, `actions/upload-artifact@v4`, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`, `actions/cache@v4`. Add a comment next to each SHA with the tag name for readability (e.g., `# v4.2.2`). | ✅ | 2026-03-09 |
+| TASK-013 | Add `permissions: {}` (empty/deny-all) as the top-level default for all workflow files, then explicitly grant only required permissions at the job level. This follows the principle of least privilege. Currently, `deploy-pages.yml` uses top-level permissions — keep that exception but add a comment explaining why. | ✅ | 2026-03-09 |
+| TASK-014 | Add a `codeql-analysis.yml` workflow that runs GitHub CodeQL analysis on push to `Main` and on PRs. Configure it for JavaScript and TypeScript analysis. This provides automated SAST scanning beyond npm audit. After Phase 10 (TypeScript migration), CodeQL's TypeScript support will provide even deeper analysis. | ✅ | 2026-03-09 |
+| TASK-015 | Update `dependabot.yml` to: (1) add `labels: ["dependencies"]` for npm updates and `labels: ["ci"]` for github-actions updates, (2) add `commit-message: { prefix: "chore" }` for consistent commit messages, (3) add `open-pull-requests-limit: 10` to prevent Dependabot from overwhelming the repo, (4) add `groups` to batch minor/patch updates together. | ✅ | 2026-03-09 |
 ### Implementation Phase 4 — Automation Script Improvements
 
 - GOAL-004: Enhance automation scripts and pre-commit hooks to catch more issues before they reach CI.
@@ -114,9 +114,9 @@ Comprehensive upgrade plan for the AI Comic Creator repository's GitHub Actions 
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-024 | Create `.github/workflows/post-merge.yml` workflow triggered on `push` to `Main`. This single workflow runs two sequential jobs: (1) `bump-version` — runs `bash scripts/bump-version.sh patch`, reads new version, commits and pushes. (2) `update-docs` — depends on `bump-version` via `needs:`, checks out the updated Main, runs `bash scripts/update-docs.sh`, commits and pushes if changed. Both jobs use the same bot identity and bot-loop guards. Use concurrency group `post-merge-main` with `cancel-in-progress: true`. | | |
-| TASK-025 | Delete `auto-bump.yml` and `auto-update-docs.yml` after `post-merge.yml` is verified working. Update `.github/copilot-instructions.md` to reference the new consolidated workflow. | | |
-| TASK-026 | Update the CI Workflow section of `.github/copilot-instructions.md` to document all new and modified workflows, including the composite actions, security-pr, post-merge, auto-merge-dependabot, pr-labeler, stale, and codeql-analysis workflows. | | |
+| TASK-024 | Create `.github/workflows/post-merge.yml` workflow triggered on `push` to `Main`. This single workflow runs two sequential jobs: (1) `bump-version` — runs `bash scripts/bump-version.sh patch`, reads new version, commits and pushes. (2) `update-docs` — depends on `bump-version` via `needs:`, checks out the updated Main, runs `bash scripts/update-docs.sh`, commits and pushes if changed. Both jobs use the same bot identity and bot-loop guards. Use concurrency group `post-merge-main` with `cancel-in-progress: true`. | ✅ | 2026-03-09 |
+| TASK-025 | Delete `auto-bump.yml` and `auto-update-docs.yml` after `post-merge.yml` is verified working. Update `.github/copilot-instructions.md` to reference the new consolidated workflow. | ✅ | 2026-03-09 |
+| TASK-026 | Update the CI Workflow section of `.github/copilot-instructions.md` to document all new and modified workflows, including the composite actions, security-pr, post-merge, auto-merge-dependabot, pr-labeler, stale, and codeql-analysis workflows. | ✅ | 2026-03-09 |
 
 ### Implementation Phase 7 — Agent & MCP Toolset Enhancements
 
