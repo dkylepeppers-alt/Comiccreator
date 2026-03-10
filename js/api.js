@@ -1024,7 +1024,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     {
       tag: 'interior-living-room',
       prompt:
-        'Interior view of the living room or main common area inside {name}, {description}. Comfortable furnishings, ambient lighting, personal objects and décor that reflect the world\'s tone and era. Medium wide shot showing the full room.',
+        "Interior view of the living room or main common area inside {name}, {description}. Comfortable furnishings, ambient lighting, personal objects and décor that reflect the world's tone and era. Medium wide shot showing the full room.",
       desc: 'Interior — living room / common area',
     },
     {
@@ -1036,19 +1036,19 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     {
       tag: 'interior-bedroom',
       prompt:
-        'Interior view of a bedroom inside {name}, {description}. Bed, personal belongings, window, and décor elements that reflect the inhabitant\'s personality and the world\'s era. Soft ambient lighting. Medium wide shot.',
+        "Interior view of a bedroom inside {name}, {description}. Bed, personal belongings, window, and décor elements that reflect the inhabitant's personality and the world's era. Soft ambient lighting. Medium wide shot.",
       desc: 'Interior — bedroom',
     },
     {
       tag: 'interior-office',
       prompt:
-        'Interior view of an office, study, or workspace inside {name}, {description}. Desk, equipment, shelves, documents, and environmental details suited to the world\'s era and tone. Directional task lighting. Medium wide shot.',
+        "Interior view of an office, study, or workspace inside {name}, {description}. Desk, equipment, shelves, documents, and environmental details suited to the world's era and tone. Directional task lighting. Medium wide shot.",
       desc: 'Interior — office / workspace',
     },
     {
       tag: 'interior',
       prompt:
-        'Interior view of a key location inside {name}, {description}. Detailed architecture, furnishings, lighting fixtures, and atmospheric props that establish the world\'s tone. Medium wide angle shot showing spatial depth.',
+        "Interior view of a key location inside {name}, {description}. Detailed architecture, furnishings, lighting fixtures, and atmospheric props that establish the world's tone. Medium wide angle shot showing spatial depth.",
       desc: 'Interior environment detail',
     },
     {
@@ -1066,7 +1066,7 @@ Vary the sizes across panels to create a visually dynamic comic layout.`;
     {
       tag: 'landmark',
       prompt:
-        'Hero shot of the most iconic landmark or recognisable structure of {name}, {description}. Dramatic low-angle or three-quarter perspective emphasising the scale and character of the landmark. Cinematic lighting that highlights the structure\'s defining features.',
+        "Hero shot of the most iconic landmark or recognisable structure of {name}, {description}. Dramatic low-angle or three-quarter perspective emphasising the scale and character of the landmark. Cinematic lighting that highlights the structure's defining features.",
       desc: 'Iconic landmark / hero shot',
     },
   ];
