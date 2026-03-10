@@ -21,7 +21,7 @@ check_staged_syntax() {
     # Use the staged content from the index, not the working-tree file.
     if git cat-file -e ":$file" 2>/dev/null; then
       local tmpfile
-      tmpfile="$(mktemp "${TMPDIR:-/tmp}/staged-js-XXXXXX.js")"
+      tmpfile="$(mktemp "${REPO_ROOT}/.staged-js-XXXXXX.js")"
       if git show ":$file" >"$tmpfile" 2>&1; then
         if node --check "$tmpfile" 2>&1; then
           echo "  ✓ $file"

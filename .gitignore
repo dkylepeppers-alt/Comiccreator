@@ -6,3 +6,4 @@ playwright-report/
 coverage/
 cloud-sync-*.png
 dropdown-panel-preview.png
+.staged-js-*.js

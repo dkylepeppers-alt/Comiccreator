@@ -6,6 +6,7 @@ const version = JSON.parse(readFileSync('./public/version.json', 'utf8')).versio
 
 export default defineConfig({
   root: '.',
+  base: './',
   publicDir: 'public',
   build: {
     outDir: 'dist',

@@ -328,7 +328,7 @@ function registerSW() {
     }
 
     navigator.serviceWorker
-      .register('/sw.js')
+      .register('./sw.js')
       .then((reg) => {
         console.log('SW registered:', reg.scope);
 
