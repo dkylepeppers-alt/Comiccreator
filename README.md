@@ -169,6 +169,7 @@ Comiccreator/
         gem-researcher.agent.md
         gem-reviewer.agent.md
         my-agent.agent.md
+        upgrade-actions-implementer.agent.md
     copilot-instructions.md
     copilot-mcp.json
     dependabot.yml
@@ -496,6 +497,7 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 | `gem-researcher` | gem-researcher | Research specialist: gathers codebase context, identifies relevant files/patterns, returns structured findings |
 | `gem-reviewer` | gem-reviewer | Security gatekeeper for critical tasks—OWASP, secrets, compliance |
 | `my-agent` | planning-specialist | Specialized planning agent focused on turning goals into clear, structured execution plans for coding agents. Produces implementation plans, task breakdowns, sequencing, dependency maps, milestone outlines, risk notes, and decision frameworks with an emphasis on clarity, feasibility, and repository-grounded actionability. |
+| `upgrade-actions-implementer` | upgrade-actions-implementer | Expert implementer for plan/upgrade-actions-automation-1.md — verifies completed phases and executes remaining CI/CD, tooling, and frontend modernization upgrades |
 <!-- AUTO-GENERATED-CONTENT:END (AGENT_ROSTER) -->
 
 ---
