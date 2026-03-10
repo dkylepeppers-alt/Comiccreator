@@ -175,6 +175,7 @@ Comiccreator/
     labeler.yml
     workflows
         auto-merge-dependabot.yml
+        ci-metrics.yml
         codeql-analysis.yml
         deploy-pages.yml
         playwright.yml
@@ -463,6 +464,7 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
 | `auto-merge-dependabot.yml` | pull_request | Auto Merge Dependabot |
+| `ci-metrics.yml` | schedule, workflow_dispatch | CI Metrics |
 | `codeql-analysis.yml` | push, pull_request | CodeQL Analysis |
 | `deploy-pages.yml` | push, workflow_dispatch | Deploy to GitHub Pages |
 | `playwright.yml` | push, pull_request | Playwright E2E Tests |
