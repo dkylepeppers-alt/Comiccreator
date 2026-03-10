@@ -1,3 +1,4 @@
+import type { PageModule } from '../utils.js';
 import { escHtml } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
@@ -7,19 +8,19 @@ import API from '../api.js';
  * Dynamically loads all available text and image models from NanoGPT API.
  */
 // Injected by Vite's define plugin at build time; falls back to 'dev' in unbundled environments
-const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
-const DEFAULT_UPDATE_REPO = 'dkylepeppers-alt/Comiccreator';
+const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+const DEFAULT_UPDATE_REPO: string = 'dkylepeppers-alt/Comiccreator';
 
 // In-memory model lists populated on render
-let textModels = [];
-let imageModels = [];
+let textModels: any[] = [];
+let imageModels: any[] = [];
 // Vision-capable subset of textModels used for the caption model picker
-let captionModels = [];
-let textModelsLoading = false;
-let imageModelsLoading = false;
+let captionModels: any[] = [];
+let textModelsLoading: boolean = false;
+let imageModelsLoading: boolean = false;
 
 // Delegate error logging to global App.logError
-function logError(context, error, extraDetails) {
+function logError(context: string, error: any, extraDetails?: string): void {
   App.logError(context, error, extraDetails);
 }
 
@@ -300,7 +301,7 @@ async function render() {
  * Called after the settings HTML is inserted into the DOM.
  * Model loading is handled by onMount() via the custom picker UI.
  */
-function postRender() {
+function postRender(): void {
   // No-op: model loading is handled by onMount() / loadModels()
 }
 
@@ -332,11 +333,11 @@ async function onMount() {
   document.addEventListener('click', handleOutsideClick);
 }
 
-function onUnmount() {
+function onUnmount(): void {
   document.removeEventListener('click', handleOutsideClick);
 }
 
-function handleOutsideClick(e) {
+function handleOutsideClick(e: MouseEvent): void {
   if (!e.target.closest('#text-model-picker')) closePicker('text');
   if (!e.target.closest('#image-model-picker')) closePicker('image');
   if (!e.target.closest('#caption-model-picker')) closePicker('caption');
@@ -344,7 +345,7 @@ function handleOutsideClick(e) {
 
 // --- Model Picker Logic ---
 
-async function loadModels(type, forceRefresh = false) {
+async function loadModels(type: string, forceRefresh = false): Promise<void> {
   const statusEl = document.getElementById(`${type}-model-status`);
   const countEl = document.getElementById(`${type}-model-count`);
 
@@ -401,7 +402,7 @@ async function loadModels(type, forceRefresh = false) {
   }
 }
 
-function renderModelList(type, models) {
+function renderModelList(type: string, models: any[]): string {
   const listEl = document.getElementById(`${type}-model-list`);
   if (!listEl) return;
 
@@ -451,7 +452,7 @@ function renderModelList(type, models) {
   listEl.innerHTML = html || '<div class="model-picker-empty">No models found</div>';
 }
 
-function extractProvider(model) {
+function extractProvider(model: any): string {
   // Try owned_by first
   if (model.owned_by) return model.owned_by;
   // Try to extract from model id (e.g. "openai/gpt-4o" -> "openai")
@@ -496,7 +497,7 @@ function extractProvider(model) {
   return 'Other';
 }
 
-function buildModelDetails(m) {
+function buildModelDetails(m: any): string {
   const parts = [];
   if (m.context_length) parts.push(`${(m.context_length / 1000).toFixed(0)}K ctx`);
   if (m.supports_vision) parts.push('vision');
@@ -528,7 +529,7 @@ function buildModelDetails(m) {
  * <input type="text"> when the model has no known size restrictions.
  * Called when the image model changes or on page mount after models are loaded.
  */
-async function updateImageSizeOptions(modelId) {
+async function updateImageSizeOptions(modelId: string): Promise<void> {
   const wrap = document.getElementById('imgsize-wrap');
   if (!wrap || !modelId) return;
 
@@ -554,7 +555,7 @@ async function updateImageSizeOptions(modelId) {
   }
 }
 
-function togglePicker(type) {
+function togglePicker(type: string): void {
   const dropdown = document.getElementById(`${type}-model-dropdown`);
   const isOpen = !dropdown.classList.contains('hidden');
   // Close all other pickers
@@ -576,12 +577,12 @@ function togglePicker(type) {
   }
 }
 
-function closePicker(type) {
+function closePicker(type: string): void {
   const dropdown = document.getElementById(`${type}-model-dropdown`);
   if (dropdown) dropdown.classList.add('hidden');
 }
 
-function filterModels(type, query) {
+function filterModels(type: string, query: string): void {
   const models = type === 'text' ? textModels : type === 'caption' ? captionModels : imageModels;
   const q = query.toLowerCase().trim();
   if (!q) {
@@ -604,7 +605,7 @@ function filterModels(type, query) {
   }
 }
 
-function selectModel(type, modelId) {
+function selectModel(type: string, modelId: string): void {
   if (type === 'text') {
     document.getElementById('set-model').value = modelId;
     document.getElementById('text-model-display').textContent = modelId;
@@ -628,7 +629,7 @@ function selectModel(type, modelId) {
   }
 }
 
-async function refreshModels(type) {
+async function refreshModels(type: string): Promise<void> {
   App.toast(`Refreshing ${type} model list...`, 'info');
   await loadModels(type, true);
   App.toast(`${type === 'text' ? 'Text' : 'Image'} models refreshed!`, 'success');
@@ -698,7 +699,7 @@ async function testConnection() {
 
 // --- Update Check ---
 
-function compareVersions(a, b) {
+function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
@@ -936,7 +937,7 @@ async function exportData() {
   App.toast('Data exported!', 'success');
 }
 
-async function importData(event) {
+async function importData(event: any): Promise<void> {
   const file = event.target.files[0];
   if (!file) return;
 
@@ -997,7 +998,7 @@ async function confirmClear() {
   App.refreshPage();
 }
 
-const SettingsPage = {
+const SettingsPage: PageModule & Record<string, any> = {
   render,
   postRender,
   onMount,

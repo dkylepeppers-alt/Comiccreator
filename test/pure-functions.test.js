@@ -401,8 +401,8 @@ describe('exportData page preparation', () => {
     expect(result[0].data.panels[0].imageUrl).toBe(undefined);
   });
 
-  it('should not use pretty-printed JSON in settings.js exportData', () => {
-    const settingsPath = new URL('../src/js/pages/settings.js', import.meta.url);
+  it('should not use pretty-printed JSON in settings.ts exportData', () => {
+    const settingsPath = new URL('../src/js/pages/settings.ts', import.meta.url);
     const settingsCode = readFileSync(settingsPath, 'utf-8');
     const stringifyCalls = settingsCode.match(/JSON\.stringify\([^)]*\)/g) || [];
     expect(stringifyCalls.length > 0).toBeTruthy();
