@@ -31,13 +31,17 @@ jobs:
                 status: 'completed',
               });
 
-              const completed = runs.data.workflow_runs.filter(r => r.conclusion === 'success');
-              if (completed.length === 0) {
-                lines.push(`### ${wf}\nNo successful runs found.\n`);
+              const allRuns = runs.data.workflow_runs;
+              if (allRuns.length === 0) {
+                lines.push(`### ${wf}\nNo completed runs found.\n`);
                 continue;
               }
 
-              const durations = completed.map(r => {
+              const succeeded = allRuns.filter(r => r.conclusion === 'success').length;
+              const failed = allRuns.filter(r => r.conclusion === 'failure').length;
+              const other = allRuns.length - succeeded - failed;
+
+              const durations = allRuns.map(r => {
                 const start = new Date(r.run_started_at);
                 const end = new Date(r.updated_at);
                 return (end - start) / 1000;
@@ -48,7 +52,8 @@ jobs:
               const max = Math.max(...durations);
 
               lines.push(`### ${wf}`);
-              lines.push(`- Runs analyzed: ${completed.length}`);
+              lines.push(`- Completed runs analyzed: ${allRuns.length}`);
+              lines.push(`- ✅ Succeeded: ${succeeded} · ❌ Failed: ${failed} · ⚠️ Other: ${other}`);
               lines.push(`- Average duration: ${(avg / 60).toFixed(1)} min`);
               lines.push(`- Min duration: ${(min / 60).toFixed(1)} min`);
               lines.push(`- Max duration: ${(max / 60).toFixed(1)} min`);
