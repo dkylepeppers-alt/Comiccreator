@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml, buildImageEmbeddingText } from '../utils.js';
+import { escHtml, buildImageEmbeddingText, newId } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
 
@@ -10,9 +10,11 @@ import API from '../api.js';
 let currentView: string = 'list'; // 'list' or 'edit'
 let editingId: string | null = null;
 
-// In-editor image list: [{ dataUrl, tag, description, embedding }]
+// In-editor image list: [{ id, dataUrl, tag, description, embedding }]
 let editorImages: any[] = [];
 let editorPrimaryIndex: number = 0;
+// Stable image ID of the identity anchor (authoritative for generation)
+let editorAnchorImageId: string | null = null;
 let editorName: string = '';
 // Index of the image slot currently being filled (for file picker)
 let _pendingSlotIdx: number = -1;
@@ -106,15 +108,19 @@ async function renderEditor() {
     powers: '',
     images: [],
     primaryImageIndex: 0,
+    identityAnchorImageId: null,
+    defaultVisualState: {},
     linkedWorldId: '',
   };
   if (editingId) {
     const saved = await DB.get(DB.STORES.characters, editingId);
-    if (saved) char = DB.migrateCharacter(saved);
+    if (saved) char = DB.normalizeCharacterRecord(saved).record;
   }
   editorImages = (char.images || []).map((img) => Object.assign({}, img));
   editorPrimaryIndex = char.primaryImageIndex ?? 0;
+  editorAnchorImageId = char.identityAnchorImageId ?? null;
   editorName = char.name || '';
+  const dvs = char.defaultVisualState || {};
 
   const worlds = await DB.getAll(DB.STORES.worlds);
 
@@ -176,6 +182,25 @@ async function renderEditor() {
         <div class="form-group">
           <label class="form-label">Appearance</label>
           <textarea id="char-appearance" rows="3" placeholder="Physical appearance, costume, distinguishing features...">${escHtml(char.appearance)}</textarea>
+          <div class="form-hint">The identity anchor image (&#9875;) controls stable physical identity — face, proportions, base hair. The wardrobe fields below control clothing.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Default Wardrobe</label>
+          <input type="text" id="char-dvs-wardrobe" value="${escHtml(dvs.wardrobeDescription || '')}" placeholder="Leave blank to use the outfit shown in the identity anchor">
+          <div class="form-hint">Exact clothing description reused verbatim across panels until the story changes it</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Default Hair State</label>
+          <input type="text" id="char-dvs-hair" value="${escHtml(dvs.hairState || '')}" placeholder="e.g. tied back in a loose bun">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Default Carried Items / Injuries / Temporary Changes</label>
+          <input type="text" id="char-dvs-items" value="${escHtml((dvs.carriedItems || []).join(', '))}" placeholder="Carried items (comma-separated)">
+          <input type="text" id="char-dvs-injuries" class="mt-sm" value="${escHtml((dvs.injuries || []).join(', '))}" placeholder="Injuries (comma-separated)">
+          <input type="text" id="char-dvs-temporary" class="mt-sm" value="${escHtml((dvs.temporaryChanges || []).join(', '))}" placeholder="Temporary changes (comma-separated)">
         </div>
 
         <div class="form-group">
@@ -217,10 +242,12 @@ function renderGallerySlots(images: any[], primaryIdx: number): string {
             '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
         }
       }
+      const isAnchor = !!img.id && img.id === editorAnchorImageId;
       return `
     <div class="char-img-slot" data-idx="${i}">
       <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="CharactersPage.pickImageForSlot(${i})">
         ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i + 1}">` : '<span>&#128247; Upload</span>'}
+        ${isAnchor ? '<span class="char-img-anchor-badge" title="Identity anchor — controls this character\'s stable identity in generated panels">&#9875; Anchor</span>' : ''}
       </div>
       <div class="char-img-meta">
         <div style="display:flex;align-items:center;gap:6px;">
@@ -231,7 +258,8 @@ function renderGallerySlots(images: any[], primaryIdx: number): string {
         </div>
         <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Battle armor with sword drawn" oninput="CharactersPage.updateDesc(${i},this.value)">
         <div class="char-img-actions">
-          <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="CharactersPage.setPrimary(${i})">&#11088;</button>
+          <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as thumbnail" onclick="CharactersPage.setPrimary(${i})">&#11088;</button>
+          ${img.dataUrl ? `<button class="char-img-anchor ${isAnchor ? 'active' : ''}" title="Set as identity anchor" onclick="CharactersPage.setAnchor(${i})">&#9875;</button>` : ''}
           ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="CharactersPage.recaptionImage(${i})">&#128221;</button>` : ''}
           ${img.dataUrl && img.aiGenerated ? `<button class="char-img-regen" title="Regenerate this reference" onclick="CharactersPage.regenerateImage(${i})">&#128260;</button>` : ''}
           <button class="char-img-delete" title="Remove" onclick="CharactersPage.removeImage(${i})">&#x2715;</button>
@@ -283,7 +311,14 @@ function refreshGallery() {
 
 function addImageSlot() {
   if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
-  editorImages.push({ dataUrl: '', tag: 'default', description: '', embedding: null, embeddingText: null });
+  editorImages.push({
+    id: newId(),
+    dataUrl: '',
+    tag: 'default',
+    description: '',
+    embedding: null,
+    embeddingText: null,
+  });
   refreshGallery();
   // Immediately open file picker for the new slot
   pickImageForSlot(editorImages.length - 1);
@@ -326,9 +361,13 @@ async function handleImage(event: any): Promise<void> {
   const dataUrl = await DB.fileToDataURL(file);
   const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
   if (idx >= editorImages.length) {
-    editorImages.push({ dataUrl, tag: 'default', description: '', embedding: null, embeddingText: null });
+    editorImages.push({ id: newId(), dataUrl, tag: 'default', description: '', embedding: null, embeddingText: null });
   } else {
-    editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl, embedding: null, embeddingText: null });
+    editorImages[idx] = Object.assign({ id: newId() }, editorImages[idx], {
+      dataUrl,
+      embedding: null,
+      embeddingText: null,
+    });
   }
   refreshGallery();
   // Reset file input so same file can be re-picked
@@ -562,6 +601,7 @@ async function _doGenerateReferences() {
 
   if (dataUrl) {
     const newImg = {
+      id: newId(),
       dataUrl,
       tag,
       description: '',
@@ -804,6 +844,7 @@ async function _doGenerateWorldInteractions() {
       ? variation.desc.replace(/\{charName\}/g, name).replace(/\{worldName\}/g, world.name)
       : `${name} in ${world.name}`;
     const newImg = {
+      id: newId(),
       dataUrl,
       tag,
       description: desc,
@@ -870,9 +911,35 @@ function setPrimary(idx: number): void {
   });
 }
 
+/** Set the identity anchor to the image at idx (explicit control, spec §12.1). */
+function setAnchor(idx: number): void {
+  const img = editorImages[idx];
+  if (!img?.dataUrl) return App.toast('Upload an image first', 'error');
+  if (!img.id) img.id = newId();
+  editorAnchorImageId = img.id;
+  refreshGallery();
+  App.toast(
+    `Identity anchor set — this image now controls ${editorName || 'this character'}'s stable identity`,
+    'success',
+  );
+}
+
 function removeImage(idx: number): void {
+  const removed = editorImages[idx];
   editorImages.splice(idx, 1);
   if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
+  // Deleting the active anchor: fall back deterministically and tell the user
+  // exactly which image becomes the anchor so they can pick a different one.
+  if (removed?.id && removed.id === editorAnchorImageId) {
+    const fallback = editorImages.find((img) => img.dataUrl);
+    editorAnchorImageId = fallback?.id || null;
+    if (fallback) {
+      const label = fallback.description || fallback.tag || 'first gallery image';
+      App.toast(`Identity anchor removed — falling back to "${label}". Pick a different anchor if needed.`, 'info');
+    } else {
+      App.toast('Identity anchor removed — this character has no anchor until you add an image.', 'info');
+    }
+  }
   refreshGallery();
 }
 
@@ -916,6 +983,12 @@ async function saveCharacter() {
 
   const existingChar = editingId ? await DB.get(DB.STORES.characters, editingId) : null;
 
+  const parseList = (id) =>
+    (document.getElementById(id)?.value || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
   const char = {
     id: editingId || DB.uuid(),
     name,
@@ -927,12 +1000,22 @@ async function saveCharacter() {
     linkedWorldId: document.getElementById('char-linked-world')?.value || '',
     images: validImages,
     primaryImageIndex: primaryIdx,
+    identityAnchorImageId: editorAnchorImageId,
+    defaultVisualState: {
+      wardrobeDescription: document.getElementById('char-dvs-wardrobe')?.value.trim() || '',
+      hairState: document.getElementById('char-dvs-hair')?.value.trim() || '',
+      carriedItems: parseList('char-dvs-items'),
+      injuries: parseList('char-dvs-injuries'),
+      temporaryChanges: parseList('char-dvs-temporary'),
+    },
     imageData: '', // clear legacy field when images[] is present
     createdAt: existingChar?.createdAt || Date.now(),
     updatedAt: Date.now(),
   };
 
-  await DB.put(DB.STORES.characters, char);
+  // Normalization guarantees stable image IDs and a valid anchor even for
+  // records assembled from older editor state
+  await DB.put(DB.STORES.characters, DB.normalizeCharacterRecord(char).record);
   App.toast(`Character ${editingId ? 'updated' : 'created'}!`, 'success');
   backToList();
 }
@@ -986,6 +1069,7 @@ const CharactersPage: PageModule & Record<string, any> = {
   updateTag,
   updateDesc,
   setPrimary,
+  setAnchor,
   removeImage,
   recaptionImage,
   recaptionAll,

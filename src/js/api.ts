@@ -64,6 +64,28 @@ export interface ImageModel {
   pricing?: any;
   supports_edit?: boolean;
   sizes?: string[] | null;
+  inputModalities?: string[];
+  maxInputImages?: number | null;
+  maxOutputImages?: number | null;
+  supportedParameters?: Record<string, unknown>;
+}
+
+export interface GenerateImagesOptions extends ImageGenOptions {
+  count: number;
+  /**
+   * When true the caller has already allocated references exactly (anchored
+   * continuity pipeline): no truncation is applied and reference/output counts
+   * are validated against live model capabilities instead.
+   */
+  exactReferences?: boolean;
+  /** Max long-edge for reference preprocessing (default 1024 legacy, use 2048 for identity anchors). */
+  refMaxDimension?: number;
+}
+
+export interface GeneratedImage {
+  index: number;
+  value: string;
+  source: 'url' | 'b64_json';
 }
 
 export interface ComicPanel {
@@ -409,38 +431,75 @@ async function enrichImagePrompt(
 }
 
 /**
- * Generate image via NanoGPT image API.
+ * Generate one or more images via the NanoGPT image API in a single request.
  *
- * Sends a JSON POST to /images/generations. On failure, throws with the
- * exact model, size, and prompt that were used so the caller can diagnose
- * the problem without guessing.
+ * Sends a JSON POST to /images/generations with `n: count`. Every entry of
+ * the response `data[]` array is returned, mapped strictly by array index —
+ * short responses are reported, never shifted; extra entries are dropped.
+ * On failure, throws with the exact model, size, and prompt that were used.
  */
-async function generateImage(prompt: string, options: ImageGenOptions = {}): Promise<string> {
+async function generateImages(prompt: string, options: GenerateImagesOptions): Promise<GeneratedImage[]> {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('API key not set. Go to Settings to add your NanoGPT API key.');
+
+  const count = Math.floor(options.count ?? 1);
+  if (!Number.isFinite(count) || count < 1) throw new Error(`Invalid image count: ${options.count}`);
 
   const imageModel = await DB.getSetting('imageModel', 'gpt-image-1');
   const showExplicitContent = await DB.getSetting('showExplicitContent', false);
   const modelId = options.model || imageModel;
   const resolution = options.resolution || '1024x1024';
 
-  // Collect and compress reference images (configurable cap)
-  const maxRefImages = await DB.getSetting('maxRefImages', 4);
-  const rawRefs =
-    options.imageDataUrls?.length > 0
-      ? options.imageDataUrls.slice(0, maxRefImages)
-      : options.imageDataUrl
-        ? [options.imageDataUrl]
-        : [];
-  if (options.imageDataUrls?.length > maxRefImages) {
-    console.warn(`[generateImage] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`);
+  let rawRefs: string[];
+  if (options.exactReferences) {
+    // Anchored-continuity path: references were allocated deterministically.
+    // Never truncate — validate against live model capability instead.
+    rawRefs = options.imageDataUrls || [];
+    const meta = await getImageModelMeta(modelId);
+    if (meta?.maxInputImages && rawRefs.length > meta.maxInputImages) {
+      throw new Error(
+        `Reference count ${rawRefs.length} exceeds ${modelId}'s input-image limit of ${meta.maxInputImages}. ` +
+          `Reduce the page cast or reference budget.`,
+      );
+    }
+    if (meta?.maxOutputImages && count > meta.maxOutputImages) {
+      throw new Error(
+        `Requested ${count} outputs but ${modelId} supports at most ${meta.maxOutputImages} per request.`,
+      );
+    }
+    if (count > 1 && Array.isArray(meta?.sizes) && meta.sizes.length > 0 && !meta.sizes.includes(resolution)) {
+      throw new Error(
+        `Size "${resolution}" is not in ${modelId}'s supported resolution list (${meta.sizes.join(', ')}).`,
+      );
+    }
+  } else {
+    // Legacy path: configurable cap preserved for pre-continuity callers
+    const maxRefImages = await DB.getSetting('maxRefImages', 4);
+    rawRefs =
+      options.imageDataUrls?.length > 0
+        ? options.imageDataUrls.slice(0, maxRefImages)
+        : options.imageDataUrl
+          ? [options.imageDataUrl]
+          : [];
+    if (options.imageDataUrls?.length > maxRefImages) {
+      console.warn(
+        `[generateImages] Truncated reference images from ${options.imageDataUrls.length} to ${maxRefImages}`,
+      );
+    }
   }
-  const compressedRefs = rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u))) : null;
 
-  // Prepend reference legend when labeled refs are provided
-  const labeledRefs = options.labeledRefs;
+  // Preserve reference order through preprocessing. Identity anchors keep a
+  // larger long edge (up to 2048) so faces survive; legacy callers keep 1024.
+  const refMaxDim = options.refMaxDimension || 1024;
+  const compressedRefs =
+    rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u, refMaxDim))) : null;
+
+  // Prepend the legacy reference legend only when labeled refs are provided.
+  // The anchored pipeline compiles its own reference map into the prompt.
+  const labeledRefs = options.exactReferences ? null : options.labeledRefs;
   let finalPrompt = prompt;
   if (labeledRefs?.length > 0) {
+    const maxRefImages = await DB.getSetting('maxRefImages', 4);
     const legend = labeledRefs
       .slice(0, maxRefImages)
       .map((ref, i) => {
@@ -469,27 +528,30 @@ async function generateImage(prompt: string, options: ImageGenOptions = {}): Pro
     finalPrompt = `${legend} ${prompt}`;
   }
 
-  const body: any = { model: modelId, prompt: finalPrompt, size: resolution, n: 1 };
+  const body: any = { model: modelId, prompt: finalPrompt, size: resolution, n: count };
   if (showExplicitContent) body.showExplicitContent = true;
   if (compressedRefs?.length > 0) body.imageDataUrls = compressedRefs;
   // Pass caller-supplied negative prompt to models that support it (ignored by models that don't)
   if (options.negativePrompt?.trim()) body.negative_prompt = options.negativePrompt.trim();
 
-  const res = await fetch(`${BASE_URL}/images/generations`, {
+  const fetchOpts: any = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
-  });
+  };
+  if (options.signal) fetchOpts.signal = options.signal;
+
+  const res = await fetch(`${BASE_URL}/images/generations`, fetchOpts);
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
     const apiMsg = errData.error?.message || errData.message || `HTTP ${res.status} ${res.statusText}`;
     const error = new Error(
       `Image generation failed [HTTP ${res.status}]\n` +
-        `Model: ${modelId}  Size: ${resolution}\n` +
+        `Model: ${modelId}  Size: ${resolution}  n: ${count}\n` +
         `API: ${apiMsg}\n` +
         `Prompt: ${prompt}`,
     ) as any;
@@ -502,9 +564,29 @@ async function generateImage(prompt: string, options: ImageGenOptions = {}): Pro
   }
 
   const data = await res.json();
-  const result = data.data?.[0]?.url || data.data?.[0]?.b64_json;
-  if (!result) throw new Error('No image data in API response');
-  return result;
+  const entries = Array.isArray(data.data) ? data.data : [];
+  const results: GeneratedImage[] = [];
+  for (let i = 0; i < entries.length && i < count; i++) {
+    const entry = entries[i];
+    if (entry?.url) results.push({ index: i, value: entry.url, source: 'url' });
+    else if (entry?.b64_json) results.push({ index: i, value: entry.b64_json, source: 'b64_json' });
+  }
+  if (results.length === 0) throw new Error('No image data in API response');
+  if (entries.length < count) {
+    console.warn(`[generateImages] Requested ${count} images but the API returned ${entries.length}`);
+  } else if (entries.length > count) {
+    console.warn(`[generateImages] API returned ${entries.length} images for a request of ${count} — extras dropped`);
+  }
+  return results;
+}
+
+/**
+ * Single-image compatibility wrapper — existing character and world
+ * reference-generation callers go through here unchanged.
+ */
+async function generateImage(prompt: string, options: ImageGenOptions = {}): Promise<string> {
+  const results = await generateImages(prompt, Object.assign({}, options, { count: 1 }));
+  return results[0].value;
 }
 
 /**
@@ -738,6 +820,188 @@ function parseComicResponse(text: string): ComicPageResult | null {
   }
 }
 
+export interface PlannerManifest {
+  genreName: string;
+  characters: Array<{ id: string; name: string; role?: string; description?: string; powers?: string }>;
+  world?: { name: string; description?: string; details?: string; atmosphere?: string } | null;
+  locationKeys?: string[];
+  customSystemPrompt?: string | null;
+  panelCount?: string;
+}
+
+/**
+ * Build the system prompt for the structured story planner (spec §8.1).
+ * The story model plans visual facts against an explicit ID manifest; the
+ * application compiles the final image prompts deterministically. The model
+ * must NOT write appearance or wardrobe prose — continuity owns those.
+ */
+function buildPlannerSystemPrompt(manifest: PlannerManifest): string {
+  const base =
+    manifest.customSystemPrompt ||
+    `You are a masterful comic book creator specializing in ${manifest.genreName} stories.`;
+  const panelCount = manifest.panelCount || '3-4';
+
+  const characterLines = manifest.characters
+    .map((c) => {
+      let line = `- id: "${c.id}"  name: ${c.name}`;
+      if (c.role) line += ` (${c.role})`;
+      if (c.description) line += `\n  ${c.description}`;
+      if (c.powers) line += `\n  Abilities: ${c.powers}`;
+      return line;
+    })
+    .join('\n');
+
+  const locationLines =
+    manifest.locationKeys && manifest.locationKeys.length > 0
+      ? manifest.locationKeys.map((k) => `- "${k}"`).join('\n')
+      : '(none — always use null for locationKey)';
+
+  let worldBlock = '';
+  if (manifest.world) {
+    worldBlock = `\nWORLD SETTING:\nName: ${manifest.world.name}\nDescription: ${manifest.world.description || ''}\n`;
+    if (manifest.world.details) worldBlock += `Details: ${manifest.world.details}\n`;
+    if (manifest.world.atmosphere) worldBlock += `Atmosphere: ${manifest.world.atmosphere}\n`;
+  }
+
+  return `${base}
+
+IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
+
+Your response must be a JSON object with this exact structure:
+{
+"title": "Page title",
+"panels": [
+  {
+    "narration": "Scene-setting narration text (optional, may be empty)",
+    "dialogue": [ { "speaker": "Character Name", "text": "What they say" } ],
+    "visual": {
+      "locationKey": "one of the allowed location keys, or null",
+      "environment": "brief scene-specific environmental description",
+      "shot": "shot type (wide establishing shot, medium shot, close-up, over-the-shoulder, Dutch angle...)",
+      "composition": "composition notes (rule of thirds, foreground/background layers, diagonals...)",
+      "lighting": "lighting style (rim lighting, chiaroscuro, soft diffused light, hard shadows...)",
+      "colorMood": "color mood (desaturated, high contrast, warm palette...)",
+      "characters": [
+        { "characterId": "id from the CHARACTER MANIFEST", "action": "what they are doing", "pose": "body position", "expression": "facial expression" }
+      ],
+      "keyProps": ["important objects visible in the panel"],
+      "focalPoint": "what the eye should land on (optional)",
+      "layoutHint": "wide | balanced | tall (optional)"
+    },
+    "visualStateChanges": [
+      {
+        "characterId": "id from the CHARACTER MANIFEST",
+        "timing": "before-panel or after-panel",
+        "reason": "why the story changes this state",
+        "set": {
+          "wardrobeDescription": "complete new outfit description (only when clothing visibly changes; null to revert to the identity-anchor outfit)",
+          "hairState": "new hair arrangement or condition",
+          "carriedItems": ["complete replacement list of carried items"],
+          "injuries": ["complete replacement list of visible injuries"],
+          "temporaryChanges": ["complete replacement list of temporary visual changes (dirt, disguise, transformation)"]
+        }
+      }
+    ]
+  }
+],
+"choices": [ { "text": "Choice description for the reader", "summary": "Brief consequence summary" } ]
+}
+
+Generate ${panelCount} panels per page.
+
+CHARACTER MANIFEST (the ONLY allowed characterId values):
+${characterLines}
+
+ALLOWED LOCATION KEYS (the ONLY allowed locationKey values):
+${locationLines}
+
+STRICT PLANNING RULES:
+- Use ONLY characterId values from the CHARACTER MANIFEST. Never invent IDs and never use character names as IDs.
+- List EVERY visible character in visual.characters, including silent background cast whose identity matters.
+- Do NOT describe any character's physical appearance, face, hair color, build, or clothing in visual fields. Identity and wardrobe are supplied separately by the application.
+- Report a wardrobe, hair, injury, carried-item, disguise, or transformation change ONLY in visualStateChanges, and ONLY when the story visibly changes it. Never redesign clothing for variety.
+- In "set", omit any field that does not change. A present value fully replaces the old value.
+- Use only the allowed locationKey values, or null when no listed location fits.
+- Do not specify art style anywhere; the application's image preset is authoritative.
+- Provide 2-3 meaningful choices at the end that affect the story direction.${worldBlock}`;
+}
+
+/**
+ * Parse the structured planned-page JSON from the story model.
+ * Shape-normalizes fields with safe defaults; ID/manifest validation is done
+ * separately by visual-continuity.validatePlannedPage(). Returns null when
+ * the text cannot be parsed even after truncation repair.
+ */
+function parsePlannedPageResponse(text: string): any | null {
+  let jsonStr = (text || '').trim();
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) jsonStr = fenceMatch[1].trim();
+  const firstBrace = jsonStr.indexOf('{');
+  const lastBrace = jsonStr.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+
+  const normalizeChange = (ch: any) => ({
+    characterId: ch?.characterId || ch?.character_id || '',
+    timing: ch?.timing === 'after-panel' ? 'after-panel' : 'before-panel',
+    reason: ch?.reason || '',
+    set: {
+      ...(ch?.set && 'wardrobeDescription' in ch.set ? { wardrobeDescription: ch.set.wardrobeDescription } : {}),
+      ...(ch?.set && 'hairState' in ch.set ? { hairState: ch.set.hairState } : {}),
+      ...(ch?.set && 'carriedItems' in ch.set ? { carriedItems: ch.set.carriedItems } : {}),
+      ...(ch?.set && 'injuries' in ch.set ? { injuries: ch.set.injuries } : {}),
+      ...(ch?.set && 'temporaryChanges' in ch.set ? { temporaryChanges: ch.set.temporaryChanges } : {}),
+    },
+  });
+
+  const buildResult = (parsed: any) => {
+    if (!parsed || !Array.isArray(parsed.panels)) return null;
+    return {
+      title: parsed.title || 'Untitled Page',
+      panels: parsed.panels.map((p: any) => ({
+        narration: p?.narration || '',
+        dialogue: (Array.isArray(p?.dialogue) ? p.dialogue : []).map((d: any) => ({
+          speaker: d?.speaker || 'Unknown',
+          text: d?.text || '',
+        })),
+        visual: {
+          locationKey: p?.visual?.locationKey || null,
+          environment: p?.visual?.environment || '',
+          shot: p?.visual?.shot || '',
+          composition: p?.visual?.composition || '',
+          lighting: p?.visual?.lighting || '',
+          colorMood: p?.visual?.colorMood || p?.visual?.color_mood || '',
+          characters: (Array.isArray(p?.visual?.characters) ? p.visual.characters : []).map((c: any) => ({
+            characterId: c?.characterId || c?.character_id || '',
+            action: c?.action || '',
+            pose: c?.pose || '',
+            expression: c?.expression || '',
+          })),
+          keyProps: Array.isArray(p?.visual?.keyProps) ? p.visual.keyProps.filter(Boolean) : [],
+          focalPoint: p?.visual?.focalPoint || undefined,
+          layoutHint: ['wide', 'balanced', 'tall'].includes(p?.visual?.layoutHint) ? p.visual.layoutHint : undefined,
+        },
+        visualStateChanges: Array.isArray(p?.visualStateChanges) ? p.visualStateChanges.map(normalizeChange) : [],
+      })),
+      choices: (Array.isArray(parsed.choices) ? parsed.choices : []).map((c: any) => ({
+        text: c?.text || c?.description || '',
+        summary: c?.summary || '',
+      })),
+    };
+  };
+
+  try {
+    return buildResult(JSON.parse(jsonStr));
+  } catch (_e) {
+    try {
+      return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
+    } catch (_e2) {
+      if (typeof (globalThis as any).App !== 'undefined')
+        (globalThis as any).App.logError('parsePlannedPageResponse', _e2, text?.substring(0, 200));
+      return null;
+    }
+  }
+}
+
 /**
  * Fetch all available text/chat models from NanoGPT.
  * Endpoint does not require authentication.
@@ -783,6 +1047,69 @@ async function fetchTextModels(forceRefresh: boolean = false): Promise<TextModel
   }
 }
 
+/** Pick the first finite positive number from a list of candidate metadata fields. */
+function firstPositiveNumber(...candidates: any[]): number | null {
+  for (const c of candidates) {
+    const n = typeof c === 'string' ? Number(c) : c;
+    if (typeof n === 'number' && Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  return null;
+}
+
+/**
+ * Normalize one raw NanoGPT image-model entry into the app's ImageModel shape.
+ * Accepts known field variants so response-shape differences don't leak
+ * through the rest of the app (spec §6.1).
+ */
+function normalizeImageModel(m: any): ImageModel {
+  const supportedParameters = m.supported_parameters || m.supportedParameters || null;
+  const inputModalities =
+    m.input_modalities || m.inputModalities || m.architecture?.input_modalities || m.modalities?.input || null;
+  return {
+    id: m.id || m.model,
+    name: m.name || m.id || m.model,
+    owned_by: m.owned_by || m.provider || '',
+    pricing: m.pricing || null,
+    // NanoGPT API returns image_to_image support under capabilities.image_to_image
+    supports_edit: m.capabilities?.image_to_image ?? m.supports_edit ?? false,
+    // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
+    sizes: m.sizes || m.supported_sizes || m.image_sizes || supportedParameters?.resolutions || null,
+    inputModalities: Array.isArray(inputModalities) ? inputModalities : undefined,
+    maxInputImages: firstPositiveNumber(
+      m.max_input_images,
+      m.maxInputImages,
+      m.max_images,
+      supportedParameters?.max_input_images,
+      supportedParameters?.max_images,
+      m.capabilities?.max_input_images,
+    ),
+    maxOutputImages: firstPositiveNumber(
+      m.max_output_images,
+      m.maxOutputImages,
+      m.max_outputs,
+      supportedParameters?.max_output_images,
+      supportedParameters?.n?.max,
+      m.capabilities?.max_output_images,
+    ),
+    supportedParameters: supportedParameters || undefined,
+  };
+}
+
+/**
+ * Look up normalized capability metadata for one image model from the live
+ * cache (populated by fetchImageModels). Returns null when neither live nor
+ * cached metadata exists — callers must then take the conservative path.
+ */
+async function getImageModelMeta(modelId: string): Promise<ImageModel | null> {
+  if (!modelId) return null;
+  try {
+    const models = await fetchImageModels();
+    return models.find((m) => m.id === modelId) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
  * Fetch all available image generation models from NanoGPT.
  * Requires authentication so the API returns detailed info including supported sizes.
@@ -805,16 +1132,7 @@ async function fetchImageModels(forceRefresh: boolean = false): Promise<ImageMod
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const models = (data.data || data || [])
-      .map((m: any) => ({
-        id: m.id || m.model,
-        name: m.name || m.id || m.model,
-        owned_by: m.owned_by || m.provider || '',
-        pricing: m.pricing || null,
-        // NanoGPT API returns image_to_image support under capabilities.image_to_image
-        supports_edit: m.capabilities?.image_to_image ?? m.supports_edit ?? false,
-        // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
-        sizes: m.sizes || m.supported_sizes || m.image_sizes || m.supported_parameters?.resolutions || null,
-      }))
+      .map((m: any) => normalizeImageModel(m))
       .sort((a: ImageModel, b: ImageModel) => a.id.localeCompare(b.id));
 
     await DB.setSetting(CACHE_KEY, models);
@@ -1300,11 +1618,15 @@ const API = {
   chatCompletion,
   chatCompletionStream,
   generateImage,
+  generateImages,
   enrichImagePrompt,
   generateEmbedding,
   generateImageCaption,
   buildSystemPrompt,
+  buildPlannerSystemPrompt,
   parseComicResponse,
+  parsePlannedPageResponse,
+  getImageModelMeta,
   getApiKey,
   getModel,
   getModelParams,

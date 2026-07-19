@@ -45,6 +45,10 @@ async function render() {
   const enrichImagePrompts = await DB.getSetting('enrichImagePrompts', false);
   const negativePrompt = await DB.getSetting('negativePrompt', '');
   const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
+  const useStructuredPlanner = await DB.getSetting('useStructuredPlanner', true);
+  const enableSequentialPages = await DB.getSetting('enableSequentialPages', false);
+  const refBudget = await DB.getSetting('refBudget', 'auto');
+  const singleImageModel = await DB.getSetting('singleImageModel', '');
 
   return `
     <div class="slide-up">
@@ -104,6 +108,7 @@ async function render() {
             <span id="image-model-count">--</span> models available &middot;
             <button class="btn-link" onclick="SettingsPage.refreshModels('image')">Refresh list</button>
           </div>
+          <div class="form-hint" id="image-model-caps"></div>
         </div>
 
         <div class="form-group">
@@ -198,7 +203,41 @@ async function render() {
             <input type="checkbox" id="set-dynamicsizes" ${dynamicImageSizes ? 'checked' : ''} style="width:auto;">
             AI-Picked Panel Sizes
           </label>
-          <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes.</div>
+          <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes. <strong>Legacy pipeline only:</strong> comics using the structured planner generate every panel at the single page-wide size above (sequential page requests require one shared size); panel layout varies via composition instead.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="set-structuredplanner" ${useStructuredPlanner ? 'checked' : ''} style="width:auto;">
+            Structured Planner + Anchored Continuity (new comics)
+          </label>
+          <div class="form-hint">The story model plans structured visual facts against exact character IDs, and the app compiles image prompts from identity anchors and a persistent wardrobe ledger. Disable to use the legacy free-prose prompt pipeline. Appearance-text repetition and gallery ref-selection modes above only apply to the legacy pipeline.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="set-sequentialpages" ${enableSequentialPages ? 'checked' : ''} style="width:auto;">
+            Sequential Page Generation (Seedream Sequential)
+          </label>
+          <div class="form-hint">When the image model is <code>seedream-v4.5-sequential</code>, generate all panels of a page in ONE ordered request. Sequential pages share one image size; mixed sizes route to per-panel requests. Leave off until the live output-order contract test has been verified for your account.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Reference Image Budget</label>
+          <select id="set-refbudget">
+            <option value="auto" ${refBudget === 'auto' ? 'selected' : ''}>Auto — all required anchors + useful extras up to the model limit</option>
+            ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+              .map((n) => `<option value="${n}" ${String(refBudget) === String(n) ? 'selected' : ''}>${n}</option>`)
+              .join('')}
+          </select>
+          <div class="form-hint">Ceiling for reference images per request, capped at the model's live maximum. Auto includes every required identity/location anchor, never padding to the maximum.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Single-Image Companion Model (optional)</label>
+          <input type="text" id="set-singleimgmodel" value="${escHtml(singleImageModel)}" placeholder="e.g. seedream-v4.5" list="single-model-options">
+          <datalist id="single-model-options"></datalist>
+          <div class="form-hint">Model used for independent per-panel requests when the page model is a sequential model. Recommended: <code>seedream-v4.5</code>. Blank uses the page model with n=1.</div>
         </div>
 
         <div class="form-group">
@@ -330,8 +369,35 @@ async function onMount() {
   }
   // Rebuild the size dropdown for the current (or newly auto-selected) model
   if (currentImageModel) await updateImageSizeOptions(currentImageModel);
+  updateImageModelCaps(currentImageModel);
+  // Offer image models as suggestions for the single-image companion field
+  const datalist = document.getElementById('single-model-options');
+  if (datalist && imageModels.length > 0) {
+    datalist.innerHTML = imageModels.map((m) => `<option value="${escHtml(m.id)}"></option>`).join('');
+  }
   // Close dropdowns when clicking outside
   document.addEventListener('click', handleOutsideClick);
+}
+
+/**
+ * Display the selected image model's live capabilities: maximum input
+ * (reference) images, maximum outputs per request, and supported sizes.
+ */
+function updateImageModelCaps(modelId: string | null | undefined): void {
+  const capsEl = document.getElementById('image-model-caps');
+  if (!capsEl) return;
+  const m = modelId ? imageModels.find((x) => x.id === modelId) : null;
+  if (!m) {
+    capsEl.textContent = modelId
+      ? 'Model capabilities unknown — conservative limits (1 reference, 1 output) apply until the model list refreshes.'
+      : '';
+    return;
+  }
+  const parts = [];
+  parts.push(`max reference images: ${m.maxInputImages ?? 'unknown'}`);
+  parts.push(`max outputs per request: ${m.maxOutputImages ?? 'unknown'}`);
+  if (Array.isArray(m.sizes) && m.sizes.length > 0) parts.push(`${m.sizes.length} supported sizes`);
+  capsEl.textContent = `Live capabilities — ${parts.join(' · ')}`;
 }
 
 function onUnmount(): void {
@@ -615,6 +681,15 @@ function selectModel(type: string, modelId: string): void {
     document.getElementById('image-model-display').textContent = modelId;
     // Dynamically update allowed sizes for the newly selected image model
     updateImageSizeOptions(modelId);
+    updateImageModelCaps(modelId);
+    // Recommend seedream-v4.5 as the single-image companion for the sequential model
+    if (modelId === 'seedream-v4.5-sequential') {
+      const companionEl = document.getElementById('set-singleimgmodel');
+      if (companionEl && !companionEl.value && imageModels.some((m) => m.id === 'seedream-v4.5')) {
+        companionEl.value = 'seedream-v4.5';
+        App.toast('Recommended single-image companion set to seedream-v4.5', 'info');
+      }
+    }
   } else if (type === 'caption') {
     document.getElementById('set-captionmodel').value = modelId;
     document.getElementById('caption-model-display').textContent = modelId;
@@ -880,6 +955,11 @@ async function save() {
   await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
   await DB.setSetting('dynamicImageSizes', document.getElementById('set-dynamicsizes').checked);
   await DB.setSetting('enrichImagePrompts', document.getElementById('set-enrichprompts').checked);
+  await DB.setSetting('useStructuredPlanner', document.getElementById('set-structuredplanner').checked);
+  await DB.setSetting('enableSequentialPages', document.getElementById('set-sequentialpages').checked);
+  const refBudgetVal = document.getElementById('set-refbudget').value;
+  await DB.setSetting('refBudget', refBudgetVal === 'auto' ? 'auto' : parseInt(refBudgetVal, 10));
+  await DB.setSetting('singleImageModel', document.getElementById('set-singleimgmodel').value.trim());
   await DB.setSetting('negativePrompt', document.getElementById('set-negativeprompt').value.trim());
   const sizeEl = document.getElementById('set-imgsize');
   const imageSizeVal = sizeEl.value.trim();
@@ -955,8 +1035,10 @@ async function importData(event: any): Promise<void> {
     if (data.presets && !validArray(data.presets)) throw new Error('Invalid presets data');
     if (data.imagePresets && !validArray(data.imagePresets)) throw new Error('Invalid imagePresets data');
 
-    if (data.characters) for (const c of data.characters) await DB.put(DB.STORES.characters, c);
-    if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, w);
+    // Normalize on import: files may predate stable image IDs and anchors
+    if (data.characters)
+      for (const c of data.characters) await DB.put(DB.STORES.characters, DB.normalizeCharacterRecord(c).record);
+    if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, DB.normalizeWorldRecord(w).record);
     if (data.comics) for (const c of data.comics) await DB.put(DB.STORES.comics, c);
     if (data.pages) for (const p of data.pages) await DB.put(DB.STORES.pages, p);
     if (data.presets) for (const p of data.presets) await DB.put(DB.STORES.presets, p);

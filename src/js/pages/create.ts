@@ -3,6 +3,23 @@ import type { PageModule } from '../utils.js';
 import { sanitizeImagePrompt, escHtml, GENRES, dedupeByNameLatest, cosineSimilarity } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
+import {
+  PROMPT_VERSION,
+  SEQUENTIAL_MODEL_ID,
+  initializeContinuity,
+  reducePageStates,
+  validatePlannedPage,
+  collectPageCast,
+  collectPanelCast,
+  collectLocationKeys,
+  allocateReferences,
+  effectiveReferenceBudget,
+  resolveImageGenerationPlan,
+  compileSequentialPagePrompt,
+  compileIndependentPanelPrompt,
+  compilePanelDescription,
+  applyVisualStateChange,
+} from '../visual-continuity.js';
 
 /**
  * Create Comic Page - The core comic generation experience
@@ -24,6 +41,10 @@ let state: any = {
   referenceImages: [], // world ref images [{dataUrl, label, type}]
   characterImagesByName: {}, // name → images[] from multi-image gallery
   characters: [],
+  world: null, // full world record (normalized) for anchored generation
+  plannerMode: false, // true when this comic uses the structured planner + continuity pipeline
+  visualContinuity: null, // ComicVisualContinuity ledger for the active comic
+  initialVisualOverrides: {}, // per-comic opening-state overrides from setup (charId → raw field strings)
   isGenerating: false,
   generatingContext: 'initial', // 'initial', 'reroll', 'continue'
   draftLoaded: false,
@@ -117,6 +138,7 @@ async function render(param?: string | null): Promise<string> {
 async function renderSetup() {
   const characters = await DB.getAll(DB.STORES.characters);
   const worlds = await DB.getAll(DB.STORES.worlds);
+  const plannerEnabled = await DB.getSetting('useStructuredPlanner', true);
   const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
   const imagePresets = dedupeByNameLatest(await DB.getAll(DB.STORES.imagePresets));
   const hasDraft =
@@ -182,6 +204,7 @@ async function renderSetup() {
           </div>
         `
         }
+        ${renderInitialStateSection(characters, plannerEnabled)}
       </div>
 
       <!-- Step 3: World -->
@@ -268,6 +291,84 @@ async function renderSetup() {
   `;
 }
 
+/**
+ * Per-comic initial visual state (spec §12.3): shown in setup for the
+ * selected characters, initialized from each character's reusable defaults.
+ * Edits here override only this comic — the character record is untouched.
+ */
+function renderInitialStateSection(characters: any[], plannerEnabled: boolean): string {
+  if (!plannerEnabled || state.selectedCharacters.length === 0) return '';
+  const rows = state.selectedCharacters
+    .map((cid) => {
+      const c = characters.find((x) => x.id === cid);
+      if (!c) return '';
+      const dvs = c.defaultVisualState || {};
+      const ov = state.initialVisualOverrides?.[cid] || {};
+      const val = (field, fallback) => (ov[field] !== undefined ? ov[field] : fallback);
+      return `
+        <div class="continuity-char" data-charid="${cid}">
+          <div class="continuity-char-name">${escHtml(c.name)}</div>
+          <input type="text" class="continuity-field" placeholder="Use identity-anchor outfit"
+            value="${escHtml(val('wardrobe', dvs.wardrobeDescription || ''))}"
+            oninput="CreatePage.setInitialState('${cid}','wardrobe',this.value)" title="Opening wardrobe for this comic">
+          <input type="text" class="continuity-field mt-sm" placeholder="Hair state"
+            value="${escHtml(val('hair', dvs.hairState || ''))}"
+            oninput="CreatePage.setInitialState('${cid}','hair',this.value)">
+          <input type="text" class="continuity-field mt-sm" placeholder="Carried items (comma-separated)"
+            value="${escHtml(val('items', (dvs.carriedItems || []).join(', ')))}"
+            oninput="CreatePage.setInitialState('${cid}','items',this.value)">
+          <input type="text" class="continuity-field mt-sm" placeholder="Injuries (comma-separated)"
+            value="${escHtml(val('injuries', (dvs.injuries || []).join(', ')))}"
+            oninput="CreatePage.setInitialState('${cid}','injuries',this.value)">
+          <input type="text" class="continuity-field mt-sm" placeholder="Temporary changes (comma-separated)"
+            value="${escHtml(val('temporary', (dvs.temporaryChanges || []).join(', ')))}"
+            oninput="CreatePage.setInitialState('${cid}','temporary',this.value)">
+        </div>`;
+    })
+    .join('');
+  if (!rows) return '';
+  return `
+    <div class="mt-sm">
+      <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
+        <h3 class="card-title" style="margin:0;">Initial Visual State (optional)</h3>
+      </div>
+      <div class="collapsible-body collapsed">
+        <p class="text-sm text-muted">Opening wardrobe and state for this comic only. Blank wardrobe means the outfit shown in the character's identity anchor. The reusable character record is not changed.</p>
+        ${rows}
+      </div>
+    </div>`;
+}
+
+/** Record a per-comic initial-state override from the setup form. */
+function setInitialState(charId: string, field: string, value: string): void {
+  state.initialVisualOverrides = state.initialVisualOverrides || {};
+  state.initialVisualOverrides[charId] = state.initialVisualOverrides[charId] || {};
+  state.initialVisualOverrides[charId][field] = value;
+  scheduleDraftSave();
+}
+
+/** Convert raw setup-form overrides into CharacterVisualStateDefaults per character. */
+function buildInitialStateOverrides(characters: any[]): Record<string, any> {
+  const splitList = (s) =>
+    String(s || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const overrides = {};
+  for (const c of characters) {
+    const ov = state.initialVisualOverrides?.[c.id];
+    if (!ov) continue;
+    const out: any = {};
+    if (ov.wardrobe !== undefined) out.wardrobeDescription = ov.wardrobe;
+    if (ov.hair !== undefined) out.hairState = ov.hair;
+    if (ov.items !== undefined) out.carriedItems = splitList(ov.items);
+    if (ov.injuries !== undefined) out.injuries = splitList(ov.injuries);
+    if (ov.temporary !== undefined) out.temporaryChanges = splitList(ov.temporary);
+    if (Object.keys(out).length > 0) overrides[c.id] = out;
+  }
+  return overrides;
+}
+
 function renderGenerating() {
   const contextMsg =
     state.generatingContext === 'reroll'
@@ -340,6 +441,8 @@ function renderReading() {
           : ''
       }
 
+      ${state.plannerMode && state.visualContinuity ? renderContinuityPanel(currentPage) : ''}
+
       <!-- Custom continuation -->
       <div class="card">
         <div class="form-group">
@@ -393,9 +496,11 @@ function renderComicPage(page: any): string {
       ${
         panel.imageUrl
           ? `<img src="${panel.imageUrl}" alt="Panel ${i + 1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;" onclick="CreatePage.zoomPanel(${i})">`
-          : panel.imagePrompt
-            ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:180px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted text-center" style="font-style:italic;">${escHtml(panel.imagePrompt).slice(0, 150)}...</p></div>`
-            : ''
+          : panel.generationError
+            ? `<div class="panel-gen-error"><strong>&#9888; Image not generated</strong><br>${escHtml(panel.generationError)}</div>`
+            : panel.imagePrompt
+              ? `<div style="background:linear-gradient(135deg,#1a1a3e,#2a1a4e);padding:20px;min-height:180px;display:flex;align-items:center;justify-content:center;"><p class="text-sm text-muted text-center" style="font-style:italic;">${escHtml(panel.imagePrompt).slice(0, 150)}...</p></div>`
+              : ''
       }
       ${panel.narration ? `<div class="comic-narration">${escHtml(panel.narration)}</div>` : ''}
       ${(panel.dialogue || [])
@@ -412,6 +517,112 @@ function renderComicPage(page: any): string {
   `,
     )
     .join('');
+}
+
+/**
+ * Compact continuity panel: shows each character's current mutable visual
+ * state (editable before the next page) plus the current page's generation
+ * details — model, strategy, resolution, reference count, and state changes.
+ */
+function renderContinuityPanel(currentPage: any): string {
+  const states = state.visualContinuity?.characterStates || {};
+  const charRows = state.characters
+    .map((c) => {
+      const s = states[c.id];
+      if (!s) return '';
+      return `
+        <div class="continuity-char" data-charid="${c.id}">
+          <div class="continuity-char-name">${escHtml(c.name)}</div>
+          <div class="form-group" style="margin-bottom:6px;">
+            <label class="form-label text-sm">Wardrobe</label>
+            <input type="text" class="continuity-field" data-charid="${c.id}" data-field="wardrobeDescription"
+              value="${escHtml(s.wardrobeDescription)}" placeholder="Use identity-anchor outfit">
+          </div>
+          <div class="form-group" style="margin-bottom:6px;">
+            <label class="form-label text-sm">Hair</label>
+            <input type="text" class="continuity-field" data-charid="${c.id}" data-field="hairState"
+              value="${escHtml(s.hairState)}" placeholder="As shown in identity anchor">
+          </div>
+          <div class="form-group" style="margin-bottom:6px;">
+            <label class="form-label text-sm">Carried items / Injuries / Temporary changes (comma-separated)</label>
+            <input type="text" class="continuity-field" data-charid="${c.id}" data-field="carriedItems"
+              value="${escHtml(s.carriedItems.join(', '))}" placeholder="Carried items">
+            <input type="text" class="continuity-field mt-sm" data-charid="${c.id}" data-field="injuries"
+              value="${escHtml(s.injuries.join(', '))}" placeholder="Injuries">
+            <input type="text" class="continuity-field mt-sm" data-charid="${c.id}" data-field="temporaryChanges"
+              value="${escHtml(s.temporaryChanges.join(', '))}" placeholder="Temporary changes">
+          </div>
+        </div>`;
+    })
+    .join('');
+
+  const gen = currentPage?.generation;
+  const notes = [...(currentPage?.generationWarnings || []), ...(currentPage?.validationErrors || [])];
+  const genDetails = gen
+    ? `<div class="continuity-gen-details text-sm text-muted">
+        <strong>Last page:</strong> ${gen.strategy === 'sequential-page' ? 'one sequential request' : 'independent panel requests'}
+        &middot; model ${escHtml(gen.modelId)}${gen.singleImageModelId && gen.singleImageModelId !== gen.modelId ? ` (panels via ${escHtml(gen.singleImageModelId)})` : ''}
+        &middot; ${escHtml(gen.resolution)}
+        &middot; ${gen.referenceManifest?.length ?? 0} reference${(gen.referenceManifest?.length ?? 0) === 1 ? '' : 's'}
+        ${notes.length ? `<div class="continuity-notes">${notes.map((n) => `&#9888; ${escHtml(n)}`).join('<br>')}</div>` : ''}
+      </div>`
+    : '';
+
+  return `
+    <div class="card">
+      <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
+        <h3 class="card-title" style="margin:0;">Continuity</h3>
+      </div>
+      <div class="collapsible-body collapsed">
+        <p class="text-sm text-muted">Current visual state used for the next page. Edit to correct clothing or details before continuing.</p>
+        ${charRows}
+        <button class="btn btn-secondary btn-sm" onclick="CreatePage.saveContinuityEdits()">Apply State Edits</button>
+        ${genDetails}
+      </div>
+    </div>`;
+}
+
+/** Persist user edits from the continuity panel into the comic's ledger. */
+async function saveContinuityEdits() {
+  if (!state.visualContinuity) return;
+  const fields = document.querySelectorAll('.continuity-field');
+  const editsByChar = {};
+  fields.forEach((el) => {
+    const charId = el.dataset.charid;
+    const field = el.dataset.field;
+    if (!charId || !field) return;
+    editsByChar[charId] = editsByChar[charId] || {};
+    if (field === 'wardrobeDescription' || field === 'hairState') {
+      editsByChar[charId][field] = el.value.trim() || null;
+    } else {
+      const items = el.value
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      editsByChar[charId][field] = items;
+    }
+  });
+
+  let changed = false;
+  for (const [charId, set] of Object.entries(editsByChar)) {
+    const current = state.visualContinuity.characterStates[charId];
+    if (!current) continue;
+    const next = applyVisualStateChange(current, set);
+    if (next !== current) {
+      state.visualContinuity.characterStates[charId] = next;
+      changed = true;
+    }
+  }
+  if (!changed) return App.toast('No state changes to apply', 'info');
+
+  state.visualContinuity.updatedAt = Date.now();
+  const comic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
+  if (comic) {
+    comic.visualContinuity = state.visualContinuity;
+    comic.updatedAt = Date.now();
+    await DB.put(DB.STORES.comics, comic);
+  }
+  App.toast('Visual state updated — applies from the next page', 'success');
 }
 
 async function renderResume(comicId: string): Promise<string> {
@@ -433,12 +644,26 @@ async function renderResume(comicId: string): Promise<string> {
   state.conversationHistory = comic.conversationHistory || [];
   state.step = 'reading';
   state.isGenerating = false;
+  state.plannerMode = comic.plannerMode === true;
+  state.visualContinuity = comic.visualContinuity || null;
 
   // Restore character data and reference images for continued generation
   state.characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
-    if (c) state.characters.push(c);
+    if (c) state.characters.push(DB.normalizeCharacterRecord(c).record);
+  }
+  state.world = null;
+  if (state.selectedWorld) {
+    const worldRec = await DB.get(DB.STORES.worlds, state.selectedWorld);
+    if (worldRec) state.world = DB.normalizeWorldRecord(worldRec).record;
+  }
+  // Anchored comics that predate the ledger get one initialized from current
+  // character defaults; the user can review/edit it before the next page.
+  if (state.plannerMode && !state.visualContinuity) {
+    state.visualContinuity = initializeContinuity(state.characters);
+    comic.visualContinuity = state.visualContinuity;
+    await DB.put(DB.STORES.comics, comic);
   }
 
   const useRefImages = await DB.getSetting('useRefImages', true);
@@ -508,6 +733,7 @@ async function saveDraft() {
     selectedImagePreset: state.selectedImagePreset,
     title: state.title,
     storyPrompt: state.storyPrompt,
+    initialVisualOverrides: state.initialVisualOverrides,
   });
 }
 
@@ -536,6 +762,10 @@ async function restoreDraftOrActive() {
     state.selectedImagePreset = draft.selectedImagePreset || null;
     state.title = draft.title || '';
     state.storyPrompt = draft.storyPrompt || '';
+    state.initialVisualOverrides =
+      draft.initialVisualOverrides && typeof draft.initialVisualOverrides === 'object'
+        ? draft.initialVisualOverrides
+        : {};
   }
 }
 
@@ -548,6 +778,7 @@ async function resetSetup() {
   state.selectedImagePreset = null;
   state.title = '';
   state.storyPrompt = '';
+  state.initialVisualOverrides = {};
   state.draftLoaded = true; // mark as loaded so we don't re-load old draft
   await DB.setSetting('createSetupDraft', null);
   App.refreshPage();
@@ -615,14 +846,28 @@ async function startGenerating() {
   // The draft is only cleared when the user explicitly clicks "New Comic".
   await saveDraft();
 
-  // Build context
+  // Build context — normalize records so every image has a stable ID and an
+  // explicit anchor before generation. Persist newly assigned IDs immediately
+  // so anchors stay stable across sessions (covers imported/legacy records).
   const characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
-    if (c) characters.push(c);
+    if (!c) continue;
+    const { record, changed } = DB.normalizeCharacterRecord(c);
+    if (changed) await DB.put(DB.STORES.characters, record);
+    characters.push(record);
   }
   state.characters = characters;
-  const world = state.selectedWorld ? await DB.get(DB.STORES.worlds, state.selectedWorld) : null;
+  let world = null;
+  if (state.selectedWorld) {
+    const worldRec = await DB.get(DB.STORES.worlds, state.selectedWorld);
+    if (worldRec) {
+      const { record, changed } = DB.normalizeWorldRecord(worldRec);
+      if (changed) await DB.put(DB.STORES.worlds, record);
+      world = record;
+    }
+  }
+  state.world = world;
 
   // Collect reference images for image-to-image generation
   const useRefImages = await DB.getSetting('useRefImages', true);
@@ -684,13 +929,39 @@ async function startGenerating() {
     }
   }
 
-  const systemPrompt = API.buildSystemPrompt(
-    genreName,
-    characters,
-    world,
-    presetData?.systemPrompt || null,
-    systemPromptOpts,
-  );
+  // Structured planner + anchored continuity pipeline (default). The legacy
+  // free-prose imagePrompt pipeline remains as a compatibility path.
+  state.plannerMode = await DB.getSetting('useStructuredPlanner', true);
+
+  let systemPrompt;
+  if (state.plannerMode) {
+    const locationKeys = (world?.images || []).map((img) => img?.locationKey).filter(Boolean);
+    systemPrompt = API.buildPlannerSystemPrompt({
+      genreName,
+      characters: characters.map((c) => ({
+        id: c.id,
+        name: c.name,
+        role: c.role,
+        description: c.description,
+        powers: c.powers,
+      })),
+      world: world
+        ? { name: world.name, description: world.description, details: world.details, atmosphere: world.atmosphere }
+        : null,
+      locationKeys: [...new Set(locationKeys)],
+      customSystemPrompt: presetData?.systemPrompt || null,
+    });
+    state.visualContinuity = initializeContinuity(characters, buildInitialStateOverrides(characters));
+  } else {
+    state.visualContinuity = null;
+    systemPrompt = API.buildSystemPrompt(
+      genreName,
+      characters,
+      world,
+      presetData?.systemPrompt || null,
+      systemPromptOpts,
+    );
+  }
 
   const userMessage = state.storyPrompt
     ? `Create the first page of a ${genreName} comic titled "${state.title}". Opening scene: ${state.storyPrompt}`
@@ -714,6 +985,8 @@ async function startGenerating() {
     imagePresetId: state.selectedImagePreset,
     pageCount: 0,
     conversationHistory: state.conversationHistory,
+    plannerMode: state.plannerMode,
+    visualContinuity: state.visualContinuity,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -1042,6 +1315,286 @@ async function generatePanelImages(pageData: any, uiMsg: string): Promise<void> 
   );
 }
 
+/** Convert an image API result (url or b64) to a persistent data URL when possible. */
+async function imageResultToDataUrl(value: string, source: string): Promise<string> {
+  if (!value) return '';
+  if (source === 'b64_json' || (!value.startsWith('http') && !value.startsWith('data:'))) {
+    return value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
+  }
+  if (value.startsWith('data:')) return value;
+  // Remote URLs may be signed and expire — persist as data URL before commit
+  try {
+    const resp = await fetch(value);
+    const blob = await resp.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(value);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Cross-page continuity reference: the previous page's last panel that has a
+ * locally stored image. Optional — omitted when it would displace an anchor.
+ */
+function getPreviousFrameRef() {
+  for (let p = state.pages.length - 1; p >= 0; p--) {
+    const page = state.pages[p];
+    const panels = page?.panels || [];
+    for (let i = panels.length - 1; i >= 0; i--) {
+      const url = panels[i]?.imageUrl;
+      if (url && url.startsWith('data:')) {
+        return { dataUrl: url, sourcePageId: state.pageIds[p], sourcePanelIndex: i };
+      }
+    }
+  }
+  return null;
+}
+
+/** Panel cast IDs in stable comic selected-character order. */
+function orderedPanelCast(panel) {
+  const cast = new Set(collectPanelCast(panel));
+  const ordered = state.selectedCharacters.filter((id) => cast.has(id));
+  const extras = [...cast].filter((id) => !ordered.includes(id)).sort();
+  return [...ordered, ...extras];
+}
+
+/**
+ * Anchored-continuity image generation for a planned page.
+ * Requires pageData.planned and pageData.renderStates (set by generatePage,
+ * or reused verbatim for whole-page image regeneration). Chooses between one
+ * sequential page request and independent panel requests from live model
+ * metadata, compiles deterministic prompts, and records generation metadata.
+ */
+async function generateContinuityPageImages(pageData: any, statusMsg: any): Promise<void> {
+  const planned = pageData.planned;
+  const renderStates = pageData.renderStates || [];
+  const panels = pageData.panels;
+  const warnings = [];
+
+  const modelId = (await DB.getSetting('imageModel', '')) || 'gpt-image-1';
+  const meta = await API.getImageModelMeta(modelId);
+  const sequentialEnabled = await DB.getSetting('enableSequentialPages', false);
+  const refBudgetSetting = await DB.getSetting('refBudget', 'auto');
+  // The companion applies ONLY when the page model is the sequential adapter;
+  // a stale companion must never hijack generation for other selected models
+  const configuredCompanion = await DB.getSetting('singleImageModel', '');
+  const singleImageModelId = modelId === SEQUENTIAL_MODEL_ID && configuredCompanion ? configuredCompanion : modelId;
+  const imageSize = await DB.getSetting('imageSize', '1024x1024');
+  const negativePrompt = await DB.getSetting('negativePrompt', '');
+  const useRefImages = await DB.getSetting('useRefImages', true);
+  const imagePresetData = state.selectedImagePreset
+    ? await DB.get(DB.STORES.imagePresets, state.selectedImagePreset)
+    : null;
+  const stylePreset = imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', ''));
+
+  const byId = {};
+  for (const c of state.characters) byId[c.id] = c;
+
+  // Independent panel requests run on the companion model, so their budget
+  // and size validation use the companion's capabilities, not the page model's
+  const companionMeta = singleImageModelId === modelId ? meta : await API.getImageModelMeta(singleImageModelId);
+  const budget = effectiveReferenceBudget(refBudgetSetting, meta?.maxInputImages);
+  const panelBudget = effectiveReferenceBudget(refBudgetSetting, companionMeta?.maxInputImages);
+  const previousFrame = useRefImages ? getPreviousFrameRef() : null;
+
+  // The ledger's recorded anchors are the comic's explicit continuity choice
+  const ledgerStates = (pageData.continuityBefore || state.visualContinuity)?.characterStates || {};
+  const anchorImageIdByCharacter = {};
+  for (const [charId, charState] of Object.entries(ledgerStates)) {
+    anchorImageIdByCharacter[charId] = charState?.identityAnchorImageId ?? null;
+  }
+
+  const emptyAlloc = { manifest: [], dataUrls: [], unanchoredCharacterIds: [], warnings: [] };
+
+  // Page-wide reference union (sequential candidate)
+  const pageCast = collectPageCast(planned, state.selectedCharacters);
+  const pageAlloc = useRefImages
+    ? allocateReferences({
+        characterIds: pageCast,
+        charactersById: byId,
+        locationKeys: collectLocationKeys(planned.panels),
+        world: state.world,
+        budget,
+        previousFrame,
+        anchorImageIdByCharacter,
+      })
+    : emptyAlloc;
+  warnings.push(...pageAlloc.warnings);
+
+  // Per-panel allocations (routing counts + independent fallback)
+  const panelAllocs = planned.panels.map((panel) =>
+    useRefImages
+      ? allocateReferences({
+          characterIds: orderedPanelCast(panel),
+          charactersById: byId,
+          locationKeys: panel.visual?.locationKey ? [panel.visual.locationKey] : [],
+          world: state.world,
+          budget: panelBudget,
+          // Cross-page continuity applies to independent panels too — the
+          // allocator includes it only when spare capacity remains
+          previousFrame,
+          anchorImageIdByCharacter,
+        })
+      : emptyAlloc,
+  );
+
+  const sizeValid = !Array.isArray(meta?.sizes) || meta.sizes.length === 0 || meta.sizes.includes(imageSize);
+  if (!sizeValid) {
+    warnings.push(`Size ${imageSize} is not in ${modelId}'s supported resolution list — sequential batching skipped`);
+  }
+  const companionSizeValid =
+    !Array.isArray(companionMeta?.sizes) || companionMeta.sizes.length === 0 || companionMeta.sizes.includes(imageSize);
+  if (!companionSizeValid) {
+    warnings.push(
+      `Size ${imageSize} is not in ${singleImageModelId}'s supported resolution list — panel requests may be rejected`,
+    );
+  }
+
+  const plan = resolveImageGenerationPlan({
+    modelId,
+    modelMeta: meta ? { maxInputImages: budget, maxOutputImages: meta.maxOutputImages, sizes: meta.sizes } : null,
+    imagePanelCount: planned.panels.length,
+    pageReferenceCount: pageAlloc.error ? pageAlloc.error.required : pageAlloc.manifest.length,
+    panelReferenceCounts: panelAllocs.map((a) => (a.error ? a.error.required : a.manifest.length)),
+    requestedSizes: [imageSize],
+    sequentialEnabled: sequentialEnabled && sizeValid,
+    panelCapacity: panelBudget,
+  });
+  warnings.push(...plan.reasons.filter((r) => r !== 'Sequential page request'));
+
+  const compiledPrompts = [];
+
+  if (plan.strategy === 'sequential-page' && !pageAlloc.error) {
+    // One ordered request for the whole page; data[i] maps ONLY to IMAGE i+1
+    const prompt = compileSequentialPagePrompt({
+      panels: planned.panels,
+      renderStates,
+      manifest: pageAlloc.manifest,
+      charactersById: byId,
+      stylePreset,
+    });
+    compiledPrompts.push(prompt);
+    planned.panels.forEach((panel, i) => {
+      panels[i].imagePrompt = compilePanelDescription({
+        panel,
+        renderState: renderStates[i] || {},
+        manifest: pageAlloc.manifest,
+        charactersById: byId,
+      });
+    });
+    if (statusMsg) statusMsg.textContent = `Generating ${planned.panels.length} panel images in one sequence...`;
+
+    const genOpts = {
+      count: planned.panels.length,
+      model: modelId,
+      resolution: imageSize,
+      exactReferences: true,
+      refMaxDimension: 2048,
+      signal: abortController?.signal,
+    };
+    if (pageAlloc.dataUrls.length > 0) genOpts.imageDataUrls = pageAlloc.dataUrls;
+    if (negativePrompt) genOpts.negativePrompt = negativePrompt;
+
+    const results = await API.generateImages(prompt, genOpts);
+    for (const r of results) {
+      const url = await imageResultToDataUrl(r.value, r.source);
+      if (url && panels[r.index]) panels[r.index].imageUrl = url;
+    }
+    if (results.length < planned.panels.length) {
+      warnings.push(
+        `Model returned ${results.length} of ${planned.panels.length} images — missing panels were left empty`,
+      );
+      App.toast(`Only ${results.length} of ${planned.panels.length} panel images were returned`, 'error');
+    }
+  } else {
+    // Independent panel requests with the same compiled state semantics
+    const blocked = new Set(plan.blockedPanels.map((b) => b.panelIndex));
+    const prompts = planned.panels.map((panel, i) => {
+      const alloc = panelAllocs[i];
+      if (alloc.error || blocked.has(i)) return null;
+      return compileIndependentPanelPrompt({
+        panel,
+        renderState: renderStates[i] || {},
+        manifest: alloc.manifest,
+        charactersById: byId,
+        stylePreset,
+      });
+    });
+    prompts.forEach((p, i) => {
+      if (p) {
+        compiledPrompts.push(p);
+        panels[i].imagePrompt = compilePanelDescription({
+          panel: planned.panels[i],
+          renderState: renderStates[i] || {},
+          manifest: panelAllocs[i].manifest,
+          charactersById: byId,
+        });
+      }
+    });
+
+    let done = 0;
+    const total = prompts.filter(Boolean).length;
+    if (statusMsg) statusMsg.textContent = `Generating images (0 / ${total})...`;
+    await Promise.all(
+      planned.panels.map(async (panel, i) => {
+        const alloc = panelAllocs[i];
+        if (alloc.error) {
+          // Never silently drop a required anchor — leave the panel empty with the exact conflict
+          panels[i].generationError = alloc.error.detail;
+          warnings.push(`Panel ${i + 1}: ${alloc.error.detail}`);
+          return;
+        }
+        const prompt = prompts[i];
+        if (!prompt) return;
+        try {
+          const genOpts = {
+            count: 1,
+            model: singleImageModelId,
+            resolution: imageSize,
+            exactReferences: true,
+            refMaxDimension: 2048,
+            signal: abortController?.signal,
+          };
+          if (alloc.dataUrls.length > 0) genOpts.imageDataUrls = alloc.dataUrls;
+          if (negativePrompt) genOpts.negativePrompt = negativePrompt;
+          const results = await API.generateImages(prompt, genOpts);
+          const url = await imageResultToDataUrl(results[0].value, results[0].source);
+          if (url) {
+            panels[i].imageUrl = url;
+            delete panels[i].generationError;
+          }
+        } catch (imgErr) {
+          if (imgErr?.name === 'AbortError') throw imgErr;
+          App.logError('Panel image generation (continuity)', imgErr);
+          panels[i].generationError = imgErr.message;
+          App.toast(`Panel ${i + 1} image failed: ${imgErr.message}`, 'error');
+        }
+        done++;
+        if (statusMsg) statusMsg.textContent = `Generating images (${done} / ${total})...`;
+      }),
+    );
+  }
+
+  pageData.generation = {
+    schemaVersion: 1,
+    strategy: plan.strategy,
+    modelId,
+    ...(plan.strategy === 'independent-panels' ? { singleImageModelId } : {}),
+    resolution: imageSize,
+    promptVersion: PROMPT_VERSION,
+    compiledPrompts,
+    referenceManifest:
+      plan.strategy === 'sequential-page' ? pageAlloc.manifest : panelAllocs.flatMap((a) => a.manifest),
+    generatedAt: Date.now(),
+  };
+  pageData.generationWarnings = [...new Set(warnings)];
+}
+
 async function generatePage(presetData: any): Promise<void> {
   try {
     const contextExchanges = await DB.getSetting('contextExchanges', 6);
@@ -1081,7 +1634,42 @@ async function generatePage(presetData: any): Promise<void> {
     const statusMsg = document.getElementById('gen-status-msg');
     if (statusMsg) statusMsg.textContent = 'Parsing story...';
 
-    const pageData = API.parseComicResponse(fullText);
+    let pageData = null;
+    if (state.plannerMode) {
+      const planned = API.parsePlannedPageResponse(fullText);
+      if (planned) {
+        // Exact ID validation replaces character-name regex matching
+        const locationKeys = [...new Set((state.world?.images || []).map((img) => img?.locationKey).filter(Boolean))];
+        const { page: validated, errors } = validatePlannedPage(planned, {
+          characterIds: state.characters.map((c) => c.id),
+          locationKeys,
+        });
+        pageData = {
+          title: validated.title,
+          panels: validated.panels.map(() => ({ narration: '', dialogue: [], imagePrompt: '', imageUrl: '' })),
+          choices: validated.choices,
+          planned: validated,
+          validationErrors: errors,
+        };
+        validated.panels.forEach((p, i) => {
+          pageData.panels[i].narration = p.narration;
+          pageData.panels[i].dialogue = p.dialogue;
+        });
+
+        // State reduction: continuityBefore → per-panel render states → continuityAfter.
+        // Snapshots are stored on the page so whole-page image regeneration can
+        // reuse the exact render states instead of the comic's latest ledger.
+        const pageNum = state.pages.length + 1;
+        const continuityBefore = structuredClone(state.visualContinuity || initializeContinuity(state.characters));
+        const reduction = reducePageStates(continuityBefore, validated, pageNum);
+        pageData.continuityBefore = continuityBefore;
+        pageData.continuityAfter = reduction.continuityAfter;
+        pageData.renderStates = reduction.panelRenderStates;
+        pageData.validationErrors = [...pageData.validationErrors, ...reduction.errors];
+      }
+    } else {
+      pageData = API.parseComicResponse(fullText);
+    }
     if (!pageData) {
       App.toast('Failed to parse comic page — the AI response was not valid JSON. Please try again.', 'error');
       state.step = state.pages.length > 0 ? 'reading' : 'setup';
@@ -1093,38 +1681,60 @@ async function generatePage(presetData: any): Promise<void> {
     // Add assistant response to conversation
     state.conversationHistory.push({ role: 'assistant', content: fullText });
 
-    // Generate images if enabled — all panels in parallel
+    // Generate images if enabled
     const enableImages = await DB.getSetting('enableImages', true);
     if (enableImages) {
-      const panelsWithImages = pageData.panels.filter((p) => p.imagePrompt).length;
-      if (panelsWithImages > 0) {
-        if (streamTitle)
-          streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
-        if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
+      if (state.plannerMode && pageData.planned) {
+        if (streamTitle) streamTitle.textContent = `Generating ${pageData.panels.length} images...`;
+        try {
+          await generateContinuityPageImages(pageData, statusMsg);
+        } catch (imgErr) {
+          if (imgErr?.name === 'AbortError') throw imgErr;
+          // The story plan and continuity snapshots are preserved on the page,
+          // so images can be retried later without regenerating story text.
+          App.logError('Continuity image generation', imgErr);
+          App.toast(`Image generation failed: ${imgErr.message}`, 'error');
+        }
+      } else {
+        const panelsWithImages = pageData.panels.filter((p) => p.imagePrompt).length;
+        if (panelsWithImages > 0) {
+          if (streamTitle)
+            streamTitle.textContent = `Generating ${panelsWithImages} image${panelsWithImages > 1 ? 's' : ''}...`;
+          if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
+        }
+        await generatePanelImages(pageData, statusMsg);
       }
-      await generatePanelImages(pageData, statusMsg);
     }
 
     // Save page — generate id first so we can track it for re-roll/undo
     state.pages.push(pageData);
     const pageNum = state.pages.length;
     const pageId = DB.uuid();
-    await DB.put(DB.STORES.pages, {
+    const pageRecord = {
       id: pageId,
       comicId: state.comicId,
       pageNum,
       data: pageData,
       createdAt: Date.now(),
-    });
+    };
     state.pageIds.push(pageId);
 
-    // Update comic
+    // Update comic — page snapshot and comic ledger commit atomically so a
+    // failed write can never advance continuity without its page record
     const comic = await DB.get(DB.STORES.comics, state.comicId);
     if (comic) {
       comic.pageCount = pageNum;
       comic.conversationHistory = state.conversationHistory;
+      if (state.plannerMode && pageData.continuityAfter) {
+        comic.visualContinuity = pageData.continuityAfter;
+      }
       comic.updatedAt = Date.now();
-      await DB.put(DB.STORES.comics, comic);
+      await DB.commitPageAndComic(pageRecord, comic);
+    } else {
+      await DB.put(DB.STORES.pages, pageRecord);
+    }
+    if (state.plannerMode && pageData.continuityAfter) {
+      state.visualContinuity = pageData.continuityAfter;
     }
 
     // Autosave: track this comic as the active in-progress session.
@@ -1221,6 +1831,10 @@ function restoreRerollBackup() {
   state.pages.push(_rerollBackup.page);
   state.pageIds.push(_rerollBackup.pageId);
   state.conversationHistory = _rerollBackup.conversationHistory;
+  // Restore the continuity ledger to the backed-up page's end state
+  if (state.plannerMode && _rerollBackup.page?.continuityAfter) {
+    state.visualContinuity = structuredClone(_rerollBackup.page.continuityAfter);
+  }
   // Re-save the page record in DB (it was deleted by rerollPage)
   DB.put(DB.STORES.pages, {
     id: _rerollBackup.pageId,
@@ -1235,6 +1849,7 @@ function restoreRerollBackup() {
       if (comic) {
         comic.pageCount = state.pages.length;
         comic.conversationHistory = state.conversationHistory;
+        if (state.plannerMode) comic.visualContinuity = state.visualContinuity;
         comic.updatedAt = Date.now();
         DB.put(DB.STORES.comics, comic).catch(() => {});
       }
@@ -1307,11 +1922,18 @@ async function rerollPage() {
   if (lastPageId) await DB.del(DB.STORES.pages, lastPageId);
   state.pages.pop();
 
+  // Rewind the continuity ledger to before the re-rolled page so the fresh
+  // page reduces from the correct starting state
+  if (state.plannerMode && _rerollBackup.page?.continuityBefore) {
+    state.visualContinuity = structuredClone(_rerollBackup.page.continuityBefore);
+  }
+
   // Update the comic record
   const comic = await DB.get(DB.STORES.comics, state.comicId);
   if (comic) {
     comic.pageCount = state.pages.length;
     comic.conversationHistory = state.conversationHistory;
+    if (state.plannerMode) comic.visualContinuity = state.visualContinuity;
     comic.updatedAt = Date.now();
     await DB.put(DB.STORES.comics, comic);
   }
@@ -1350,13 +1972,26 @@ async function undoChoice() {
   // Delete the last page from DB
   const lastPageId = state.pageIds.pop();
   if (lastPageId) await DB.del(DB.STORES.pages, lastPageId);
-  state.pages.pop();
+  const removedPage = state.pages.pop();
+
+  // Rewind the ledger to the moment just before the undone page was generated.
+  // Using the removed page's continuityBefore (rather than the previous page's
+  // continuityAfter) preserves manual state edits made at that boundary.
+  if (state.plannerMode) {
+    const lastPage = state.pages[state.pages.length - 1];
+    state.visualContinuity = removedPage?.continuityBefore
+      ? structuredClone(removedPage.continuityBefore)
+      : lastPage?.continuityAfter
+        ? structuredClone(lastPage.continuityAfter)
+        : initializeContinuity(state.characters);
+  }
 
   // Update the comic record
   const comic = await DB.get(DB.STORES.comics, state.comicId);
   if (comic) {
     comic.pageCount = state.pages.length;
     comic.conversationHistory = state.conversationHistory;
+    if (state.plannerMode) comic.visualContinuity = state.visualContinuity;
     comic.updatedAt = Date.now();
     await DB.put(DB.STORES.comics, comic);
   }
@@ -1402,10 +2037,33 @@ async function rerollImages() {
 
   try {
     const statusMsg = document.getElementById('gen-status-msg');
-    const panelsWithImages = currentPage.panels.filter((p) => p.imagePrompt).length;
-    if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
-
-    await generatePanelImages(currentPage, statusMsg);
+    if (state.plannerMode && currentPage.planned && Array.isArray(currentPage.renderStates)) {
+      // Whole-page regeneration reuses the page's stored render-state
+      // snapshots — not the comic's latest ledger (spec §12.4)
+      if (statusMsg) statusMsg.textContent = `Regenerating ${currentPage.panels.length} panel images...`;
+      await generateContinuityPageImages(currentPage, statusMsg);
+      // Per-panel failures are recorded (not thrown) inside the generator so
+      // one bad panel doesn't sink the page — but on a re-roll a failed panel
+      // must keep its previous image instead of being persisted as blank
+      let restoredCount = 0;
+      currentPage.panels.forEach((p, i) => {
+        if (!p.imageUrl && priorImageUrls[i]) {
+          p.imageUrl = priorImageUrls[i];
+          delete p.generationError;
+          restoredCount++;
+        }
+      });
+      if (restoredCount > 0) {
+        App.toast(
+          `${restoredCount} panel image${restoredCount === 1 ? '' : 's'} failed to regenerate — previous image${restoredCount === 1 ? '' : 's'} kept`,
+          'info',
+        );
+      }
+    } else {
+      const panelsWithImages = currentPage.panels.filter((p) => p.imagePrompt).length;
+      if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
+      await generatePanelImages(currentPage, statusMsg);
+    }
 
     // If aborted during generatePanelImages, restore backup and return
     if (abortController?.signal.aborted) {
@@ -1494,6 +2152,10 @@ function resetState() {
     referenceImages: [],
     characterImagesByName: {},
     characters: [],
+    world: null,
+    plannerMode: false,
+    visualContinuity: null,
+    initialVisualOverrides: {},
     isGenerating: false,
     generatingContext: 'initial',
     draftLoaded: false,
@@ -1537,6 +2199,8 @@ const CreatePage: PageModule & Record<string, any> = {
   rerollImages,
   undoChoice,
   zoomPanel,
+  saveContinuityEdits,
+  setInitialState,
   resetState,
   setTitle,
   setStoryPrompt,
