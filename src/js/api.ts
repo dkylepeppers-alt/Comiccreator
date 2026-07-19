@@ -890,7 +890,7 @@ function parseComicResponse(text: string): ComicPageResult | null {
 
   try {
     return buildResult(JSON.parse(jsonStr));
-  } catch (e) {
+  } catch (_e) {
     // First parse failed — the LLM response may have been truncated.
     // Attempt to repair the JSON and retry before giving up.
     try {
