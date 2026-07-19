@@ -2,9 +2,13 @@ apply plugin: 'com.android.application'
 
 // Version comes from the repo root package.json (kept current by the
 // post-merge auto-bump), so the APK always matches the web app version.
-// versionCode: major*10000 + minor*100 + patch (e.g. 1.6.69 -> 10669).
+// versionCode: major*1000000 + minor*10000 + patch (e.g. 1.6.69 -> 1060069).
+// The patch field gets 4 digits because the auto-bump increments patch on
+// every merge and never resets it below a minor bump — a 2-digit field would
+// collide once patch passed 99 and break versionCode monotonicity.
 def packageJson = new groovy.json.JsonSlurper().parse(file('../../package.json'))
 def (appMajor, appMinor, appPatch) = packageJson.version.tokenize('.').collect { it.toInteger() }
+assert appMinor < 100 && appPatch < 10000: "version ${packageJson.version} overflows the versionCode encoding"
 
 android {
     namespace = "com.dkylepeppers.comiccreator"
@@ -13,7 +17,7 @@ android {
         applicationId "com.dkylepeppers.comiccreator"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode appMajor * 10000 + appMinor * 100 + appPatch
+        versionCode appMajor * 1000000 + appMinor * 10000 + appPatch
         versionName packageJson.version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

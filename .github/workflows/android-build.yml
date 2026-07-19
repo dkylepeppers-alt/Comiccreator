@@ -8,6 +8,8 @@ on:
     paths:
       - 'android/**'
       - 'capacitor.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/android-build.yml'
   workflow_dispatch:
 
