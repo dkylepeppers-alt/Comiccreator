@@ -24,13 +24,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Builds the APK. Runs PR-supplied code (npm scripts, gradle), so it gets a
+  # read-only token; publishing is a separate job that never executes
+  # repository code.
   build-apk:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      # Needed to maintain the rolling android-latest prerelease.
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -56,36 +58,55 @@ jobs:
           ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK with version
-        id: apk
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           cp android/app/build/outputs/apk/debug/app-debug.apk "comic-creator-v${VERSION}-debug.apk"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "file=comic-creator-v${VERSION}-debug.apk" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: comic-creator-debug-apk
-          path: ${{ steps.apk.outputs.file }}
+          path: comic-creator-v*-debug.apk
           retention-days: 30
 
+  # Publishes the built APK to the rolling android-latest prerelease. Kept
+  # separate from build-apk so the write-scoped token never coexists with
+  # execution of repository-supplied code, and gated to main-context runs so
+  # a manual dispatch from a feature branch can't replace the advertised APK.
+  publish-release:
+    needs: build-apk
+    if: >-
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name comic-creator-debug-apk
+
       - name: Update rolling android-latest prerelease
-        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          APK="$(ls comic-creator-v*-debug.apk)"
+          VERSION="${APK#comic-creator-v}"
+          VERSION="${VERSION%-debug.apk}"
           if ! gh release view android-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release create android-latest \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \
               --title "Android debug build (latest)" \
-              --notes "Rolling debug APK, rebuilt on every merge to main. Sideload it and enter your NanoGPT API key in the app's Settings."
+              --notes "Rolling debug APK, rebuilt on every merge to main."
           fi
           # Replace old assets so the release always holds exactly one current APK.
           for asset in $(gh release view android-latest --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); do
             gh release delete-asset android-latest "$asset" --repo "$GITHUB_REPOSITORY" --yes
           done
-          gh release upload android-latest "${{ steps.apk.outputs.file }}" --repo "$GITHUB_REPOSITORY"
+          gh release upload android-latest "$APK" --repo "$GITHUB_REPOSITORY"
           gh release edit android-latest --repo "$GITHUB_REPOSITORY" \
-            --notes "Rolling debug APK, rebuilt on every merge to main. Current version: v${{ steps.apk.outputs.version }} ($(date -u +%Y-%m-%d)). Sideload it and enter your NanoGPT API key in the app's Settings."
+            --notes "Rolling debug APK, rebuilt on every merge to main. Current version: v${VERSION} ($(date -u +%Y-%m-%d)). Sideload it and enter your NanoGPT API key in the app's Settings."
