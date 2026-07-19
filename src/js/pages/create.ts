@@ -5,6 +5,7 @@ import DB from '../db.js';
 import API from '../api.js';
 import {
   PROMPT_VERSION,
+  SEQUENTIAL_MODEL_ID,
   initializeContinuity,
   reducePageStates,
   validatePlannedPage,
@@ -1379,8 +1380,10 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
   const meta = await API.getImageModelMeta(modelId);
   const sequentialEnabled = await DB.getSetting('enableSequentialPages', false);
   const refBudgetSetting = await DB.getSetting('refBudget', 'auto');
+  // The companion applies ONLY when the page model is the sequential adapter;
+  // a stale companion must never hijack generation for other selected models
   const configuredCompanion = await DB.getSetting('singleImageModel', '');
-  const singleImageModelId = configuredCompanion || modelId;
+  const singleImageModelId = modelId === SEQUENTIAL_MODEL_ID && configuredCompanion ? configuredCompanion : modelId;
   const imageSize = await DB.getSetting('imageSize', '1024x1024');
   const negativePrompt = await DB.getSetting('negativePrompt', '');
   const useRefImages = await DB.getSetting('useRefImages', true);
@@ -1432,7 +1435,9 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
           locationKeys: panel.visual?.locationKey ? [panel.visual.locationKey] : [],
           world: state.world,
           budget: panelBudget,
-          previousFrame: null,
+          // Cross-page continuity applies to independent panels too — the
+          // allocator includes it only when spare capacity remains
+          previousFrame,
           anchorImageIdByCharacter,
         })
       : emptyAlloc,
@@ -2037,6 +2042,23 @@ async function rerollImages() {
       // snapshots — not the comic's latest ledger (spec §12.4)
       if (statusMsg) statusMsg.textContent = `Regenerating ${currentPage.panels.length} panel images...`;
       await generateContinuityPageImages(currentPage, statusMsg);
+      // Per-panel failures are recorded (not thrown) inside the generator so
+      // one bad panel doesn't sink the page — but on a re-roll a failed panel
+      // must keep its previous image instead of being persisted as blank
+      let restoredCount = 0;
+      currentPage.panels.forEach((p, i) => {
+        if (!p.imageUrl && priorImageUrls[i]) {
+          p.imageUrl = priorImageUrls[i];
+          delete p.generationError;
+          restoredCount++;
+        }
+      });
+      if (restoredCount > 0) {
+        App.toast(
+          `${restoredCount} panel image${restoredCount === 1 ? '' : 's'} failed to regenerate — previous image${restoredCount === 1 ? '' : 's'} kept`,
+          'info',
+        );
+      }
     } else {
       const panelsWithImages = currentPage.panels.filter((p) => p.imagePrompt).length;
       if (statusMsg) statusMsg.textContent = `Generating images (0 / ${panelsWithImages})...`;
