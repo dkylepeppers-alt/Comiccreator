@@ -48,7 +48,7 @@ describe('image generation config', () => {
   it('ignores companion settings for page models without an auto-companion mapping', () => {
     const models = [model('gpt-image-1')];
     expect(
-      resolveCompanionModel({ pageModelId: 'gpt-image-1', mode: 'custom', configuredModelId: 'stale-model', models }),
+      resolveCompanionModel({ pageModelId: 'gpt-image-1', mode: 'custom', configuredModelId: 'irrelevant-model', models }),
     ).toEqual({ modelId: 'gpt-image-1' });
     expect(
       resolveCompanionModel({ pageModelId: 'gpt-image-1', mode: 'custom', configuredModelId: '', models }),

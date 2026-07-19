@@ -2000,6 +2000,8 @@ async function preflightImageGeneration() {
   });
   if (companion.error && (source === 'live' || companion.errorCode === 'blank-custom'))
     throw new Error(companion.error);
+  // Availability could not be verified live, so demote the companion error to a
+  // non-blocking warning (blank custom was already thrown above).
   const companionWarning = companion.error && source !== 'live' ? companion.error : null;
   const companionModel = models.find((model) => model.id === companion.modelId) || null;
   const sequentialSaved = await DB.getSetting('enableSequentialPages', false);
