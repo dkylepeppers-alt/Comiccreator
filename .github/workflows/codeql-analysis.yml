@@ -3,11 +3,15 @@ name: CodeQL Analysis
 on:
   push:
     branches:
-      - Main
+      - Broke
   pull_request:
 
 # Deny all permissions by default; grant only what each job needs.
 permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:

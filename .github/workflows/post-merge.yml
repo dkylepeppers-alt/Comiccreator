@@ -3,14 +3,14 @@ name: Post-Merge Pipeline
 on:
   push:
     branches:
-      - Main
+      - Broke
 
 # Deny all permissions by default; grant only what each job needs.
 permissions: {}
 
-# Cancel any in-progress run if a newer commit arrives on Main
+# Cancel any in-progress run if a newer commit arrives on the default branch
 concurrency:
-  group: post-merge-main
+  group: post-merge-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
