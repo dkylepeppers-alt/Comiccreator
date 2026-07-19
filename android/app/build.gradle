@@ -26,7 +26,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // Persistent debug keystore, committed on purpose: CI runners are
+        // ephemeral, and letting Gradle mint a fresh default debug keystore
+        // per build would give every APK a different certificate — Android
+        // would then reject each new build as an update, forcing users to
+        // uninstall (and lose their local data). Debug-only; a Play release
+        // would use a separate protected keystore.
+        debugPersistent {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'comiccreator-debug'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debugPersistent
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
