@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml, buildImageEmbeddingText } from '../utils.js';
+import { escHtml, buildImageEmbeddingText, newId, normalizeLocationKey } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
 
@@ -10,9 +10,11 @@ import API from '../api.js';
 let currentView: string = 'list';
 let editingId: string | null = null;
 
-// In-editor image list: [{ dataUrl, tag, description, embedding }]
+// In-editor image list: [{ id, dataUrl, tag, description, embedding, locationKey }]
 let editorImages: any[] = [];
 let editorPrimaryIndex: number = 0;
+// Stable image ID of the default location anchor
+let editorAnchorImageId: string | null = null;
 let editorName: string = '';
 // Index of the image slot currently being filled (for file picker)
 let _pendingSlotIdx: number = -1;
@@ -112,13 +114,23 @@ async function renderList() {
 }
 
 async function renderEditor() {
-  let world = { name: '', description: '', details: '', era: '', atmosphere: '', images: [], primaryImageIndex: 0 };
+  let world = {
+    name: '',
+    description: '',
+    details: '',
+    era: '',
+    atmosphere: '',
+    images: [],
+    primaryImageIndex: 0,
+    defaultAnchorImageId: null,
+  };
   if (editingId) {
     const saved = await DB.get(DB.STORES.worlds, editingId);
-    if (saved) world = DB.migrateWorld(saved);
+    if (saved) world = DB.normalizeWorldRecord(saved).record;
   }
   editorImages = (world.images || []).map((img) => Object.assign({}, img));
   editorPrimaryIndex = world.primaryImageIndex ?? 0;
+  editorAnchorImageId = world.defaultAnchorImageId ?? null;
   editorName = world.name || '';
 
   // Find characters linked to this world
@@ -226,10 +238,12 @@ function renderGallerySlots(images: any[], primaryIdx: number): string {
             '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
         }
       }
+      const isAnchor = !!img.id && img.id === editorAnchorImageId;
       return `
     <div class="char-img-slot" data-idx="${i}">
       <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="WorldsPage.pickImageForSlot(${i})">
         ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i + 1}">` : '<span>&#128247; Upload</span>'}
+        ${isAnchor ? '<span class="char-img-anchor-badge" title="Default world anchor — used when a planned location has no exact match">&#9875; Anchor</span>' : ''}
       </div>
       <div class="char-img-meta">
         <div style="display:flex;align-items:center;gap:6px;">
@@ -239,8 +253,10 @@ function renderGallerySlots(images: any[], primaryIdx: number): string {
           ${embBadge}
         </div>
         <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Neon-lit alley at night" oninput="WorldsPage.updateDesc(${i},this.value)">
+        <input type="text" class="char-img-lockey" data-idx="${i}" value="${escHtml(img.locationKey || '')}" placeholder="location key, e.g. main-street" oninput="WorldsPage.updateLocationKey(${i},this.value)" title="Unique key the story planner uses to pick this image as the location anchor">
         <div class="char-img-actions">
-          <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as primary" onclick="WorldsPage.setPrimary(${i})">&#11088;</button>
+          <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as thumbnail" onclick="WorldsPage.setPrimary(${i})">&#11088;</button>
+          ${img.dataUrl ? `<button class="char-img-anchor ${isAnchor ? 'active' : ''}" title="Set as default world anchor" onclick="WorldsPage.setAnchor(${i})">&#9875;</button>` : ''}
           ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="WorldsPage.recaptionImage(${i})">&#128221;</button>` : ''}
           ${img.dataUrl && img.aiGenerated ? `<button class="char-img-regen" title="Regenerate this reference" onclick="WorldsPage.regenerateImage(${i})">&#128260;</button>` : ''}
           <button class="char-img-delete" title="Remove" onclick="WorldsPage.removeImage(${i})">&#x2715;</button>
@@ -304,7 +320,15 @@ function refreshGallery() {
 
 function addImageSlot() {
   if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
-  editorImages.push({ dataUrl: '', tag: 'establishing', description: '', embedding: null, embeddingText: null });
+  editorImages.push({
+    id: newId(),
+    dataUrl: '',
+    tag: 'establishing',
+    description: '',
+    embedding: null,
+    embeddingText: null,
+    locationKey: null,
+  });
   refreshGallery();
   pickImageForSlot(editorImages.length - 1);
 }
@@ -346,9 +370,21 @@ async function handleImage(event: any): Promise<void> {
   const dataUrl = await DB.fileToDataURL(file);
   const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
   if (idx >= editorImages.length) {
-    editorImages.push({ dataUrl, tag: 'establishing', description: '', embedding: null, embeddingText: null });
+    editorImages.push({
+      id: newId(),
+      dataUrl,
+      tag: 'establishing',
+      description: '',
+      embedding: null,
+      embeddingText: null,
+      locationKey: null,
+    });
   } else {
-    editorImages[idx] = Object.assign({}, editorImages[idx], { dataUrl, embedding: null, embeddingText: null });
+    editorImages[idx] = Object.assign({ id: newId() }, editorImages[idx], {
+      dataUrl,
+      embedding: null,
+      embeddingText: null,
+    });
   }
   refreshGallery();
   event.target.value = '';
@@ -585,6 +621,7 @@ async function _doGenerateReferences() {
 
   if (dataUrl) {
     const newImg = {
+      id: newId(),
       dataUrl,
       tag,
       description: '',
@@ -592,6 +629,7 @@ async function _doGenerateReferences() {
       embeddingText: null,
       aiGenerated: true,
       generationPrompt: prompt,
+      locationKey: null,
     };
     editorImages.push(newImg);
     refreshGallery();
@@ -838,6 +876,7 @@ async function _doGenerateCharacterInteractions() {
   if (dataUrl) {
     const desc = variation ? variation.desc : `Character interaction in ${worldName}`;
     const newImg = {
+      id: newId(),
       dataUrl,
       tag: 'character-interaction',
       description: desc,
@@ -845,6 +884,7 @@ async function _doGenerateCharacterInteractions() {
       embeddingText: null,
       aiGenerated: true,
       generationPrompt: prompt,
+      locationKey: null,
     };
     editorImages.push(newImg);
     refreshGallery();
@@ -903,9 +943,37 @@ function setPrimary(idx: number): void {
   });
 }
 
+/** Set the default world anchor to the image at idx. */
+function setAnchor(idx: number): void {
+  const img = editorImages[idx];
+  if (!img?.dataUrl) return App.toast('Upload an image first', 'error');
+  if (!img.id) img.id = newId();
+  editorAnchorImageId = img.id;
+  refreshGallery();
+  App.toast('Default world anchor set — used when a planned location has no exact key match', 'success');
+}
+
+/** Update an image's location key (normalized to slug form on save). */
+function updateLocationKey(idx: number, value: string): void {
+  if (editorImages[idx]) {
+    editorImages[idx].locationKey = value.trim() || null;
+  }
+}
+
 function removeImage(idx: number): void {
+  const removed = editorImages[idx];
   editorImages.splice(idx, 1);
   if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
+  if (removed?.id && removed.id === editorAnchorImageId) {
+    const fallback = editorImages.find((img) => img.dataUrl);
+    editorAnchorImageId = fallback?.id || null;
+    if (fallback) {
+      const label = fallback.locationKey || fallback.description || fallback.tag || 'first gallery image';
+      App.toast(`Default anchor removed — falling back to "${label}". Pick a different anchor if needed.`, 'info');
+    } else {
+      App.toast('Default anchor removed — this world has no anchor until you add an image.', 'info');
+    }
+  }
   refreshGallery();
 }
 
@@ -952,6 +1020,20 @@ async function saveWorld() {
     if (saveBtn) saveBtn.textContent = editingId ? 'Update World' : 'Create World';
   }
 
+  // Normalize location keys and reject duplicates within this world so the
+  // planner's locationKey → anchor mapping stays unambiguous
+  const seenKeys = new Set();
+  for (const img of validImages) {
+    const norm = normalizeLocationKey(img.locationKey) || null;
+    img.locationKey = norm;
+    if (norm) {
+      if (seenKeys.has(norm)) {
+        return App.toast(`Duplicate location key "${norm}" — each key must be unique within a world`, 'error');
+      }
+      seenKeys.add(norm);
+    }
+  }
+
   const existingWorld = editingId ? await DB.get(DB.STORES.worlds, editingId) : null;
 
   const world = {
@@ -963,11 +1045,12 @@ async function saveWorld() {
     details: document.getElementById('world-details').value.trim(),
     images: validImages,
     primaryImageIndex: primaryIdx,
+    defaultAnchorImageId: editorAnchorImageId,
     createdAt: existingWorld?.createdAt || Date.now(),
     updatedAt: Date.now(),
   };
 
-  await DB.put(DB.STORES.worlds, world);
+  await DB.put(DB.STORES.worlds, DB.normalizeWorldRecord(world).record);
   App.toast(`World ${editingId ? 'updated' : 'created'}!`, 'success');
   backToList();
 }
@@ -1019,7 +1102,9 @@ const WorldsPage: PageModule & Record<string, any> = {
   addImageSlot,
   updateTag,
   updateDesc,
+  updateLocationKey,
   setPrimary,
+  setAnchor,
   removeImage,
   recaptionImage,
   recaptionAll,

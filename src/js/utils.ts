@@ -12,10 +12,56 @@ export interface Timestamped {
 }
 
 export interface ImageRef {
+  id?: string;
   tag?: string;
   description?: string;
   dataUrl?: string;
   embedding?: number[] | null;
+  embeddingText?: string | null;
+  locationKey?: string | null;
+}
+
+/** Generate a stable unique ID for gallery images and other records. */
+export function newId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+}
+
+/**
+ * Ensure every image in a gallery has a stable `id`.
+ * Returns { images, changed } — `images` is a new array with new objects only
+ * where an id had to be assigned; unchanged objects are reused so callers can
+ * cheaply detect whether persistence is needed.
+ */
+export function ensureImageIds(images: ImageRef[] | null | undefined): { images: ImageRef[]; changed: boolean } {
+  if (!Array.isArray(images)) return { images: [], changed: false };
+  let changed = false;
+  const out = images.map((img) => {
+    if (!img) return img;
+    if (img.id) return img;
+    changed = true;
+    return Object.assign({}, img, { id: newId() });
+  });
+  return { images: out, changed };
+}
+
+/**
+ * Normalize a user-entered location key: trim, lowercase, spaces → dashes,
+ * strip characters outside [a-z0-9-]. Returns '' for empty input.
+ */
+export function normalizeLocationKey(key: string | null | undefined): string {
+  if (!key) return '';
+  return String(key)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 export const GENRES: Genre[] = [

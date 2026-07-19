@@ -201,6 +201,7 @@ package-lock.json
 package.json
 plan
     feature-reference-image-prompts-world-tags-1.md
+    seedream-visual-continuity-1.md
     upgrade-actions-automation-1.md
 playwright.config.js
 public
@@ -236,15 +237,19 @@ src
             settings.ts
             worlds.ts
         utils.ts
+        visual-continuity.ts
 test
+    api-images.test.js
     api-integration.test.js
     api-pure.test.js
     config-integrity.test.js
+    db-normalization.test.js
     db.test.js
     e2e
         smoke.spec.js
     pure-functions.test.js
     utils.test.js
+    visual-continuity.test.js
 tsconfig.json
 vite.config.js
 vitest.config.ts

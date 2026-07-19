@@ -3,6 +3,8 @@
  * Handles all local persistence for characters, worlds, comics, presets, and settings.
  */
 import type { ImageRef } from './utils.js';
+import { ensureImageIds, normalizeLocationKey } from './utils.js';
+import type { CharacterVisualStateDefaults, ComicVisualContinuity } from './visual-continuity.js';
 
 export interface Character {
   id: string;
@@ -15,6 +17,10 @@ export interface Character {
   imageData?: string;
   images: ImageRef[];
   primaryImageIndex: number;
+  /** Stable ID of the single authoritative identity-anchor gallery image. */
+  identityAnchorImageId?: string | null;
+  /** Reusable default mutable visual state (wardrobe, hair, items…). */
+  defaultVisualState?: CharacterVisualStateDefaults;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -28,6 +34,8 @@ export interface World {
   era?: string;
   images: ImageRef[];
   primaryImageIndex: number;
+  /** Stable ID of the default location-anchor gallery image. */
+  defaultAnchorImageId?: string | null;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -38,6 +46,8 @@ export interface Comic {
   genre?: string;
   characterIds?: string[];
   worldId?: string;
+  /** Persistent per-comic visual continuity ledger. */
+  visualContinuity?: ComicVisualContinuity | null;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -77,7 +87,7 @@ export interface Setting {
 }
 
 const DB_NAME = 'ComicCreatorDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 let db: IDBDatabase | null = null;
 
 const STORES = {
@@ -118,6 +128,15 @@ function open(): Promise<IDBDatabase> {
       }
       if (!d.objectStoreNames.contains(STORES.settings)) {
         d.createObjectStore(STORES.settings, { keyPath: 'key' });
+      }
+      // v4: assign stable image IDs and explicit anchors to existing records.
+      // Must run inside the versionchange transaction so IDs persist exactly once.
+      if (e.oldVersion > 0 && e.oldVersion < 4) {
+        const upgradeTx = (e.target as IDBOpenDBRequest).transaction;
+        if (upgradeTx) {
+          rewriteStoreRecords(upgradeTx, STORES.characters, normalizeCharacterRecord);
+          rewriteStoreRecords(upgradeTx, STORES.worlds, normalizeWorldRecord);
+        }
       }
     };
     req.onsuccess = (e: Event) => {
@@ -194,6 +213,123 @@ function fileToDataURL(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Iterate every record in a store during a versionchange transaction and
+ * rewrite records that the normalizer reports as changed. Runs entirely on
+ * IDB request callbacks — no promises — as required inside onupgradeneeded.
+ */
+function rewriteStoreRecords(
+  transaction: IDBTransaction,
+  storeName: string,
+  normalize: (rec: any) => { record: any; changed: boolean },
+): void {
+  try {
+    const store = transaction.objectStore(storeName);
+    const cursorReq = store.openCursor();
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (!cursor) return;
+      try {
+        const { record, changed } = normalize(cursor.value);
+        if (changed) cursor.update(record);
+      } catch (_) {
+        /* leave the record untouched rather than aborting the upgrade */
+      }
+      cursor.continue();
+    };
+  } catch (_) {
+    /* store may not exist yet on fresh databases */
+  }
+}
+
+/** Pick the anchor image ID for a gallery: primaryImageIndex → first valid → null. */
+function pickAnchorImageId(images: ImageRef[], primaryImageIndex: number | undefined): string | null {
+  const valid = (images || []).filter((img) => img && img.dataUrl);
+  if (valid.length === 0) return null;
+  const primary = typeof primaryImageIndex === 'number' ? (images || [])[primaryImageIndex] : null;
+  if (primary && primary.dataUrl && primary.id) return primary.id;
+  return valid[0].id || null;
+}
+
+/**
+ * Fully normalize a character record: legacy imageData migration, stable
+ * image IDs, and an explicit identity anchor. Pure — does not persist.
+ * Returns { record, changed } so callers know whether to write it back.
+ */
+function normalizeCharacterRecord(char: any): { record: any; changed: boolean } {
+  if (!char) return { record: char, changed: false };
+  const migrated = migrateCharacter(char);
+  let changed = migrated !== char;
+  const { images, changed: idsChanged } = ensureImageIds(migrated.images);
+  changed = changed || idsChanged;
+
+  let record = idsChanged || changed ? Object.assign({}, migrated, { images }) : migrated;
+
+  const anchorValid =
+    record.identityAnchorImageId && images.some((img: any) => img?.id === record.identityAnchorImageId && img.dataUrl);
+  if (!anchorValid) {
+    const anchorId = pickAnchorImageId(images, record.primaryImageIndex);
+    if (record.identityAnchorImageId !== anchorId) {
+      record = Object.assign({}, record, { identityAnchorImageId: anchorId });
+      changed = true;
+    }
+  }
+  return { record, changed };
+}
+
+/**
+ * Fully normalize a world record: legacy string[] migration, stable image
+ * IDs, normalized location keys, and an explicit default anchor.
+ */
+function normalizeWorldRecord(world: any): { record: any; changed: boolean } {
+  if (!world) return { record: world, changed: false };
+  const migrated = migrateWorld(world);
+  let changed = migrated !== world;
+  let { images, changed: idsChanged } = ensureImageIds(migrated.images);
+  changed = changed || idsChanged;
+
+  // Normalize any user-entered location keys to canonical slug form
+  let keysChanged = false;
+  images = images.map((img: any) => {
+    if (!img || img.locationKey == null) return img;
+    const norm = normalizeLocationKey(img.locationKey) || null;
+    if (norm === img.locationKey) return img;
+    keysChanged = true;
+    return Object.assign({}, img, { locationKey: norm });
+  });
+  changed = changed || keysChanged;
+
+  let record = changed ? Object.assign({}, migrated, { images }) : migrated;
+
+  const anchorValid =
+    record.defaultAnchorImageId && images.some((img: any) => img?.id === record.defaultAnchorImageId && img.dataUrl);
+  if (!anchorValid) {
+    const anchorId = pickAnchorImageId(images, record.primaryImageIndex);
+    if (record.defaultAnchorImageId !== anchorId) {
+      record = Object.assign({}, record, { defaultAnchorImageId: anchorId });
+      changed = true;
+    }
+  }
+  return { record, changed };
+}
+
+/**
+ * Commit a page record and its comic record in one multi-store transaction.
+ * Used so continuity snapshots and the comic's current ledger can never
+ * diverge: either both writes land or neither does.
+ */
+async function commitPageAndComic(pageRecord: ComicPage, comicRecord: Comic): Promise<void> {
+  await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
+    transaction.objectStore(STORES.pages).put(pageRecord);
+    transaction.objectStore(STORES.comics).put(comicRecord);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
   });
 }
 
@@ -350,6 +486,9 @@ const DB = {
   fileToDataURL,
   migrateCharacter,
   migrateWorld,
+  normalizeCharacterRecord,
+  normalizeWorldRecord,
+  commitPageAndComic,
   seedDefaults,
   dedupePresets,
 };
