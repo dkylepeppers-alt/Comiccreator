@@ -1,0 +1,112 @@
+name: Android Build
+
+# Main builds run after the Post-Merge Pipeline (version bump) completes, so
+# the APK bundles the bumped version — a plain push trigger would race the
+# bump and ship an APK one patch behind the repo (same issue deploy-pages had).
+on:
+  workflow_run:
+    workflows: ['Post-Merge Pipeline']
+    types: [completed]
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android-build.yml'
+  workflow_dispatch:
+
+# Deny all permissions by default; grant only what each job needs.
+permissions: {}
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Builds the APK. Runs PR-supplied code (npm scripts, gradle), so it gets a
+  # read-only token; publishing is a separate job that never executes
+  # repository code.
+  build-apk:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # After post-merge, build the branch tip (includes the version-bump
+          # commit). Empty for pull_request/workflow_dispatch = default SHA.
+          ref: ${{ github.event.workflow_run.head_branch || '' }}
+
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-node-env
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        # Capacitor 8 requires Java 21; the runner preinstalls Temurin 21.
+        run: |
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK with version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "comic-creator-v${VERSION}-debug.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: comic-creator-debug-apk
+          path: comic-creator-v*-debug.apk
+          retention-days: 30
+
+  # Publishes the built APK to the rolling android-latest prerelease. Kept
+  # separate from build-apk so the write-scoped token never coexists with
+  # execution of repository-supplied code, and gated to main-context runs so
+  # a manual dispatch from a feature branch can't replace the advertised APK.
+  publish-release:
+    needs: build-apk
+    if: >-
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name comic-creator-debug-apk
+
+      - name: Update rolling android-latest prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="$(ls comic-creator-v*-debug.apk)"
+          VERSION="${APK#comic-creator-v}"
+          VERSION="${VERSION%-debug.apk}"
+          if ! gh release view android-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create android-latest \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "Android debug build (latest)" \
+              --notes "Rolling debug APK, rebuilt on every merge to main."
+          fi
+          # Replace old assets so the release always holds exactly one current APK.
+          for asset in $(gh release view android-latest --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); do
+            gh release delete-asset android-latest "$asset" --repo "$GITHUB_REPOSITORY" --yes
+          done
+          gh release upload android-latest "$APK" --repo "$GITHUB_REPOSITORY"
+          gh release edit android-latest --repo "$GITHUB_REPOSITORY" \
+            --notes "Rolling debug APK, rebuilt on every merge to main. Current version: v${VERSION} ($(date -u +%Y-%m-%d)). Sideload it and enter your NanoGPT API key in the app's Settings."
