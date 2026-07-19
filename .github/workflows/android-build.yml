@@ -1,9 +1,12 @@
 name: Android Build
 
+# Main builds run after the Post-Merge Pipeline (version bump) completes, so
+# the APK bundles the bumped version — a plain push trigger would race the
+# bump and ship an APK one patch behind the repo (same issue deploy-pages had).
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ['Post-Merge Pipeline']
+    types: [completed]
   pull_request:
     paths:
       - 'android/**'
@@ -22,6 +25,7 @@ concurrency:
 
 jobs:
   build-apk:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -30,6 +34,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # After post-merge, build the branch tip (includes the version-bump
+          # commit). Empty for pull_request/workflow_dispatch = default SHA.
+          ref: ${{ github.event.workflow_run.head_branch || '' }}
 
       - name: Setup Node.js Environment
         uses: ./.github/actions/setup-node-env
