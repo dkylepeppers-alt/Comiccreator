@@ -1214,6 +1214,7 @@ async function fetchImageModels(
   const migrationRetryAt = await DB.getSetting(MIGRATION_RETRY_KEY, 0);
   const normalizedCache = Array.isArray(cached) ? cached.map(normalizeImageModel).filter((model) => model.id) : null;
   const cacheCurrent = cacheSchema === IMAGE_MODEL_CACHE_SCHEMA_VERSION;
+  const migrationBackoffActive = !cacheCurrent && Date.now() < migrationRetryAt;
 
   if (!forceRefresh && normalizedCache && cacheCurrent && Date.now() - cachedAt < CACHE_TTL) {
     _modelSizesCache = normalizedCache;
@@ -1221,9 +1222,9 @@ async function fetchImageModels(
     return normalizedCache;
   }
   const shouldAttemptMigration = !cacheCurrent && Date.now() >= migrationRetryAt;
-  if (!forceRefresh && normalizedCache && !cacheCurrent && !shouldAttemptMigration) {
+  if (!forceRefresh && normalizedCache && migrationBackoffActive && !shouldAttemptMigration) {
     _modelSizesCache = normalizedCache;
-    _lastImageModelSource = 'cache-fresh';
+    _lastImageModelSource = 'cache-degraded';
     return normalizedCache;
   }
 
