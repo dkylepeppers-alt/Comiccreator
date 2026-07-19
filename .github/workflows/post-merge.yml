@@ -3,6 +3,7 @@ name: Post-Merge Pipeline
 on:
   push:
     branches:
+      - main
       - Broke
 
 # Deny all permissions by default; grant only what each job needs.
@@ -48,38 +49,3 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: bump version to v${{ steps.version.outputs.version }}"
           git push origin "HEAD:${{ github.ref_name }}"
 
-  update-docs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: bump-version
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          fetch-depth: 0
-          ref: ${{ github.ref_name }}
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      # Ensure we have the version-bump commit from the previous job, even if the
-      # checkout resolved to the SHA that existed at workflow-start time.
-      - name: Pull latest (picks up version-bump commit)
-        run: git pull --rebase origin "${{ github.ref_name }}"
-
-      - name: Run update-docs
-        run: bash scripts/update-docs.sh
-
-      - name: Commit and push if changed
-        run: |
-          git add README.md
-          if ! git diff --staged --quiet; then
-            git commit -m "docs: auto-update README generated sections"
-            git push origin "HEAD:${{ github.ref_name }}"
-          else
-            echo "No documentation changes detected — skipping commit."
-          fi

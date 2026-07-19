@@ -35,8 +35,9 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           # Deploy the branch tip, not the workflow_run head SHA — the tip
-          # includes the version-bump and docs commits pushed by post-merge.
-          ref: Broke
+          # includes the version-bump commit pushed by post-merge. Resolved
+          # dynamically so a default-branch rename can't strand this workflow.
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
       - name: Setup Node.js Environment
         uses: ./.github/actions/setup-node-env
