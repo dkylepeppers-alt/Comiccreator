@@ -1,9 +1,13 @@
 name: Deploy to GitHub Pages
 
+# Runs after the Post-Merge Pipeline (version bump + docs) completes, so the
+# deployed site includes the bump commit. A plain push trigger would race the
+# bump: pushes made with GITHUB_TOKEN don't start workflows, leaving Pages
+# permanently one version-bump commit behind the repo.
 on:
-  push:
-    branches:
-      - Broke
+  workflow_run:
+    workflows: ['Post-Merge Pipeline']
+    types: [completed]
   workflow_dispatch:
 
 # Exception: deploy-pages requires top-level permissions because the
@@ -20,6 +24,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -28,6 +33,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Deploy the branch tip, not the workflow_run head SHA — the tip
+          # includes the version-bump and docs commits pushed by post-merge.
+          ref: Broke
 
       - name: Setup Node.js Environment
         uses: ./.github/actions/setup-node-env
