@@ -1,6 +1,6 @@
 {
   "name": "comic-creator",
-  "version": "1.6.65",
+  "version": "1.6.78",
   "type": "module",
   "private": true,
   "description": "AI Comic Creator - A Vite-powered PWA for generating AI-powered comic books",
@@ -20,7 +20,6 @@
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "check-syntax": "npm run typecheck && npm run build -- --logLevel error",
-    "update-docs": "bash scripts/update-docs.sh",
     "lint:actions": "bash scripts/check-actions.sh",
     "validate:workflows": "bash scripts/validate-workflows.sh",
     "version:patch": "bash scripts/bump-version.sh patch",
@@ -28,6 +27,8 @@
     "version:major": "bash scripts/bump-version.sh major"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
     "@playwright/test": "^1.61.1",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.7.0",
@@ -38,8 +39,11 @@
     "sharp": "^0.35.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.64.0",
-    "vite": "^7.3.1",
+    "vite": "^8.1.5",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.4.2"
   }
 }

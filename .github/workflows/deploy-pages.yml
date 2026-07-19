@@ -1,9 +1,13 @@
 name: Deploy to GitHub Pages
 
+# Runs after the Post-Merge Pipeline (version bump + docs) completes, so the
+# deployed site includes the bump commit. A plain push trigger would race the
+# bump: pushes made with GITHUB_TOKEN don't start workflows, leaving Pages
+# permanently one version-bump commit behind the repo.
 on:
-  push:
-    branches:
-      - Main
+  workflow_run:
+    workflows: ['Post-Merge Pipeline']
+    types: [completed]
   workflow_dispatch:
 
 # Exception: deploy-pages requires top-level permissions because the
@@ -20,6 +24,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -28,6 +33,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Deploy the branch tip, not the workflow_run head SHA — the tip
+          # includes the version-bump commit pushed by post-merge. Resolved
+          # dynamically so a default-branch rename can't strand this workflow.
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
       - name: Setup Node.js Environment
         uses: ./.github/actions/setup-node-env
@@ -36,15 +46,15 @@ jobs:
         run: npm run build
 
       - name: Configure Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           enablement: true
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

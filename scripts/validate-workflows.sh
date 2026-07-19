@@ -75,15 +75,17 @@ for f in "$WORKFLOWS_DIR"/*.yml "$WORKFLOWS_DIR"/*.yaml; do
     fi
   fi
 
-  # ── Check 3: concurrency group on Main-push workflows ───────────────────
-  # Detect workflows triggered on push to Main by looking for the branch listed
-  # inside a branches: array or block (e.g. `- Main` or `branches: [Main]`).
-  if grep -qE "^[[:space:]]+-[[:space:]]+['\"]?(Main|main)['\"]?[[:space:]]*$" "$f" || \
-     grep -qE "branches:[[:space:]]*\[['\"]?(Main|main)['\"]?\]" "$f"; then
+  # ── Check 3: concurrency group on default-branch-push workflows ─────────
+  # Detect workflows triggered on push to the default branch by looking for the
+  # branch listed inside a branches: array or block (e.g. `- main` or
+  # `branches: [main]`). Legacy names stay matched so a rename can't silently
+  # exempt a workflow from the check.
+  if grep -qiE "^[[:space:]]+-[[:space:]]+['\"]?(main|broke)['\"]?[[:space:]]*$" "$f" || \
+     grep -qiE "branches:[[:space:]]*\[['\"]?(main|broke)['\"]?\]" "$f"; then
     if grep -q '^concurrency:' "$f"; then
       ok "has concurrency group"
     else
-      warn "$file: workflow targeting Main branch should have a 'concurrency:' group to prevent race conditions"
+      warn "$file: workflow targeting the default branch should have a 'concurrency:' group to prevent race conditions"
     fi
   fi
 

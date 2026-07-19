@@ -16,7 +16,13 @@ updates:
           - "patch"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" only covers .github/workflows — the composite actions pin their own
+    # action SHAs (e.g. actions/setup-node) and must be listed explicitly,
+    # otherwise those pins silently go stale (Node 20 runtime deprecation).
+    directories:
+      - "/"
+      - "/.github/actions/setup-node-env"
+      - "/.github/actions/setup-playwright"
     schedule:
       interval: "weekly"
     labels:
