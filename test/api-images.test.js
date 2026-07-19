@@ -275,9 +275,18 @@ describe('structured planner', () => {
   });
 
   it('parsePlannedPageResponse repairs internal trailing commas', () => {
-    const parsed = API.parsePlannedPageResponse(
-      '{\n"title": "T",\n"panels": [\n  {\n    "narration": "hi",\n    "dialogue": [ { "speaker": "A", "text": "yo, and {braces, commas} in strings," }, ],\n    "visual": { "shot": "wide", },\n  },\n],\n"choices": [ { "text": "c", "summary": "s" }, ]\n}',
-    );
+    const withTrailingCommas = `{
+"title": "T",
+"panels": [
+  {
+    "narration": "hi",
+    "dialogue": [ { "speaker": "A", "text": "yo, and {braces, commas} in strings," }, ],
+    "visual": { "shot": "wide", },
+  },
+],
+"choices": [ { "text": "c", "summary": "s" }, ]
+}`;
+    const parsed = API.parsePlannedPageResponse(withTrailingCommas);
     expect(parsed).not.toBeNull();
     expect(parsed.title).toBe('T');
     expect(parsed.panels[0].narration).toBe('hi');
