@@ -158,7 +158,9 @@ export interface RefVariationOptions {
 const BASE_URL: string = 'https://nano-gpt.com/api/v1';
 // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
 let _modelSizesCache: ImageModel[] | null = null;
-let _lastImageModelSource: 'live' | 'cache' | 'fallback' = 'fallback';
+// 'cache-fresh': cache served without attempting a live fetch (TTL not expired — normal, not a failure).
+// 'cache-degraded': a live fetch was attempted and failed; cache served as a fallback.
+let _lastImageModelSource: 'live' | 'cache-fresh' | 'cache-degraded' | 'fallback' = 'fallback';
 const IMAGE_MODEL_CACHE_SCHEMA_VERSION = 2;
 const IMAGE_MODEL_CACHE_MIGRATION_RETRY_MS = 5 * 60 * 1000;
 
@@ -1215,13 +1217,13 @@ async function fetchImageModels(
 
   if (!forceRefresh && normalizedCache && cacheCurrent && Date.now() - cachedAt < CACHE_TTL) {
     _modelSizesCache = normalizedCache;
-    _lastImageModelSource = 'cache';
+    _lastImageModelSource = 'cache-fresh';
     return normalizedCache;
   }
   const shouldAttemptMigration = !cacheCurrent && Date.now() >= migrationRetryAt;
   if (!forceRefresh && normalizedCache && !cacheCurrent && !shouldAttemptMigration) {
     _modelSizesCache = normalizedCache;
-    _lastImageModelSource = 'cache';
+    _lastImageModelSource = 'cache-fresh';
     return normalizedCache;
   }
 
@@ -1259,7 +1261,7 @@ async function fetchImageModels(
     }
     if (normalizedCache) {
       _modelSizesCache = normalizedCache;
-      _lastImageModelSource = 'cache';
+      _lastImageModelSource = 'cache-degraded';
       return normalizedCache;
     }
     _lastImageModelSource = 'fallback';
@@ -1267,7 +1269,7 @@ async function fetchImageModels(
   }
 }
 
-function getImageModelSource(): 'live' | 'cache' | 'fallback' {
+function getImageModelSource(): 'live' | 'cache-fresh' | 'cache-degraded' | 'fallback' {
   return _lastImageModelSource;
 }
 
