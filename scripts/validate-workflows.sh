@@ -78,8 +78,8 @@ for f in "$WORKFLOWS_DIR"/*.yml "$WORKFLOWS_DIR"/*.yaml; do
   # ── Check 3: concurrency group on Main-push workflows ───────────────────
   # Detect workflows triggered on push to Main by looking for the branch listed
   # inside a branches: array or block (e.g. `- Main` or `branches: [Main]`).
-  if grep -qE "^[[:space:]]+-[[:space:]]+['\"]?(Main|main)['\"]?[[:space:]]*$" "$f" || \
-     grep -qE "branches:[[:space:]]*\[['\"]?(Main|main)['\"]?\]" "$f"; then
+  if grep -qE "^[[:space:]]+-[[:space:]]+['\"]?(Main|main|Broke)['\"]?[[:space:]]*$" "$f" || \
+     grep -qE "branches:[[:space:]]*\[['\"]?(Main|main|Broke)['\"]?\]" "$f"; then
     if grep -q '^concurrency:' "$f"; then
       ok "has concurrency group"
     else
