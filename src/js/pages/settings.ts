@@ -3,6 +3,8 @@ import type { PageModule } from '../utils.js';
 import { escHtml } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
+import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
+import { migrateCompanionSettings } from '../image-generation-config.js';
 
 /**
  * Settings Page
@@ -49,6 +51,9 @@ async function render() {
   const enableSequentialPages = await DB.getSetting('enableSequentialPages', false);
   const refBudget = await DB.getSetting('refBudget', 'auto');
   const singleImageModel = await DB.getSetting('singleImageModel', '');
+  const storedCompanionMode = await DB.getSetting('singleImageCompanionMode', null);
+  const companion = migrateCompanionSettings(storedCompanionMode, singleImageModel);
+  const imageRequestTimeoutMs = await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS);
 
   return `
     <div class="slide-up">
@@ -234,10 +239,28 @@ async function render() {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Single-Image Companion Model (optional)</label>
-          <input type="text" id="set-singleimgmodel" value="${escHtml(singleImageModel)}" placeholder="e.g. seedream-v4.5" list="single-model-options">
+          <label class="form-label">Single-Image Companion</label>
+          <select id="set-companionmode" onchange="SettingsPage.updateCompanionMode()">
+            <option value="auto" ${companion.mode === 'auto' ? 'selected' : ''}>Auto — use the recommended companion when available</option>
+            <option value="same" ${companion.mode === 'same' ? 'selected' : ''}>Same — use the selected page model</option>
+            <option value="custom" ${companion.mode === 'custom' ? 'selected' : ''}>Custom — use an exact model ID</option>
+          </select>
+          <input type="text" id="set-singleimgmodel" class="mt-sm" value="${escHtml(companion.configuredModelId)}" placeholder="e.g. seedream-v4.5" list="single-model-options" ${companion.mode === 'custom' ? '' : 'disabled'}>
           <datalist id="single-model-options"></datalist>
-          <div class="form-hint">Model used for independent per-panel requests when the page model is a sequential model. Recommended: <code>seedream-v4.5</code>. Blank uses the page model with n=1.</div>
+          <div class="form-hint">Auto maps <code>seedream-v4.5-sequential</code> to <code>seedream-v4.5</code> for independent panel requests when that model is available.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Image Request Timeout</label>
+          <select id="set-imagetimeout">
+            ${[2, 5, 10, 15, 20]
+              .map(
+                (minutes) =>
+                  `<option value="${minutes * 60_000}" ${Number(imageRequestTimeoutMs) === minutes * 60_000 ? 'selected' : ''}>${minutes} minutes</option>`,
+              )
+              .join('')}
+          </select>
+          <div class="form-hint">Stops waiting for one NanoGPT image request after this limit. Completed images from other panels are still saved.</div>
         </div>
 
         <div class="form-group">
@@ -350,6 +373,13 @@ function postRender(): void {
  * Loads model lists asynchronously so the page renders instantly.
  */
 async function onMount() {
+  const savedCompanion = migrateCompanionSettings(
+    await DB.getSetting('singleImageCompanionMode', null),
+    await DB.getSetting('singleImageModel', ''),
+  );
+  if (savedCompanion.migrated) {
+    await DB.setSetting('singleImageCompanionMode', savedCompanion.mode);
+  }
   await Promise.all([loadModels('text'), loadModels('image')]);
   // After image models are loaded, auto-select the first model if none is saved
   let currentImageModel = document.getElementById('set-imgmodel')?.value;
@@ -682,14 +712,6 @@ function selectModel(type: string, modelId: string): void {
     // Dynamically update allowed sizes for the newly selected image model
     updateImageSizeOptions(modelId);
     updateImageModelCaps(modelId);
-    // Recommend seedream-v4.5 as the single-image companion for the sequential model
-    if (modelId === 'seedream-v4.5-sequential') {
-      const companionEl = document.getElementById('set-singleimgmodel');
-      if (companionEl && !companionEl.value && imageModels.some((m) => m.id === 'seedream-v4.5')) {
-        companionEl.value = 'seedream-v4.5';
-        App.toast('Recommended single-image companion set to seedream-v4.5', 'info');
-      }
-    }
   } else if (type === 'caption') {
     document.getElementById('set-captionmodel').value = modelId;
     document.getElementById('caption-model-display').textContent = modelId;
@@ -703,6 +725,12 @@ function selectModel(type: string, modelId: string): void {
       el.classList.toggle('selected', el.dataset.modelId === modelId);
     });
   }
+}
+
+function updateCompanionMode(): void {
+  const mode = document.getElementById('set-companionmode')?.value || 'auto';
+  const custom = document.getElementById('set-singleimgmodel');
+  if (custom) custom.disabled = mode !== 'custom';
 }
 
 async function refreshModels(type: string): Promise<void> {
@@ -959,7 +987,9 @@ async function save() {
   await DB.setSetting('enableSequentialPages', document.getElementById('set-sequentialpages').checked);
   const refBudgetVal = document.getElementById('set-refbudget').value;
   await DB.setSetting('refBudget', refBudgetVal === 'auto' ? 'auto' : parseInt(refBudgetVal, 10));
+  await DB.setSetting('singleImageCompanionMode', document.getElementById('set-companionmode').value);
   await DB.setSetting('singleImageModel', document.getElementById('set-singleimgmodel').value.trim());
+  await DB.setSetting('imageRequestTimeoutMs', Number(document.getElementById('set-imagetimeout').value));
   await DB.setSetting('negativePrompt', document.getElementById('set-negativeprompt').value.trim());
   const sizeEl = document.getElementById('set-imgsize');
   const imageSizeVal = sizeEl.value.trim();
@@ -1096,6 +1126,7 @@ const SettingsPage: PageModule & Record<string, any> = {
   closePicker,
   filterModels,
   selectModel,
+  updateCompanionMode,
   refreshModels,
   clearCaptionModel,
   updateImageSizeOptions,
