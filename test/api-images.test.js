@@ -274,6 +274,18 @@ describe('structured planner', () => {
     expect(API.parsePlannedPageResponse('not json at all')).toBeNull();
   });
 
+  it('parsePlannedPageResponse repairs internal trailing commas', () => {
+    const parsed = API.parsePlannedPageResponse(
+      '{\n"title": "T",\n"panels": [\n  {\n    "narration": "hi",\n    "dialogue": [ { "speaker": "A", "text": "yo, and {braces, commas} in strings," }, ],\n    "visual": { "shot": "wide", },\n  },\n],\n"choices": [ { "text": "c", "summary": "s" }, ]\n}',
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed.title).toBe('T');
+    expect(parsed.panels[0].narration).toBe('hi');
+    expect(parsed.panels[0].dialogue[0].text).toBe('yo, and {braces, commas} in strings,');
+    expect(parsed.panels[0].visual.shot).toBe('wide');
+    expect(parsed.choices[0].text).toBe('c');
+  });
+
   it('parsePlannedPageResponse tolerates non-array dialogue/characters/choices', () => {
     const parsed = API.parsePlannedPageResponse(
       JSON.stringify({

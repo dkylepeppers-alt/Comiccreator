@@ -774,26 +774,43 @@ function repairTruncatedJson(str: string): string {
   const stack = [];
   let inString = false;
   let escape = false;
+  let out = '';
 
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (escape) {
       escape = false;
+      out += c;
       continue;
     }
     if (c === '\\' && inString) {
       escape = true;
+      out += c;
       continue;
     }
     if (c === '"') {
       inString = !inString;
+      out += c;
       continue;
     }
-    if (inString) continue;
+    if (inString) {
+      out += c;
+      continue;
+    }
+    // Drop trailing commas before a closing brace/bracket (a common LLM
+    // output mistake that JSON.parse rejects with "Expected double-quoted
+    // property name" / "Unexpected token ]").
+    if (c === ',') {
+      let j = i + 1;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      if (j < s.length && (s[j] === '}' || s[j] === ']')) continue;
+    }
     if (c === '{') stack.push('}');
     else if (c === '[') stack.push(']');
     else if (c === '}' || c === ']') stack.pop();
+    out += c;
   }
+  s = out;
 
   // Close any unclosed string literal.
   // If the string ended on a dangling backslash (escape still true), the '\' is
