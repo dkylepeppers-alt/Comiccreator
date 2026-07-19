@@ -491,7 +491,8 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
   // Preserve reference order through preprocessing. Identity anchors keep a
   // larger long edge (up to 2048) so faces survive; legacy callers keep 1024.
   const refMaxDim = options.refMaxDimension || 1024;
-  const compressedRefs = rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u, refMaxDim))) : null;
+  const compressedRefs =
+    rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u, refMaxDim))) : null;
 
   // Prepend the legacy reference legend only when labeled refs are provided.
   // The anchored pipeline compiles its own reference map into the prompt.

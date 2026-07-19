@@ -368,7 +368,8 @@ export function resolveLocationAnchor(world: WorldLike | null, locationKey: stri
     if (def) return { image: def, matchedKey: def.locationKey || null, usedFallback: !!locationKey };
   }
   const primary = typeof world.primaryImageIndex === 'number' ? (world.images || [])[world.primaryImageIndex] : null;
-  if (primary && primary.dataUrl) return { image: primary, matchedKey: primary.locationKey || null, usedFallback: true };
+  if (primary && primary.dataUrl)
+    return { image: primary, matchedKey: primary.locationKey || null, usedFallback: true };
   return { image: images[0], matchedKey: images[0].locationKey || null, usedFallback: true };
 }
 
@@ -666,9 +667,7 @@ export function validatePlannedPage(planned: PlannedPage, manifest: PlannedPageV
 
     const visualStateChanges = (panel.visualStateChanges || []).filter((change) => {
       if (change?.characterId && knownChars.has(change.characterId)) return true;
-      errors.push(
-        `Panel ${i + 1}: state change for unknown character "${change?.characterId ?? '(missing)'}" ignored`,
-      );
+      errors.push(`Panel ${i + 1}: state change for unknown character "${change?.characterId ?? '(missing)'}" ignored`);
       return false;
     });
 
@@ -777,7 +776,8 @@ export function compilePanelDescription(input: CompilePanelInput): string {
   if (visual.lighting) cine.push(`Lighting: ${normalizeStateText(visual.lighting)}`);
   if (visual.colorMood) cine.push(`Color mood: ${normalizeStateText(visual.colorMood)}`);
   if (cine.length) lines.push(`${cine.join('. ')}.`);
-  if (visual.keyProps?.length) lines.push(`Key props: ${visual.keyProps.map((p) => normalizeStateText(p)).join(', ')}.`);
+  if (visual.keyProps?.length)
+    lines.push(`Key props: ${visual.keyProps.map((p) => normalizeStateText(p)).join(', ')}.`);
   if (visual.focalPoint) lines.push(`Focal point: ${normalizeStateText(visual.focalPoint)}.`);
 
   return lines.filter(Boolean).join('\n');

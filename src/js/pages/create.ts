@@ -866,7 +866,13 @@ async function startGenerating() {
     state.visualContinuity = initializeContinuity(characters);
   } else {
     state.visualContinuity = null;
-    systemPrompt = API.buildSystemPrompt(genreName, characters, world, presetData?.systemPrompt || null, systemPromptOpts);
+    systemPrompt = API.buildSystemPrompt(
+      genreName,
+      characters,
+      world,
+      presetData?.systemPrompt || null,
+      systemPromptOpts,
+    );
   }
 
   const userMessage = state.storyPrompt
@@ -1469,7 +1475,8 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
     resolution: imageSize,
     promptVersion: PROMPT_VERSION,
     compiledPrompts,
-    referenceManifest: plan.strategy === 'sequential-page' ? pageAlloc.manifest : panelAllocs.flatMap((a) => a.manifest),
+    referenceManifest:
+      plan.strategy === 'sequential-page' ? pageAlloc.manifest : panelAllocs.flatMap((a) => a.manifest),
     generatedAt: Date.now(),
   };
   pageData.generationWarnings = [...new Set(warnings)];
@@ -1519,9 +1526,7 @@ async function generatePage(presetData: any): Promise<void> {
       const planned = API.parsePlannedPageResponse(fullText);
       if (planned) {
         // Exact ID validation replaces character-name regex matching
-        const locationKeys = [
-          ...new Set((state.world?.images || []).map((img) => img?.locationKey).filter(Boolean)),
-        ];
+        const locationKeys = [...new Set((state.world?.images || []).map((img) => img?.locationKey).filter(Boolean))];
         const { page: validated, errors } = validatePlannedPage(planned, {
           characterIds: state.characters.map((c) => c.id),
           locationKeys,

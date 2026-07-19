@@ -311,7 +311,14 @@ function refreshGallery() {
 
 function addImageSlot() {
   if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
-  editorImages.push({ id: newId(), dataUrl: '', tag: 'default', description: '', embedding: null, embeddingText: null });
+  editorImages.push({
+    id: newId(),
+    dataUrl: '',
+    tag: 'default',
+    description: '',
+    embedding: null,
+    embeddingText: null,
+  });
   refreshGallery();
   // Immediately open file picker for the new slot
   pickImageForSlot(editorImages.length - 1);
@@ -911,7 +918,10 @@ function setAnchor(idx: number): void {
   if (!img.id) img.id = newId();
   editorAnchorImageId = img.id;
   refreshGallery();
-  App.toast(`Identity anchor set — this image now controls ${editorName || 'this character'}'s stable identity`, 'success');
+  App.toast(
+    `Identity anchor set — this image now controls ${editorName || 'this character'}'s stable identity`,
+    'success',
+  );
 }
 
 function removeImage(idx: number): void {
