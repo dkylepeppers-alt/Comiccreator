@@ -233,8 +233,9 @@ function appLogDebug(context: string, message: string, details?: string): void {
   if (
     typeof (globalThis as any).App !== 'undefined' &&
     typeof (globalThis as any).App.logDebug === 'function'
-  )
+  ) {
     (globalThis as any).App.logDebug(context, message, details);
+  }
 }
 
 async function getModel(): Promise<string> {
