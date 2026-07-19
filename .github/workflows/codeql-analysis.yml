@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - Broke
   pull_request:
 
 # Deny all permissions by default; grant only what each job needs.
