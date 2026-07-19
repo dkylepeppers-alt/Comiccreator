@@ -1221,8 +1221,7 @@ async function fetchImageModels(
     _lastImageModelSource = 'cache-fresh';
     return normalizedCache;
   }
-  const shouldAttemptMigration = !cacheCurrent && Date.now() >= migrationRetryAt;
-  if (!forceRefresh && normalizedCache && migrationBackoffActive && !shouldAttemptMigration) {
+  if (!forceRefresh && normalizedCache && migrationBackoffActive) {
     _modelSizesCache = normalizedCache;
     _lastImageModelSource = 'cache-degraded';
     return normalizedCache;
