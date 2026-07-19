@@ -43,6 +43,7 @@ let state: any = {
   world: null, // full world record (normalized) for anchored generation
   plannerMode: false, // true when this comic uses the structured planner + continuity pipeline
   visualContinuity: null, // ComicVisualContinuity ledger for the active comic
+  initialVisualOverrides: {}, // per-comic opening-state overrides from setup (charId → raw field strings)
   isGenerating: false,
   generatingContext: 'initial', // 'initial', 'reroll', 'continue'
   draftLoaded: false,
@@ -136,6 +137,7 @@ async function render(param?: string | null): Promise<string> {
 async function renderSetup() {
   const characters = await DB.getAll(DB.STORES.characters);
   const worlds = await DB.getAll(DB.STORES.worlds);
+  const plannerEnabled = await DB.getSetting('useStructuredPlanner', true);
   const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
   const imagePresets = dedupeByNameLatest(await DB.getAll(DB.STORES.imagePresets));
   const hasDraft =
@@ -201,6 +203,7 @@ async function renderSetup() {
           </div>
         `
         }
+        ${renderInitialStateSection(characters, plannerEnabled)}
       </div>
 
       <!-- Step 3: World -->
@@ -285,6 +288,84 @@ async function renderSetup() {
       </button>
     </div>
   `;
+}
+
+/**
+ * Per-comic initial visual state (spec §12.3): shown in setup for the
+ * selected characters, initialized from each character's reusable defaults.
+ * Edits here override only this comic — the character record is untouched.
+ */
+function renderInitialStateSection(characters: any[], plannerEnabled: boolean): string {
+  if (!plannerEnabled || state.selectedCharacters.length === 0) return '';
+  const rows = state.selectedCharacters
+    .map((cid) => {
+      const c = characters.find((x) => x.id === cid);
+      if (!c) return '';
+      const dvs = c.defaultVisualState || {};
+      const ov = state.initialVisualOverrides?.[cid] || {};
+      const val = (field, fallback) => (ov[field] !== undefined ? ov[field] : fallback);
+      return `
+        <div class="continuity-char" data-charid="${cid}">
+          <div class="continuity-char-name">${escHtml(c.name)}</div>
+          <input type="text" class="continuity-field" placeholder="Use identity-anchor outfit"
+            value="${escHtml(val('wardrobe', dvs.wardrobeDescription || ''))}"
+            oninput="CreatePage.setInitialState('${cid}','wardrobe',this.value)" title="Opening wardrobe for this comic">
+          <input type="text" class="continuity-field mt-sm" placeholder="Hair state"
+            value="${escHtml(val('hair', dvs.hairState || ''))}"
+            oninput="CreatePage.setInitialState('${cid}','hair',this.value)">
+          <input type="text" class="continuity-field mt-sm" placeholder="Carried items (comma-separated)"
+            value="${escHtml(val('items', (dvs.carriedItems || []).join(', ')))}"
+            oninput="CreatePage.setInitialState('${cid}','items',this.value)">
+          <input type="text" class="continuity-field mt-sm" placeholder="Injuries (comma-separated)"
+            value="${escHtml(val('injuries', (dvs.injuries || []).join(', ')))}"
+            oninput="CreatePage.setInitialState('${cid}','injuries',this.value)">
+          <input type="text" class="continuity-field mt-sm" placeholder="Temporary changes (comma-separated)"
+            value="${escHtml(val('temporary', (dvs.temporaryChanges || []).join(', ')))}"
+            oninput="CreatePage.setInitialState('${cid}','temporary',this.value)">
+        </div>`;
+    })
+    .join('');
+  if (!rows) return '';
+  return `
+    <div class="mt-sm">
+      <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
+        <h3 class="card-title" style="margin:0;">Initial Visual State (optional)</h3>
+      </div>
+      <div class="collapsible-body collapsed">
+        <p class="text-sm text-muted">Opening wardrobe and state for this comic only. Blank wardrobe means the outfit shown in the character's identity anchor. The reusable character record is not changed.</p>
+        ${rows}
+      </div>
+    </div>`;
+}
+
+/** Record a per-comic initial-state override from the setup form. */
+function setInitialState(charId: string, field: string, value: string): void {
+  state.initialVisualOverrides = state.initialVisualOverrides || {};
+  state.initialVisualOverrides[charId] = state.initialVisualOverrides[charId] || {};
+  state.initialVisualOverrides[charId][field] = value;
+  scheduleDraftSave();
+}
+
+/** Convert raw setup-form overrides into CharacterVisualStateDefaults per character. */
+function buildInitialStateOverrides(characters: any[]): Record<string, any> {
+  const splitList = (s) =>
+    String(s || '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const overrides = {};
+  for (const c of characters) {
+    const ov = state.initialVisualOverrides?.[c.id];
+    if (!ov) continue;
+    const out: any = {};
+    if (ov.wardrobe !== undefined) out.wardrobeDescription = ov.wardrobe;
+    if (ov.hair !== undefined) out.hairState = ov.hair;
+    if (ov.items !== undefined) out.carriedItems = splitList(ov.items);
+    if (ov.injuries !== undefined) out.injuries = splitList(ov.injuries);
+    if (ov.temporary !== undefined) out.temporaryChanges = splitList(ov.temporary);
+    if (Object.keys(out).length > 0) overrides[c.id] = out;
+  }
+  return overrides;
 }
 
 function renderGenerating() {
@@ -651,6 +732,7 @@ async function saveDraft() {
     selectedImagePreset: state.selectedImagePreset,
     title: state.title,
     storyPrompt: state.storyPrompt,
+    initialVisualOverrides: state.initialVisualOverrides,
   });
 }
 
@@ -679,6 +761,10 @@ async function restoreDraftOrActive() {
     state.selectedImagePreset = draft.selectedImagePreset || null;
     state.title = draft.title || '';
     state.storyPrompt = draft.storyPrompt || '';
+    state.initialVisualOverrides =
+      draft.initialVisualOverrides && typeof draft.initialVisualOverrides === 'object'
+        ? draft.initialVisualOverrides
+        : {};
   }
 }
 
@@ -691,6 +777,7 @@ async function resetSetup() {
   state.selectedImagePreset = null;
   state.title = '';
   state.storyPrompt = '';
+  state.initialVisualOverrides = {};
   state.draftLoaded = true; // mark as loaded so we don't re-load old draft
   await DB.setSetting('createSetupDraft', null);
   App.refreshPage();
@@ -863,7 +950,7 @@ async function startGenerating() {
       locationKeys: [...new Set(locationKeys)],
       customSystemPrompt: presetData?.systemPrompt || null,
     });
-    state.visualContinuity = initializeContinuity(characters);
+    state.visualContinuity = initializeContinuity(characters, buildInitialStateOverrides(characters));
   } else {
     state.visualContinuity = null;
     systemPrompt = API.buildSystemPrompt(
@@ -1305,8 +1392,19 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
   const byId = {};
   for (const c of state.characters) byId[c.id] = c;
 
+  // Independent panel requests run on the companion model, so their budget
+  // and size validation use the companion's capabilities, not the page model's
+  const companionMeta = singleImageModelId === modelId ? meta : await API.getImageModelMeta(singleImageModelId);
   const budget = effectiveReferenceBudget(refBudgetSetting, meta?.maxInputImages);
+  const panelBudget = effectiveReferenceBudget(refBudgetSetting, companionMeta?.maxInputImages);
   const previousFrame = useRefImages ? getPreviousFrameRef() : null;
+
+  // The ledger's recorded anchors are the comic's explicit continuity choice
+  const ledgerStates = (pageData.continuityBefore || state.visualContinuity)?.characterStates || {};
+  const anchorImageIdByCharacter = {};
+  for (const [charId, charState] of Object.entries(ledgerStates)) {
+    anchorImageIdByCharacter[charId] = charState?.identityAnchorImageId ?? null;
+  }
 
   const emptyAlloc = { manifest: [], dataUrls: [], unanchoredCharacterIds: [], warnings: [] };
 
@@ -1320,6 +1418,7 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
         world: state.world,
         budget,
         previousFrame,
+        anchorImageIdByCharacter,
       })
     : emptyAlloc;
   warnings.push(...pageAlloc.warnings);
@@ -1332,8 +1431,9 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
           charactersById: byId,
           locationKeys: panel.visual?.locationKey ? [panel.visual.locationKey] : [],
           world: state.world,
-          budget,
+          budget: panelBudget,
           previousFrame: null,
+          anchorImageIdByCharacter,
         })
       : emptyAlloc,
   );
@@ -1341,6 +1441,13 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
   const sizeValid = !Array.isArray(meta?.sizes) || meta.sizes.length === 0 || meta.sizes.includes(imageSize);
   if (!sizeValid) {
     warnings.push(`Size ${imageSize} is not in ${modelId}'s supported resolution list — sequential batching skipped`);
+  }
+  const companionSizeValid =
+    !Array.isArray(companionMeta?.sizes) || companionMeta.sizes.length === 0 || companionMeta.sizes.includes(imageSize);
+  if (!companionSizeValid) {
+    warnings.push(
+      `Size ${imageSize} is not in ${singleImageModelId}'s supported resolution list — panel requests may be rejected`,
+    );
   }
 
   const plan = resolveImageGenerationPlan({
@@ -1351,6 +1458,7 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
     panelReferenceCounts: panelAllocs.map((a) => (a.error ? a.error.required : a.manifest.length)),
     requestedSizes: [imageSize],
     sequentialEnabled: sequentialEnabled && sizeValid,
+    panelCapacity: panelBudget,
   });
   warnings.push(...plan.reasons.filter((r) => r !== 'Sequential page request'));
 
@@ -1859,14 +1967,18 @@ async function undoChoice() {
   // Delete the last page from DB
   const lastPageId = state.pageIds.pop();
   if (lastPageId) await DB.del(DB.STORES.pages, lastPageId);
-  state.pages.pop();
+  const removedPage = state.pages.pop();
 
-  // Rewind the continuity ledger to the end state of the page we returned to
+  // Rewind the ledger to the moment just before the undone page was generated.
+  // Using the removed page's continuityBefore (rather than the previous page's
+  // continuityAfter) preserves manual state edits made at that boundary.
   if (state.plannerMode) {
     const lastPage = state.pages[state.pages.length - 1];
-    state.visualContinuity = lastPage?.continuityAfter
-      ? structuredClone(lastPage.continuityAfter)
-      : initializeContinuity(state.characters);
+    state.visualContinuity = removedPage?.continuityBefore
+      ? structuredClone(removedPage.continuityBefore)
+      : lastPage?.continuityAfter
+        ? structuredClone(lastPage.continuityAfter)
+        : initializeContinuity(state.characters);
   }
 
   // Update the comic record
@@ -2021,6 +2133,7 @@ function resetState() {
     world: null,
     plannerMode: false,
     visualContinuity: null,
+    initialVisualOverrides: {},
     isGenerating: false,
     generatingContext: 'initial',
     draftLoaded: false,
@@ -2065,6 +2178,7 @@ const CreatePage: PageModule & Record<string, any> = {
   undoChoice,
   zoomPanel,
   saveContinuityEdits,
+  setInitialState,
   resetState,
   setTitle,
   setStoryPrompt,

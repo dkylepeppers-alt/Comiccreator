@@ -128,7 +128,10 @@ describe('generateImages', () => {
   });
 
   it('keeps index mapping on short responses without shifting', async () => {
-    mockImageApi({ models: [SEQ_MODEL], generation: { data: [{ url: 'https://x/1.png' }, { url: 'https://x/2.png' }] } });
+    mockImageApi({
+      models: [SEQ_MODEL],
+      generation: { data: [{ url: 'https://x/1.png' }, { url: 'https://x/2.png' }] },
+    });
     const results = await API.generateImages('p', { count: 4, resolution: '1024x1024', exactReferences: true });
     expect(results.length).toBe(2);
     expect(results.map((r) => r.index)).toEqual([0, 1]);
@@ -160,9 +163,9 @@ describe('generateImages', () => {
 
   it('rejects unsupported sizes for multi-output exact requests', async () => {
     mockImageApi({ models: [SEQ_MODEL], generation: { data: [{ url: 'u' }] } });
-    await expect(
-      API.generateImages('p', { count: 3, resolution: '640x480', exactReferences: true }),
-    ).rejects.toThrow(/supported resolution list/);
+    await expect(API.generateImages('p', { count: 3, resolution: '640x480', exactReferences: true })).rejects.toThrow(
+      /supported resolution list/,
+    );
   });
 
   it('legacy path still truncates references at the configured cap', async () => {
@@ -201,7 +204,7 @@ describe('structured planner', () => {
     expect(prompt).toContain('id: "char-1"');
     expect(prompt).toContain('"machine-shop"');
     expect(prompt).toContain('visualStateChanges');
-    expect(prompt).toContain('Do NOT describe any character\'s physical appearance');
+    expect(prompt).toContain("Do NOT describe any character's physical appearance");
   });
 
   it('parsePlannedPageResponse normalizes a valid planned page', () => {
@@ -219,7 +222,12 @@ describe('structured planner', () => {
               keyProps: ['wrench'],
             },
             visualStateChanges: [
-              { characterId: 'char-1', timing: 'after-panel', reason: 'grease', set: { temporaryChanges: ['grease-smudged hands'] } },
+              {
+                characterId: 'char-1',
+                timing: 'after-panel',
+                reason: 'grease',
+                set: { temporaryChanges: ['grease-smudged hands'] },
+              },
             ],
           },
         ],
@@ -241,5 +249,28 @@ describe('structured planner', () => {
 
   it('parsePlannedPageResponse returns null for garbage', () => {
     expect(API.parsePlannedPageResponse('not json at all')).toBeNull();
+  });
+
+  it('parsePlannedPageResponse tolerates non-array dialogue/characters/choices', () => {
+    const parsed = API.parsePlannedPageResponse(
+      JSON.stringify({
+        title: 'T',
+        panels: [
+          {
+            narration: 'x',
+            dialogue: { speaker: 'Mara', text: 'not an array' },
+            visual: { characters: 'Mara and Ellis', keyProps: 'wrench' },
+            visualStateChanges: 'none',
+          },
+        ],
+        choices: { text: 'single object', summary: 's' },
+      }),
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed.panels[0].dialogue).toEqual([]);
+    expect(parsed.panels[0].visual.characters).toEqual([]);
+    expect(parsed.panels[0].visual.keyProps).toEqual([]);
+    expect(parsed.panels[0].visualStateChanges).toEqual([]);
+    expect(parsed.choices).toEqual([]);
   });
 });

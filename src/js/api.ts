@@ -959,7 +959,10 @@ function parsePlannedPageResponse(text: string): any | null {
       title: parsed.title || 'Untitled Page',
       panels: parsed.panels.map((p: any) => ({
         narration: p?.narration || '',
-        dialogue: (p?.dialogue || []).map((d: any) => ({ speaker: d?.speaker || 'Unknown', text: d?.text || '' })),
+        dialogue: (Array.isArray(p?.dialogue) ? p.dialogue : []).map((d: any) => ({
+          speaker: d?.speaker || 'Unknown',
+          text: d?.text || '',
+        })),
         visual: {
           locationKey: p?.visual?.locationKey || null,
           environment: p?.visual?.environment || '',
@@ -967,7 +970,7 @@ function parsePlannedPageResponse(text: string): any | null {
           composition: p?.visual?.composition || '',
           lighting: p?.visual?.lighting || '',
           colorMood: p?.visual?.colorMood || p?.visual?.color_mood || '',
-          characters: (p?.visual?.characters || []).map((c: any) => ({
+          characters: (Array.isArray(p?.visual?.characters) ? p.visual.characters : []).map((c: any) => ({
             characterId: c?.characterId || c?.character_id || '',
             action: c?.action || '',
             pose: c?.pose || '',
@@ -979,7 +982,7 @@ function parsePlannedPageResponse(text: string): any | null {
         },
         visualStateChanges: Array.isArray(p?.visualStateChanges) ? p.visualStateChanges.map(normalizeChange) : [],
       })),
-      choices: (parsed.choices || []).map((c: any) => ({
+      choices: (Array.isArray(parsed.choices) ? parsed.choices : []).map((c: any) => ({
         text: c?.text || c?.description || '',
         summary: c?.summary || '',
       })),

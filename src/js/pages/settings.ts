@@ -203,7 +203,7 @@ async function render() {
             <input type="checkbox" id="set-dynamicsizes" ${dynamicImageSizes ? 'checked' : ''} style="width:auto;">
             AI-Picked Panel Sizes
           </label>
-          <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes.</div>
+          <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes. <strong>Legacy pipeline only:</strong> comics using the structured planner generate every panel at the single page-wide size above (sequential page requests require one shared size); panel layout varies via composition instead.</div>
         </div>
 
         <div class="form-group">

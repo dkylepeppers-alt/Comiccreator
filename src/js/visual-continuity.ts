@@ -103,6 +103,8 @@ export interface ReferenceManifestItem {
   imageId?: string;
   sourcePageId?: string;
   sourcePanelIndex?: number;
+  /** True when this reference is a fallback (e.g. default world anchor standing in for a missing location key). */
+  fallback?: boolean;
 }
 
 export interface PageGenerationMetadata {
@@ -429,6 +431,12 @@ export interface ReferenceAllocationInput {
   /** Effective budget — already min(user budget, model max). */
   budget: number;
   previousFrame?: PreviousFrameRef | null;
+  /**
+   * The comic ledger's recorded anchor image ID per character (spec §7.2).
+   * When present, it takes precedence over the character record's current
+   * anchor; the current anchor is only a fallback for a deleted image.
+   */
+  anchorImageIdByCharacter?: Record<string, string | null | undefined>;
 }
 
 export interface ReferenceAllocation {
@@ -457,7 +465,21 @@ export function allocateReferences(input: ReferenceAllocationInput): ReferenceAl
       warnings.push(`Unknown character "${charId}" skipped during reference allocation`);
       continue;
     }
-    const resolved = resolveIdentityAnchorImage(character);
+    // The ledger's recorded anchor is the comic's explicit continuity choice;
+    // the character record's current anchor is only its fallback.
+    let resolved: AnchorResolution | null = null;
+    const recordedAnchorId = input.anchorImageIdByCharacter?.[charId];
+    if (recordedAnchorId) {
+      const recorded = (character.images || []).find((img) => img && img.id === recordedAnchorId && img.dataUrl);
+      if (recorded) {
+        resolved = { image: recorded, source: 'anchor' };
+      } else {
+        warnings.push(
+          `Character "${character.name}"'s recorded identity anchor no longer exists — using the character's current anchor`,
+        );
+      }
+    }
+    if (!resolved) resolved = resolveIdentityAnchorImage(character);
     if (!resolved.image?.dataUrl) {
       unanchoredCharacterIds.push(charId);
       warnings.push(`Character "${character.name}" has no valid reference image — identity is unanchored`);
@@ -493,6 +515,7 @@ export function allocateReferences(input: ReferenceAllocationInput): ReferenceAl
         label: key,
         worldId: input.world?.id,
         imageId: resolved.image.id,
+        ...(resolved.usedFallback ? { fallback: true } : {}),
       },
       dataUrl: resolved.image.dataUrl,
     });
@@ -568,6 +591,12 @@ export interface GenerationPlanInput {
   requestedSizes: string[];
   /** Whether the sequential route has been enabled (post contract-test gate). */
   sequentialEnabled: boolean;
+  /**
+   * Reference capacity for independent panel requests, when they run on a
+   * different (companion) model than the page model. Defaults to the page
+   * model's capacity.
+   */
+  panelCapacity?: number;
 }
 
 export interface GenerationPlan {
@@ -595,9 +624,13 @@ export function resolveImageGenerationPlan(input: GenerationPlanInput): Generati
   const reasons: string[] = [];
   if (!metadataAvailable) reasons.push('Model capability metadata unavailable — using conservative limits');
 
+  // Blocked-panel checks run against the model that will execute the
+  // independent requests (the companion, when configured)
+  const panelCapacity =
+    typeof input.panelCapacity === 'number' && input.panelCapacity > 0 ? input.panelCapacity : capacity;
   const blockedPanels = (input.panelReferenceCounts || [])
-    .map((required, panelIndex) => ({ panelIndex, required, capacity }))
-    .filter((p) => p.required > capacity);
+    .map((required, panelIndex) => ({ panelIndex, required, capacity: panelCapacity }))
+    .filter((p) => p.required > p.capacity);
 
   const hasAdapter = input.modelId === SEQUENTIAL_MODEL_ID;
   const mixedSizes = (input.requestedSizes || []).length > 1;
@@ -701,7 +734,10 @@ function buildReferenceMap(manifest: ReferenceManifestItem[]): string {
       case 'identity':
         return `Reference image ${item.index}: identity anchor for ${item.label}. ${IDENTITY_LEGEND}`;
       case 'location':
-        return `Reference image ${item.index}: location anchor for ${item.label}. ${LOCATION_LEGEND}`;
+        // A fallback anchor must not claim to depict the exact planned location
+        return item.fallback
+          ? `Reference image ${item.index}: general location reference for this world, standing in for "${item.label}" (no exact anchor exists). ${LOCATION_LEGEND}`
+          : `Reference image ${item.index}: location anchor for ${item.label}. ${LOCATION_LEGEND}`;
       case 'previous-frame':
         return `Reference image ${item.index}: final panel of the previous page. ${PREVIOUS_FRAME_LEGEND}`;
       case 'prop':

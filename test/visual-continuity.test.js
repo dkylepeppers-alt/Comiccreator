@@ -173,7 +173,12 @@ describe('reducePageStates', () => {
         panel({
           visual: { characters: [{ characterId: 'char-mara', action: '', pose: '', expression: '' }] },
           visualStateChanges: [
-            { characterId: 'char-mara', timing: 'before-panel', reason: 'changed', set: { wardrobeDescription: 'formal suit' } },
+            {
+              characterId: 'char-mara',
+              timing: 'before-panel',
+              reason: 'changed',
+              set: { wardrobeDescription: 'formal suit' },
+            },
           ],
         }),
       ],
@@ -319,6 +324,46 @@ describe('reference allocation', () => {
     expect(alloc.manifest).toEqual([]);
   });
 
+  it("prefers the comic ledger's recorded anchor over the character's current anchor", () => {
+    // User changed the character's anchor to img-b after the comic started;
+    // the ledger still records img-a as this comic's explicit choice
+    const changed = { ...mara, identityAnchorImageId: 'img-b' };
+    const alloc = allocateReferences({
+      characterIds: ['char-mara'],
+      charactersById: { 'char-mara': changed },
+      locationKeys: [],
+      world: null,
+      budget: 5,
+      anchorImageIdByCharacter: { 'char-mara': 'img-a' },
+    });
+    expect(alloc.manifest[0].imageId).toBe('img-a');
+  });
+
+  it('falls back to the current anchor when the recorded ledger anchor was deleted', () => {
+    const alloc = allocateReferences({
+      characterIds: ['char-mara'],
+      charactersById: byId,
+      locationKeys: [],
+      world: null,
+      budget: 5,
+      anchorImageIdByCharacter: { 'char-mara': 'deleted-image-id' },
+    });
+    expect(alloc.manifest[0].imageId).toBe('img-a');
+    expect(alloc.warnings.some((w) => w.includes('recorded identity anchor no longer exists'))).toBe(true);
+  });
+
+  it('marks location fallback references in the manifest', () => {
+    const alloc = allocateReferences({
+      characterIds: [],
+      charactersById: {},
+      locationKeys: ['north-rooftop'],
+      world,
+      budget: 5,
+    });
+    expect(alloc.manifest[0].role).toBe('location');
+    expect(alloc.manifest[0].fallback).toBe(true);
+  });
+
   it('marks characters with no valid image as unanchored, not as errors', () => {
     const bare = { id: 'char-bare', name: 'Bare', images: [] };
     const alloc = allocateReferences({
@@ -384,13 +429,22 @@ describe('resolveImageGenerationPlan', () => {
   });
 
   it('routes independently when output count exceeds the model max', () => {
-    const plan = resolveImageGenerationPlan(seq({ modelMeta: { maxInputImages: 10, maxOutputImages: 3, sizes: null } }));
+    const plan = resolveImageGenerationPlan(
+      seq({ modelMeta: { maxInputImages: 10, maxOutputImages: 3, sizes: null } }),
+    );
     expect(plan.strategy).toBe('independent-panels');
   });
 
   it('blocks panels whose references exceed capacity', () => {
     const plan = resolveImageGenerationPlan(seq({ panelReferenceCounts: [2, 11, 2, 2] }));
     expect(plan.blockedPanels).toEqual([{ panelIndex: 1, required: 11, capacity: 10 }]);
+  });
+
+  it('blocks panels against the companion capacity when panelCapacity differs', () => {
+    const plan = resolveImageGenerationPlan(seq({ panelReferenceCounts: [2, 4, 2, 2], panelCapacity: 3 }));
+    expect(plan.blockedPanels).toEqual([{ panelIndex: 1, required: 4, capacity: 3 }]);
+    // Sequential eligibility still judged against the page model's capacity
+    expect(plan.strategy).toBe('sequential-page');
   });
 
   it('uses conservative 1/1 limits without metadata', () => {
@@ -492,6 +546,20 @@ describe('prompt compilation', () => {
     // Wardrobe repeated verbatim in every image description
     const occurrences = prompt.split('Wardrobe: faded olive coveralls, sleeves rolled to the elbows.').length - 1;
     expect(occurrences).toBe(2);
+  });
+
+  it('annotates fallback location references honestly in the reference map', () => {
+    const fallbackManifest = [
+      { index: 1, role: 'location', label: 'north-rooftop', worldId: 'world-1', imageId: 'w-3', fallback: true },
+    ];
+    const prompt = compileIndependentPanelPrompt({
+      panel: p,
+      renderState,
+      manifest: fallbackManifest,
+      charactersById: byId,
+    });
+    expect(prompt).toContain('standing in for "north-rooftop"');
+    expect(prompt).not.toContain('location anchor for north-rooftop.');
   });
 
   it('independent prompt shares the same legend and state semantics', () => {
