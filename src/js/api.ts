@@ -228,6 +228,12 @@ async function getApiKey(): Promise<string> {
   return DB.getSetting('apiKey', '');
 }
 
+/** Guarded App.logDebug — records non-failure events in the global debug log. */
+function appLogDebug(context: string, message: string, details?: string): void {
+  if (typeof (globalThis as any).App !== 'undefined' && (globalThis as any).App.logDebug)
+    (globalThis as any).App.logDebug(context, message, details);
+}
+
 async function getModel(): Promise<string> {
   return DB.getSetting('model', 'gpt-4o-mini');
 }
@@ -273,7 +279,12 @@ async function chatCompletion(messages: ChatMessage[], options: ChatCompletionOp
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+  const content = data.choices?.[0]?.message?.content || '';
+  appLogDebug(
+    'chatCompletion',
+    `Completed (model: ${model}, ${messages.length} messages, ${content.length} chars returned)`,
+  );
+  return content;
 }
 
 /**
@@ -350,6 +361,10 @@ async function chatCompletionStream(
     }
   }
 
+  appLogDebug(
+    'chatCompletionStream',
+    `Completed (model: ${model}, ${messages.length} messages, ${fullText.length} chars streamed)`,
+  );
   return fullText;
 }
 
@@ -566,6 +581,10 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
   if (options.negativePrompt?.trim()) body.negative_prompt = options.negativePrompt.trim();
 
   const timeoutMs = options.timeoutMs ?? (await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS));
+  appLogDebug(
+    'generateImages',
+    `Requesting ${count} image${count === 1 ? '' : 's'} (model: ${modelId}, ${resolution}, ${rawRefs.length} reference${rawRefs.length === 1 ? '' : 's'})`,
+  );
   options.onProgress?.({ requestId: options.requestId, phase: 'submitting', at: Date.now() });
   const data = await runWithTimeout(
     async (signal) => {
@@ -608,6 +627,10 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
     else if (entry?.b64_json) results.push({ index: i, value: entry.b64_json, source: 'b64_json' });
   }
   if (results.length === 0) throw new Error('No image data in API response');
+  appLogDebug(
+    'generateImages',
+    `Generated ${results.length} image${results.length === 1 ? '' : 's'} (model: ${modelId}, ${resolution}, ${rawRefs.length} reference${rawRefs.length === 1 ? '' : 's'})`,
+  );
   options.onProgress?.({
     requestId: options.requestId,
     phase: 'response-parsed',

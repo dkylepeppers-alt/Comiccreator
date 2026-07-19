@@ -14,6 +14,8 @@ declare const App: {
   hideModal(): void;
   toast(message: string, type?: string, options?: any): void;
   logError(context: string, error: any, extraDetails?: string): void;
+  logWarn(context: string, message: string, extraDetails?: string): void;
+  logDebug(context: string, message: string, extraDetails?: string): void;
   toggleErrorPanel(): void;
   copyErrorLog(): void;
   clearErrorLog(): void;

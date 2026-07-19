@@ -1421,7 +1421,7 @@ img {
 .error-panel-title {
   font-weight: 700;
   font-size: 0.95rem;
-  color: var(--danger);
+  color: var(--text-primary);
 }
 #error-panel-body {
   overflow-y: auto;
@@ -1429,7 +1429,29 @@ img {
 }
 .error-log-entry {
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(244, 67, 54, 0.1);
+  border-bottom: 1px solid var(--border);
+}
+.error-log-entry-error {
+  border-bottom-color: rgba(244, 67, 54, 0.1);
+}
+.error-log-level {
+  font-weight: 700;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  align-self: center;
+}
+.error-log-level-error {
+  color: #fff;
+  background: var(--danger);
+}
+.error-log-level-warn {
+  color: #000;
+  background: #ffb300;
+}
+.error-log-level-info {
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 .error-log-header {
   display: flex;
@@ -1442,6 +1464,12 @@ img {
   color: var(--danger);
   font-weight: 600;
   font-size: 0.8rem;
+}
+.error-log-entry-warn .error-log-context {
+  color: #ffb300;
+}
+.error-log-entry-info .error-log-context {
+  color: var(--text-secondary);
 }
 .error-log-time {
   color: var(--text-muted);
