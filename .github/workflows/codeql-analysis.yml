@@ -3,6 +3,7 @@ name: CodeQL Analysis
 on:
   push:
     branches:
+      - main
       - Broke
   pull_request:
 
