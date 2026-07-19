@@ -25,19 +25,31 @@ export function resolveCompanionModel(options: {
   mode: CompanionMode;
   configuredModelId?: string;
   models: ImageModel[];
-}): { modelId: string; warning?: string; error?: string } {
+}): { modelId: string; warning?: string; error?: string; errorCode?: 'blank-custom' | 'unavailable' } {
+  const recommended = AUTO_COMPANIONS[options.pageModelId];
+  // Companion resolution only applies to page models with a known auto-companion
+  // mapping (sequential adapters); other models always use the page model itself.
+  if (!recommended) return { modelId: options.pageModelId };
   const available = new Set(options.models.map((model) => model.id));
   if (options.mode === 'same') return { modelId: options.pageModelId };
   if (options.mode === 'custom') {
     const custom = options.configuredModelId?.trim();
-    if (!custom) return { modelId: options.pageModelId, error: 'Choose a custom single-image companion model.' };
+    if (!custom) {
+      return {
+        modelId: options.pageModelId,
+        error: 'Choose a custom single-image companion model.',
+        errorCode: 'blank-custom',
+      };
+    }
     if (!available.has(custom)) {
-      return { modelId: custom, error: `The custom companion model "${custom}" is not available.` };
+      return {
+        modelId: custom,
+        error: `The custom companion model "${custom}" is not available.`,
+        errorCode: 'unavailable',
+      };
     }
     return { modelId: custom };
   }
-  const recommended = AUTO_COMPANIONS[options.pageModelId];
-  if (!recommended) return { modelId: options.pageModelId };
   if (available.has(recommended)) return { modelId: recommended };
   return {
     modelId: options.pageModelId,

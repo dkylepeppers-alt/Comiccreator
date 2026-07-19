@@ -1981,8 +1981,11 @@ async function preflightImageGeneration() {
   const models = await API.fetchImageModels(false, { signal: abortController?.signal });
   const source = API.getImageModelSource();
   const pageModel = models.find((model) => model.id === pageModelId) || null;
-  if (!pageModel && source !== 'fallback')
-    throw new Error(`The selected image model "${pageModelId}" is not available.`);
+  if (!pageModel && source === 'live') throw new Error(`The selected image model "${pageModelId}" is not available.`);
+  const pageModelWarning =
+    !pageModel && source === 'cache'
+      ? `The selected image model "${pageModelId}" was not found in the cached model list; generation will continue but may fail if the model is unavailable.`
+      : null;
 
   const companionSettings = migrateCompanionSettings(
     await DB.getSetting('singleImageCompanionMode', null),
@@ -1995,7 +1998,9 @@ async function preflightImageGeneration() {
     configuredModelId: companionSettings.configuredModelId,
     models,
   });
-  if (companion.error && source !== 'fallback') throw new Error(companion.error);
+  if (companion.error && (source === 'live' || companion.errorCode === 'blank-custom'))
+    throw new Error(companion.error);
+  const companionWarning = companion.error && source !== 'live' ? companion.error : null;
   const companionModel = models.find((model) => model.id === companion.modelId) || null;
   const sequentialSaved = await DB.getSetting('enableSequentialPages', false);
   const savedSize = await DB.getSetting('imageSize', '1024x1024');
@@ -2007,8 +2012,13 @@ async function preflightImageGeneration() {
   });
   if (size.corrected) await DB.setSetting('imageSize', size.size);
   const warnings = [
+    pageModelWarning,
+    companionWarning,
     companion.warning,
     size.warning,
+    source === 'cache'
+      ? 'Live image-model metadata could not be fetched; using cached model data that may be stale.'
+      : null,
     source === 'fallback'
       ? 'Live image-model metadata is unavailable; generation will continue with conservative model defaults.'
       : null,

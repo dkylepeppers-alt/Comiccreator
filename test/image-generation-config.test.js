@@ -34,12 +34,25 @@ describe('image generation config', () => {
         mode: 'custom',
         configuredModelId: 'missing',
         models,
-      }).error,
-    ).toMatch(/not available/);
+      }),
+    ).toMatchObject({ error: expect.stringMatching(/not available/), errorCode: 'unavailable' });
+    expect(
+      resolveCompanionModel({ pageModelId: 'seedream-v4.5-sequential', mode: 'custom', configuredModelId: '', models }),
+    ).toMatchObject({ modelId: 'seedream-v4.5-sequential', errorCode: 'blank-custom' });
     expect(resolveCompanionModel({ pageModelId: 'seedream-v4.5-sequential', mode: 'auto', models })).toMatchObject({
       modelId: 'seedream-v4.5-sequential',
       warning: expect.any(String),
     });
+  });
+
+  it('ignores companion settings for page models without an auto-companion mapping', () => {
+    const models = [model('gpt-image-1')];
+    expect(
+      resolveCompanionModel({ pageModelId: 'gpt-image-1', mode: 'custom', configuredModelId: 'stale-model', models }),
+    ).toEqual({ modelId: 'gpt-image-1' });
+    expect(
+      resolveCompanionModel({ pageModelId: 'gpt-image-1', mode: 'custom', configuredModelId: '', models }),
+    ).toEqual({ modelId: 'gpt-image-1' });
   });
 
   it('prefers 1920x1920 from the common supported sizes', () => {
