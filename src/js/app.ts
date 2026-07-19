@@ -222,6 +222,7 @@ interface DebugLogEntry {
 }
 
 const MAX_LOG_ENTRIES = 500;
+const LOG_TRIM_HYSTERESIS = 50;
 let debugLog: DebugLogEntry[] = [];
 let errorPanelOpen: boolean = false;
 
@@ -241,7 +242,7 @@ function addLogEntry(
     details: details || null,
   });
   // Trim in batches (hysteresis) so we don't shift the array on every push once at capacity.
-  if (debugLog.length > MAX_LOG_ENTRIES + 50) debugLog.splice(0, debugLog.length - MAX_LOG_ENTRIES);
+  if (debugLog.length > MAX_LOG_ENTRIES + LOG_TRIM_HYSTERESIS) debugLog.splice(0, debugLog.length - MAX_LOG_ENTRIES);
   updateErrorBadge();
   if (errorPanelOpen) renderErrorPanel();
 }
