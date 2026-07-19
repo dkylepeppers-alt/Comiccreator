@@ -460,7 +460,7 @@ The deployed URL is: **https://dkylepeppers-alt.github.io/Comiccreator/**
 | `auto-merge-dependabot.yml` | pull_request | Auto Merge Dependabot |
 | `ci-metrics.yml` | schedule, workflow_dispatch | CI Metrics |
 | `codeql-analysis.yml` | push, pull_request | CodeQL Analysis |
-| `deploy-pages.yml` | push, workflow_dispatch | Deploy to GitHub Pages |
+| `deploy-pages.yml` | workflow_run, workflow_dispatch | Deploy to GitHub Pages |
 | `playwright.yml` | push, pull_request | Playwright E2E Tests |
 | `post-merge.yml` | push | Post-Merge Pipeline |
 | `pr-labeler.yml` | pull_request | PR Labeler |
