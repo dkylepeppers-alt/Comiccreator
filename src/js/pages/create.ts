@@ -4,8 +4,28 @@ import { sanitizeImagePrompt, escHtml, GENRES, dedupeByNameLatest, cosineSimilar
 import DB from '../db.js';
 import API from '../api.js';
 import {
+  RESULT_DOWNLOAD_TIMEOUT_MS,
+  addWarning,
+  enterStage,
+  finishAttempt,
+  formatElapsed,
+  getGenerationCounts,
+  getSoftStalledRequests,
+  registerRequests,
+  runWithTimeout,
+  setRoute,
+  startAttempt,
+  toSafeDiagnostics,
+  toSafeGenerationFailure,
+  updateRequest,
+} from '../generation-progress.js';
+import {
+  migrateCompanionSettings,
+  resolveCompanionModel,
+  selectCompatibleImageSize,
+} from '../image-generation-config.js';
+import {
   PROMPT_VERSION,
-  SEQUENTIAL_MODEL_ID,
   initializeContinuity,
   reducePageStates,
   validatePlannedPage,
@@ -48,11 +68,109 @@ let state: any = {
   isGenerating: false,
   generatingContext: 'initial', // 'initial', 'reroll', 'continue'
   draftLoaded: false,
+  generationProgress: null,
+  imageGenerationConfig: null,
 };
 
 // Track timeouts and abort controllers for cleanup
 let streamTimeout: ReturnType<typeof setTimeout> | null = null;
 let abortController: AbortController | null = null;
+let progressInterval: ReturnType<typeof setInterval> | null = null;
+
+function generationContext() {
+  if (state.generatingContext === 'reimage') return 'reimage';
+  if (state.generatingContext === 'reroll') return 'reroll';
+  if (state.generatingContext === 'continue') return 'continue';
+  return 'new-page';
+}
+
+function beginGenerationProgress() {
+  if (progressInterval) clearInterval(progressInterval);
+  state.generationProgress = startAttempt(generationContext());
+  state.imageGenerationConfig = null;
+  progressInterval = setInterval(updateProgressDom, 1000);
+}
+
+function setProgress(next) {
+  if (!state.generationProgress || next.attemptId !== state.generationProgress.attemptId) return;
+  state.generationProgress = next;
+  updateProgressDom();
+}
+
+function updateProgressDom() {
+  const progress = state.generationProgress;
+  if (!progress) return;
+  const counts = getGenerationCounts(progress);
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('gen-status-msg', progress.message);
+  setText('gen-elapsed', formatElapsed(Date.now() - progress.startedAt));
+  setText(
+    'gen-route',
+    progress.strategy
+      ? progress.strategy === 'sequential-page'
+        ? 'One page sequence'
+        : 'Independent panels'
+      : 'Resolving route…',
+  );
+  setText('gen-model', progress.effectiveImageModelId || progress.pageModelId || 'Not selected yet');
+  setText(
+    'gen-counts',
+    progress.requests.length
+      ? `Requests: ${counts.completedRequests} / ${counts.totalRequests} · Images: ${counts.receivedImages} / ${counts.expectedImages}`
+      : '',
+  );
+  const slow = getSoftStalledRequests(progress);
+  const slowEl = document.getElementById('gen-slow');
+  if (slowEl) {
+    slowEl.classList.toggle('hidden', slow.length === 0);
+    if (slow.length)
+      slowEl.textContent =
+        'NanoGPT is taking longer than usual. The request is still active and will stop at the configured timeout unless it completes or you cancel it.';
+  }
+}
+
+function stopProgressTimer() {
+  if (progressInterval) clearInterval(progressInterval);
+  progressInterval = null;
+}
+
+function reportImageApiProgress(event) {
+  const progress = state.generationProgress;
+  if (!progress || !event.requestId) return;
+  const request = progress.requests.find((item) => item.id === event.requestId);
+  if (!request) return;
+  const states = {
+    'preparing-references': 'preparing',
+    submitting: 'pending',
+    waiting: 'pending',
+    'response-received': 'response-received',
+    'response-parsed': 'response-received',
+  };
+  const stageByPhase = {
+    'preparing-references': ['preparing-references', 'Preparing reference images…'],
+    submitting: ['submitting-images', 'Submitting image requests…'],
+    waiting: ['waiting-for-images', 'Waiting for image generation…'],
+    'response-received': ['waiting-for-images', 'Image response received…'],
+    'response-parsed': ['persisting-images', 'Saving returned images locally…'],
+  };
+  const stage = stageByPhase[event.phase];
+  const staged = stage ? enterStage(progress, stage[0], stage[1], event.at) : progress;
+  setProgress(
+    updateRequest(
+      staged,
+      event.requestId,
+      {
+        state: states[event.phase] || request.state,
+        startedAt: request.startedAt || (event.phase === 'submitting' ? event.at : undefined),
+        receivedImageCount: event.receivedImageCount ?? request.receivedImageCount,
+      },
+      event.at,
+    ),
+  );
+}
 
 // Backup used to restore the current page if a re-roll is cancelled or fails
 let _rerollBackup: any = null;
@@ -370,6 +488,7 @@ function buildInitialStateOverrides(characters: any[]): Record<string, any> {
 }
 
 function renderGenerating() {
+  const progress = state.generationProgress || startAttempt(generationContext());
   const contextMsg =
     state.generatingContext === 'reroll'
       ? 'Re-rolling page...'
@@ -380,19 +499,29 @@ function renderGenerating() {
           : 'Generating your comic page...';
   return `
     <div class="slide-up">
-      <div class="loading-overlay" id="gen-loading">
-        <div class="spinner"></div>
-        <p id="gen-status-msg">${contextMsg}</p>
-        <p class="text-sm text-muted">This may take a moment</p>
+      <div class="card generation-progress-card">
+        <div class="generation-progress-heading"><div class="spinner"></div><h3 class="card-title">${state.generatingContext === 'reimage' ? 'Regenerating images' : 'Generating page'}</h3></div>
+        <p id="gen-status-msg">${escHtml(progress.message || contextMsg)}</p>
+        <div class="generation-progress-facts text-sm text-muted">
+          <span>Model: <strong id="gen-model">${escHtml(progress.effectiveImageModelId || progress.pageModelId || 'Not selected yet')}</strong></span>
+          <span>Route: <strong id="gen-route">${progress.strategy === 'sequential-page' ? 'One page sequence' : progress.strategy === 'independent-panels' ? 'Independent panels' : 'Resolving route…'}</strong></span>
+          <span>Elapsed: <strong id="gen-elapsed">${formatElapsed(Date.now() - progress.startedAt)}</strong></span>
+        </div>
+        <p id="gen-counts" class="text-sm">${
+          progress.requests.length
+            ? (() => {
+                const c = getGenerationCounts(progress);
+                return `Requests: ${c.completedRequests} / ${c.totalRequests} · Images: ${c.receivedImages} / ${c.expectedImages}`;
+              })()
+            : ''
+        }</p>
+        <p id="gen-slow" class="generation-slow hidden"></p>
         <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
       </div>
-      <div id="gen-stream" class="hidden">
-        <div class="card">
-          <h3 class="card-title mb-sm" id="gen-stream-title">Writing story...</h3>
-          <div class="streaming-text" id="stream-output"></div>
-          <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
-        </div>
-      </div>
+      <details id="gen-stream" class="card generation-story-response" ${state.generatingContext === 'reimage' ? 'hidden' : ''}>
+        <summary id="gen-stream-title">Story response</summary>
+        <div class="streaming-text" id="stream-output"></div>
+      </details>
     </div>
   `;
 }
@@ -413,6 +542,8 @@ function renderReading() {
           ${canUndo ? `<button class="btn btn-sm btn-secondary" onclick="CreatePage.undoChoice()" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}
         </div>
       </div>
+
+      ${renderGenerationSummary(currentPage)}
 
       <!-- Render current page panels -->
       <div class="comic-page${currentPage?.panels?.length >= 3 ? ' layout-grid' : ''}" id="comic-display">
@@ -484,6 +615,58 @@ function renderReading() {
       }
     </div>
   `;
+}
+
+function renderGenerationSummary(page) {
+  const panels = page?.panels || [];
+  const imagePanels = panels.filter((panel) => panel.imagePrompt || panel.generationError || panel.imageUrl);
+  const missing = panels
+    .map((panel, index) => (!panel.imageUrl && (panel.imagePrompt || panel.generationError) ? index : -1))
+    .filter((index) => index >= 0);
+  if (!page?.generation || missing.length === 0) return '';
+  const created = imagePanels.filter((panel) => panel.imageUrl).length;
+  return `<div class="card generation-result-summary">
+    <strong>${created} of ${imagePanels.length} images were created.</strong>
+    <p class="text-sm text-muted">The story and completed images were saved. Missing panels: ${missing.map((index) => index + 1).join(', ')}.</p>
+    <div class="btn-group">
+      <button class="btn btn-primary btn-sm" onclick="CreatePage.retryMissingImages()">Retry missing images</button>
+      <button class="btn btn-secondary btn-sm" onclick="CreatePage.copyGenerationDetails()">Copy details</button>
+    </div>
+  </div>`;
+}
+
+function generationOutcomeForPage(page, enableImages = true) {
+  if (!enableImages) return 'complete';
+  const imagePanels = (page?.panels || []).filter(
+    (panel) => panel.imagePrompt || panel.generationError || panel.imageUrl,
+  );
+  const complete = imagePanels.filter((panel) => panel.imageUrl).length;
+  return complete === imagePanels.length ? 'complete' : 'partial';
+}
+
+function attachGenerationAttempt(page, outcome) {
+  if (!page?.generation || !state.generationProgress) return;
+  page.generation.attempt = JSON.parse(toSafeDiagnostics(finishAttempt(state.generationProgress, outcome)));
+}
+
+function ensureFailureGenerationMetadata(page, error) {
+  const failure = toSafeGenerationFailure(error, 'image-request');
+  (page?.panels || []).forEach((panel) => {
+    if (!panel.imageUrl) panel.generationError = panel.generationError || failure.message;
+  });
+  page.generation ||= {
+    schemaVersion: 2,
+    strategy: state.generationProgress?.strategy || 'independent-panels',
+    modelId: state.imageGenerationConfig?.pageModelId || 'unknown',
+    singleImageModelId: state.imageGenerationConfig?.companionModelId,
+    resolution: state.imageGenerationConfig?.imageSize,
+    promptVersion: PROMPT_VERSION,
+    compiledPrompts: [],
+    referenceManifest: [],
+    generatedAt: Date.now(),
+    outcome: 'partial',
+    failures: [{ panelIndexes: (page?.panels || []).map((_, index) => index), ...failure }],
+  };
 }
 
 function renderComicPage(page: any): string {
@@ -996,6 +1179,7 @@ async function startGenerating() {
   state.step = 'generating';
   state.isGenerating = true;
   state.generatingContext = 'initial';
+  beginGenerationProgress();
   await App.refreshPage();
 
   // Generate
@@ -1277,63 +1461,127 @@ async function generatePanelImages(pageData: any, uiMsg: string): Promise<void> 
   }
 
   const panelsWithImages = pageData.panels.filter((p) => p.imagePrompt).length;
+  const legacyModel =
+    state.imageGenerationConfig?.companionModelId || (await DB.getSetting('imageModel', 'gpt-image-1'));
+  if (state.generationProgress) {
+    let next = setRoute(state.generationProgress, {
+      strategy: 'independent-panels',
+      pageModelId: legacyModel,
+      effectiveImageModelId: legacyModel,
+      resolution: imageResolution,
+      expectedImageCount: panelsWithImages,
+    });
+    next = registerRequests(
+      next,
+      pageData.panels
+        .map((panel, index) =>
+          panel.imagePrompt
+            ? { id: `panel-${index + 1}`, panelIndexes: [index], modelId: legacyModel, expectedImageCount: 1 }
+            : null,
+        )
+        .filter(Boolean),
+    );
+    setProgress(enterStage(next, 'preparing-references', 'Preparing reference images…'));
+  }
   let doneCount = 0;
   await Promise.all(
-    pageData.panels.map(async (panel) => {
+    pageData.panels.map(async (panel, panelIndex) => {
       if (!panel.imagePrompt) return;
       try {
         const panelOpts = await buildPanelImageOpts(panel);
+        panelOpts.signal = abortController?.signal;
+        panelOpts.requestId = `panel-${panelIndex + 1}`;
+        panelOpts.onProgress = reportImageApiProgress;
         const enhancedPrompt = await buildEnhancedImagePrompt(panel);
         const imageData = await API.generateImage(enhancedPrompt, panelOpts);
         if (imageData) {
           if (imageData.startsWith('http')) {
-            // URL response — try to fetch for offline storage
-            try {
-              const resp = await fetch(imageData);
-              const blob = await resp.blob();
-              panel.imageUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(blob);
-              });
-            } catch {
-              panel.imageUrl = imageData; // fallback to direct URL
-            }
+            const saved = await imageResultToDataUrl(imageData, 'url', { signal: abortController?.signal });
+            panel.imageUrl = saved.value;
+            if (saved.warning) pageData.generationWarnings = [...(pageData.generationWarnings || []), saved.warning];
           } else if (imageData.startsWith('data:')) {
             panel.imageUrl = imageData;
           } else {
             panel.imageUrl = `data:image/png;base64,${imageData}`;
           }
+          if (state.generationProgress)
+            setProgress(
+              updateRequest(state.generationProgress, `panel-${panelIndex + 1}`, {
+                state: 'complete',
+                receivedImageCount: 1,
+                completedAt: Date.now(),
+              }),
+            );
         }
       } catch (imgErr) {
+        if (imgErr?.name === 'AbortError') throw imgErr;
         App.logError('Image generation (panel)', imgErr);
-        App.toast(`Panel image failed: ${imgErr.message}`, 'error');
+        const failure = toSafeGenerationFailure(imgErr, 'image-request');
+        panel.generationError = failure.message;
+        if (state.generationProgress)
+          setProgress(
+            updateRequest(state.generationProgress, `panel-${panelIndex + 1}`, {
+              state: failure.code === 'GENERATION_TIMEOUT' ? 'timed-out' : 'failed',
+              failure,
+              completedAt: Date.now(),
+            }),
+          );
+        App.toast(`Panel image failed: ${failure.message}`, 'error');
       }
       doneCount++;
       if (uiMsg) uiMsg.textContent = `Generating images (${doneCount} / ${panelsWithImages})...`;
     }),
   );
+  pageData.generation = {
+    schemaVersion: 2,
+    strategy: 'independent-panels',
+    modelId: legacyModel,
+    resolution: imageResolution,
+    generatedAt: Date.now(),
+    outcome: generationOutcomeForPage(pageData),
+    failures: pageData.panels
+      .map((panel, panelIndex) =>
+        panel.generationError ? { panelIndexes: [panelIndex], message: panel.generationError } : null,
+      )
+      .filter(Boolean),
+  };
 }
 
 /** Convert an image API result (url or b64) to a persistent data URL when possible. */
-async function imageResultToDataUrl(value: string, source: string): Promise<string> {
-  if (!value) return '';
+async function imageResultToDataUrl(
+  value: string,
+  source: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<{ value: string; persisted: boolean; warning?: string }> {
+  if (!value) return { value: '', persisted: false };
   if (source === 'b64_json' || (!value.startsWith('http') && !value.startsWith('data:'))) {
-    return value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
+    return { value: value.startsWith('data:') ? value : `data:image/png;base64,${value}`, persisted: true };
   }
-  if (value.startsWith('data:')) return value;
+  if (value.startsWith('data:')) return { value, persisted: true };
   // Remote URLs may be signed and expire — persist as data URL before commit
   try {
-    const resp = await fetch(value);
-    const blob = await resp.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => resolve(value);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return value;
+    const persisted = await runWithTimeout(
+      async (signal) => {
+        const resp = await fetch(value, { signal });
+        if (!resp.ok) throw new Error(`Image download failed (HTTP ${resp.status})`);
+        const blob = await resp.blob();
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error || new Error('Could not store returned image'));
+          reader.readAsDataURL(blob);
+        });
+      },
+      { signal: options.signal, timeoutMs: options.timeoutMs ?? RESULT_DOWNLOAD_TIMEOUT_MS, phase: 'result-download' },
+    );
+    return { value: persisted, persisted: true };
+  } catch (error) {
+    if (options.signal?.aborted || error?.name === 'AbortError') throw error;
+    return {
+      value,
+      persisted: false,
+      warning: 'A returned image could not be saved locally; its temporary URL may expire.',
+    };
   }
 }
 
@@ -1370,21 +1618,27 @@ function orderedPanelCast(panel) {
  * sequential page request and independent panel requests from live model
  * metadata, compiles deterministic prompts, and records generation metadata.
  */
-async function generateContinuityPageImages(pageData: any, statusMsg: any): Promise<void> {
+async function generateContinuityPageImages(
+  pageData: any,
+  statusMsg: any,
+  options: { panelIndexes?: number[] } = {},
+): Promise<void> {
   const planned = pageData.planned;
   const renderStates = pageData.renderStates || [];
   const panels = pageData.panels;
   const warnings = [];
+  const targetPanels = options.panelIndexes ? new Set(options.panelIndexes) : null;
 
-  const modelId = (await DB.getSetting('imageModel', '')) || 'gpt-image-1';
-  const meta = await API.getImageModelMeta(modelId);
-  const sequentialEnabled = await DB.getSetting('enableSequentialPages', false);
+  const config = state.imageGenerationConfig || (await preflightImageGeneration());
+  warnings.push(...(config?.warnings || []));
+  const modelId = config?.pageModelId || (await DB.getSetting('imageModel', '')) || 'gpt-image-1';
+  const meta = config?.pageModel || (await API.getImageModelMeta(modelId, { signal: abortController?.signal }));
+  const sequentialEnabled = config?.sequentialEnabled ?? (await DB.getSetting('enableSequentialPages', false));
   const refBudgetSetting = await DB.getSetting('refBudget', 'auto');
   // The companion applies ONLY when the page model is the sequential adapter;
   // a stale companion must never hijack generation for other selected models
-  const configuredCompanion = await DB.getSetting('singleImageModel', '');
-  const singleImageModelId = modelId === SEQUENTIAL_MODEL_ID && configuredCompanion ? configuredCompanion : modelId;
-  const imageSize = await DB.getSetting('imageSize', '1024x1024');
+  const singleImageModelId = config?.companionModelId || modelId;
+  const imageSize = config?.imageSize || (await DB.getSetting('imageSize', '1024x1024'));
   const negativePrompt = await DB.getSetting('negativePrompt', '');
   const useRefImages = await DB.getSetting('useRefImages', true);
   const imagePresetData = state.selectedImagePreset
@@ -1397,7 +1651,11 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
 
   // Independent panel requests run on the companion model, so their budget
   // and size validation use the companion's capabilities, not the page model's
-  const companionMeta = singleImageModelId === modelId ? meta : await API.getImageModelMeta(singleImageModelId);
+  const companionMeta =
+    config?.companionModel ||
+    (singleImageModelId === modelId
+      ? meta
+      : await API.getImageModelMeta(singleImageModelId, { signal: abortController?.signal }));
   const budget = effectiveReferenceBudget(refBudgetSetting, meta?.maxInputImages);
   const panelBudget = effectiveReferenceBudget(refBudgetSetting, companionMeta?.maxInputImages);
   const previousFrame = useRefImages ? getPreviousFrameRef() : null;
@@ -1462,12 +1720,45 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
     pageReferenceCount: pageAlloc.error ? pageAlloc.error.required : pageAlloc.manifest.length,
     panelReferenceCounts: panelAllocs.map((a) => (a.error ? a.error.required : a.manifest.length)),
     requestedSizes: [imageSize],
-    sequentialEnabled: sequentialEnabled && sizeValid,
+    sequentialEnabled: sequentialEnabled && sizeValid && !targetPanels,
     panelCapacity: panelBudget,
   });
   warnings.push(...plan.reasons.filter((r) => r !== 'Sequential page request'));
 
   const compiledPrompts = [];
+  const compressionCache = new Map();
+  const progress = state.generationProgress;
+  if (progress) {
+    let next = setRoute(progress, {
+      strategy: plan.strategy,
+      pageModelId: modelId,
+      effectiveImageModelId: plan.strategy === 'sequential-page' ? modelId : singleImageModelId,
+      resolution: imageSize,
+      expectedImageCount: targetPanels?.size ?? planned.panels.length,
+    });
+    next = enterStage(next, 'preparing-references', 'Preparing reference images…');
+    const requests =
+      plan.strategy === 'sequential-page'
+        ? [
+            {
+              id: 'page-sequence',
+              panelIndexes: planned.panels.map((_, i) => i),
+              modelId,
+              expectedImageCount: planned.panels.length,
+            },
+          ]
+        : planned.panels
+            .map((_, i) =>
+              (targetPanels && !targetPanels.has(i)) ||
+              panelAllocs[i].error ||
+              plan.blockedPanels.some((blockedPanel) => blockedPanel.panelIndex === i)
+                ? null
+                : { id: `panel-${i + 1}`, panelIndexes: [i], modelId: singleImageModelId, expectedImageCount: 1 },
+            )
+            .filter(Boolean);
+    next = registerRequests(next, requests);
+    setProgress(next);
+  }
 
   if (plan.strategy === 'sequential-page' && !pageAlloc.error) {
     // One ordered request for the whole page; data[i] maps ONLY to IMAGE i+1
@@ -1496,25 +1787,70 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
       exactReferences: true,
       refMaxDimension: 2048,
       signal: abortController?.signal,
+      requestId: 'page-sequence',
+      compressionCache,
+      onProgress: reportImageApiProgress,
     };
     if (pageAlloc.dataUrls.length > 0) genOpts.imageDataUrls = pageAlloc.dataUrls;
     if (negativePrompt) genOpts.negativePrompt = negativePrompt;
 
-    const results = await API.generateImages(prompt, genOpts);
-    for (const r of results) {
-      const url = await imageResultToDataUrl(r.value, r.source);
-      if (url && panels[r.index]) panels[r.index].imageUrl = url;
-    }
-    if (results.length < planned.panels.length) {
-      warnings.push(
-        `Model returned ${results.length} of ${planned.panels.length} images — missing panels were left empty`,
+    try {
+      const results = await API.generateImages(prompt, genOpts);
+      if (state.generationProgress)
+        setProgress(enterStage(state.generationProgress, 'persisting-images', 'Saving returned images locally…'));
+      if (state.generationProgress)
+        setProgress(
+          updateRequest(state.generationProgress, 'page-sequence', {
+            state: 'persisting',
+            receivedImageCount: results.length,
+          }),
+        );
+      const persisted = await Promise.all(
+        results.map((result) => imageResultToDataUrl(result.value, result.source, { signal: abortController?.signal })),
       );
-      App.toast(`Only ${results.length} of ${planned.panels.length} panel images were returned`, 'error');
+      results.forEach((result, resultIndex) => {
+        const saved = persisted[resultIndex];
+        if (saved.value && panels[result.index]) panels[result.index].imageUrl = saved.value;
+        if (saved.warning) warnings.push(saved.warning);
+      });
+      if (results.length < planned.panels.length) {
+        const warning = `Model returned ${results.length} of ${planned.panels.length} images — missing panels were left empty`;
+        warnings.push(warning);
+        panels.forEach((panel) => {
+          if (!panel.imageUrl) panel.generationError = 'The page sequence did not return an image for this panel.';
+        });
+        App.toast(`Only ${results.length} of ${planned.panels.length} panel images were returned`, 'error');
+      }
+      if (state.generationProgress)
+        setProgress(
+          updateRequest(state.generationProgress, 'page-sequence', {
+            state: 'complete',
+            receivedImageCount: results.length,
+            completedAt: Date.now(),
+          }),
+        );
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      const failure = toSafeGenerationFailure(error, 'image-request');
+      warnings.push(failure.message);
+      panels.forEach((panel) => {
+        if (!panel.imageUrl) panel.generationError = failure.message;
+      });
+      if (state.generationProgress) {
+        setProgress(
+          updateRequest(state.generationProgress, 'page-sequence', {
+            state: failure.code === 'GENERATION_TIMEOUT' ? 'timed-out' : 'failed',
+            failure,
+            completedAt: Date.now(),
+          }),
+        );
+      }
     }
   } else {
     // Independent panel requests with the same compiled state semantics
     const blocked = new Set(plan.blockedPanels.map((b) => b.panelIndex));
     const prompts = planned.panels.map((panel, i) => {
+      if (targetPanels && !targetPanels.has(i)) return null;
       const alloc = panelAllocs[i];
       if (alloc.error || blocked.has(i)) return null;
       return compileIndependentPanelPrompt({
@@ -1540,7 +1876,7 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
     let done = 0;
     const total = prompts.filter(Boolean).length;
     if (statusMsg) statusMsg.textContent = `Generating images (0 / ${total})...`;
-    await Promise.all(
+    const settlements = await Promise.allSettled(
       planned.panels.map(async (panel, i) => {
         const alloc = panelAllocs[i];
         if (alloc.error) {
@@ -1559,29 +1895,61 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
             exactReferences: true,
             refMaxDimension: 2048,
             signal: abortController?.signal,
+            requestId: `panel-${i + 1}`,
+            compressionCache,
+            onProgress: reportImageApiProgress,
           };
           if (alloc.dataUrls.length > 0) genOpts.imageDataUrls = alloc.dataUrls;
           if (negativePrompt) genOpts.negativePrompt = negativePrompt;
           const results = await API.generateImages(prompt, genOpts);
-          const url = await imageResultToDataUrl(results[0].value, results[0].source);
-          if (url) {
-            panels[i].imageUrl = url;
+          if (state.generationProgress)
+            setProgress(
+              updateRequest(state.generationProgress, `panel-${i + 1}`, { state: 'persisting', receivedImageCount: 1 }),
+            );
+          const saved = await imageResultToDataUrl(results[0].value, results[0].source, {
+            signal: abortController?.signal,
+          });
+          if (saved.value) {
+            panels[i].imageUrl = saved.value;
             delete panels[i].generationError;
           }
+          if (saved.warning) warnings.push(`Panel ${i + 1}: ${saved.warning}`);
+          if (state.generationProgress)
+            setProgress(
+              updateRequest(state.generationProgress, `panel-${i + 1}`, {
+                state: 'complete',
+                receivedImageCount: 1,
+                completedAt: Date.now(),
+              }),
+            );
         } catch (imgErr) {
           if (imgErr?.name === 'AbortError') throw imgErr;
           App.logError('Panel image generation (continuity)', imgErr);
-          panels[i].generationError = imgErr.message;
-          App.toast(`Panel ${i + 1} image failed: ${imgErr.message}`, 'error');
+          const failure = toSafeGenerationFailure(imgErr, 'image-request');
+          panels[i].generationError = failure.message;
+          warnings.push(`Panel ${i + 1}: ${failure.message}`);
+          if (state.generationProgress)
+            setProgress(
+              updateRequest(state.generationProgress, `panel-${i + 1}`, {
+                state: failure.code === 'GENERATION_TIMEOUT' ? 'timed-out' : 'failed',
+                failure,
+                completedAt: Date.now(),
+              }),
+            );
+          App.toast(`Panel ${i + 1} image failed: ${failure.message}`, 'error');
         }
         done++;
         if (statusMsg) statusMsg.textContent = `Generating images (${done} / ${total})...`;
       }),
     );
+    const cancelled = settlements.find(
+      (settlement) => settlement.status === 'rejected' && settlement.reason?.name === 'AbortError',
+    );
+    if (cancelled) throw cancelled.reason;
   }
 
   pageData.generation = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     strategy: plan.strategy,
     modelId,
     ...(plan.strategy === 'independent-panels' ? { singleImageModelId } : {}),
@@ -1591,8 +1959,81 @@ async function generateContinuityPageImages(pageData: any, statusMsg: any): Prom
     referenceManifest:
       plan.strategy === 'sequential-page' ? pageAlloc.manifest : panelAllocs.flatMap((a) => a.manifest),
     generatedAt: Date.now(),
+    outcome: generationOutcomeForPage(pageData),
+    failures: panels
+      .map((panel, panelIndex) =>
+        panel.generationError ? { panelIndexes: [panelIndex], message: panel.generationError } : null,
+      )
+      .filter(Boolean),
   };
   pageData.generationWarnings = [...new Set(warnings)];
+}
+
+async function preflightImageGeneration() {
+  const progress = state.generationProgress;
+  if (progress) setProgress(enterStage(progress, 'checking-settings', 'Checking image model and settings…'));
+  const enableImages = await DB.getSetting('enableImages', true);
+  if (!enableImages) {
+    state.imageGenerationConfig = null;
+    return null;
+  }
+  const pageModelId = (await DB.getSetting('imageModel', '')) || 'gpt-image-1';
+  const models = await API.fetchImageModels(false, { signal: abortController?.signal });
+  const source = API.getImageModelSource();
+  const pageModel = models.find((model) => model.id === pageModelId) || null;
+  if (!pageModel && source !== 'fallback')
+    throw new Error(`The selected image model "${pageModelId}" is not available.`);
+
+  const companionSettings = migrateCompanionSettings(
+    await DB.getSetting('singleImageCompanionMode', null),
+    await DB.getSetting('singleImageModel', ''),
+  );
+  if (companionSettings.migrated) await DB.setSetting('singleImageCompanionMode', companionSettings.mode);
+  const companion = resolveCompanionModel({
+    pageModelId,
+    mode: companionSettings.mode,
+    configuredModelId: companionSettings.configuredModelId,
+    models,
+  });
+  if (companion.error && source !== 'fallback') throw new Error(companion.error);
+  const companionModel = models.find((model) => model.id === companion.modelId) || null;
+  const sequentialSaved = await DB.getSetting('enableSequentialPages', false);
+  const savedSize = await DB.getSetting('imageSize', '1024x1024');
+  const size = selectCompatibleImageSize({
+    savedSize,
+    pageModel,
+    companionModel,
+    sequentialEnabled: sequentialSaved,
+  });
+  if (size.corrected) await DB.setSetting('imageSize', size.size);
+  const warnings = [
+    companion.warning,
+    size.warning,
+    source === 'fallback'
+      ? 'Live image-model metadata is unavailable; generation will continue with conservative model defaults.'
+      : null,
+  ].filter(Boolean);
+  state.imageGenerationConfig = {
+    pageModelId,
+    pageModel,
+    companionModelId: companion.modelId,
+    companionModel,
+    companionMode: companionSettings.mode,
+    imageSize: size.size,
+    sequentialEnabled: size.sequentialEnabled,
+    warnings,
+  };
+  if (progress) {
+    let next = setRoute(progress, {
+      pageModelId,
+      effectiveImageModelId: companion.modelId,
+      resolution: size.size,
+    });
+    for (const warning of warnings) next = addWarning(next, warning);
+    setProgress(next);
+  }
+  for (const warning of warnings) App.toast(warning, 'info');
+  return state.imageGenerationConfig;
 }
 
 async function generatePage(presetData: any): Promise<void> {
@@ -1611,13 +2052,8 @@ async function generatePage(presetData: any): Promise<void> {
     abortController = new AbortController();
     options.signal = abortController.signal;
 
-    // Show streaming after brief delay
-    streamTimeout = setTimeout(() => {
-      const streamEl = document.getElementById('gen-stream');
-      const loadEl = document.getElementById('gen-loading');
-      if (streamEl) streamEl.classList.remove('hidden');
-      if (loadEl) loadEl.classList.add('hidden');
-    }, 500);
+    await preflightImageGeneration();
+    if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'writing-story', 'Writing story…'));
 
     const fullText = await API.chatCompletionStream(
       state.conversationHistory,
@@ -1629,6 +2065,8 @@ async function generatePage(presetData: any): Promise<void> {
     );
 
     // Parse the response
+    if (state.generationProgress)
+      setProgress(enterStage(state.generationProgress, 'parsing-story', 'Parsing story plan…'));
     const streamTitle = document.getElementById('gen-stream-title');
     if (streamTitle) streamTitle.textContent = 'Parsing story...';
     const statusMsg = document.getElementById('gen-status-msg');
@@ -1684,6 +2122,8 @@ async function generatePage(presetData: any): Promise<void> {
     // Generate images if enabled
     const enableImages = await DB.getSetting('enableImages', true);
     if (enableImages) {
+      if (state.generationProgress)
+        setProgress(enterStage(state.generationProgress, 'preparing-references', 'Preparing reference images…'));
       if (state.plannerMode && pageData.planned) {
         if (streamTitle) streamTitle.textContent = `Generating ${pageData.panels.length} images...`;
         try {
@@ -1693,6 +2133,7 @@ async function generatePage(presetData: any): Promise<void> {
           // The story plan and continuity snapshots are preserved on the page,
           // so images can be retried later without regenerating story text.
           App.logError('Continuity image generation', imgErr);
+          ensureFailureGenerationMetadata(pageData, imgErr);
           App.toast(`Image generation failed: ${imgErr.message}`, 'error');
         }
       } else {
@@ -1707,6 +2148,9 @@ async function generatePage(presetData: any): Promise<void> {
     }
 
     // Save page — generate id first so we can track it for re-roll/undo
+    if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'saving-page', 'Saving page…'));
+    const pageOutcome = generationOutcomeForPage(pageData, enableImages);
+    attachGenerationAttempt(pageData, pageOutcome);
     state.pages.push(pageData);
     const pageNum = state.pages.length;
     const pageId = DB.uuid();
@@ -1747,6 +2191,10 @@ async function generatePage(presetData: any): Promise<void> {
 
     state.step = 'reading';
     state.isGenerating = false;
+    if (state.generationProgress) {
+      setProgress(finishAttempt(state.generationProgress, pageOutcome));
+    }
+    stopProgressTimer();
     App.toast(`Page ${pageNum} ready!`, 'success');
     await App.refreshPage();
   } catch (err) {
@@ -1755,6 +2203,9 @@ async function generatePage(presetData: any): Promise<void> {
       // Cancelled — cancelGeneration() already handled state/backup restoration
       return;
     }
+    if (state.generationProgress)
+      setProgress(finishAttempt(state.generationProgress, 'failed', Date.now(), toSafeGenerationFailure(err)));
+    stopProgressTimer();
     // Roll back the last user message so retries don't compound failed attempts
     if (state.conversationHistory.length > 0) {
       const last = state.conversationHistory[state.conversationHistory.length - 1];
@@ -1786,6 +2237,7 @@ async function makeChoice(idx: number): Promise<void> {
   state.isGenerating = true;
   state.step = 'generating';
   state.generatingContext = 'continue';
+  beginGenerationProgress();
   await App.refreshPage();
 
   const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
@@ -1803,6 +2255,7 @@ async function continueStory() {
   state.isGenerating = true;
   state.step = 'generating';
   state.generatingContext = 'continue';
+  beginGenerationProgress();
   await App.refreshPage();
 
   const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
@@ -1868,6 +2321,8 @@ function cancelGeneration() {
     streamTimeout = null;
   }
   state.isGenerating = false;
+  if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+  stopProgressTimer();
 
   // Restore the backed-up page whenever a re-roll is cancelled (any page position)
   if (state.generatingContext === 'reroll' && _rerollBackup) {
@@ -1941,6 +2396,7 @@ async function rerollPage() {
   state.isGenerating = true;
   state.step = 'generating';
   state.generatingContext = 'reroll';
+  beginGenerationProgress();
   await App.refreshPage();
 
   const presetData = state.selectedPreset ? await DB.get(DB.STORES.presets, state.selectedPreset) : null;
@@ -2033,9 +2489,11 @@ async function rerollImages() {
   state.isGenerating = true;
   state.step = 'generating';
   state.generatingContext = 'reimage';
+  beginGenerationProgress();
   await App.refreshPage();
 
   try {
+    await preflightImageGeneration();
     const statusMsg = document.getElementById('gen-status-msg');
     if (state.plannerMode && currentPage.planned && Array.isArray(currentPage.renderStates)) {
       // Whole-page regeneration reuses the page's stored render-state
@@ -2076,6 +2534,9 @@ async function rerollImages() {
     abortController = null;
 
     // Persist updated page
+    if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'saving-page', 'Saving page…'));
+    const reimageOutcome = generationOutcomeForPage(currentPage);
+    attachGenerationAttempt(currentPage, reimageOutcome);
     const existingRecord = await DB.get(DB.STORES.pages, currentPageId).catch(() => null);
     await DB.put(DB.STORES.pages, {
       id: currentPageId,
@@ -2095,6 +2556,10 @@ async function rerollImages() {
 
     state.isGenerating = false;
     state.step = 'reading';
+    if (state.generationProgress) {
+      setProgress(finishAttempt(state.generationProgress, reimageOutcome));
+    }
+    stopProgressTimer();
     App.toast('Images regenerated!', 'success');
     await App.refreshPage();
   } catch (err) {
@@ -2106,10 +2571,114 @@ async function rerollImages() {
     App.logError('Image regeneration', err);
     state.isGenerating = false;
     state.step = 'reading';
+    if (state.generationProgress && err.name !== 'AbortError') {
+      setProgress(finishAttempt(state.generationProgress, 'failed', Date.now(), toSafeGenerationFailure(err)));
+    }
+    stopProgressTimer();
     if (err.name !== 'AbortError') {
       App.toast('Image regeneration failed: ' + (err.message || 'Please try again.'), 'error');
     }
     await App.refreshPage();
+  }
+}
+
+function retryMissingImages() {
+  const page = state.pages[state.pages.length - 1];
+  const missing = (page?.panels || []).filter(
+    (panel) => !panel.imageUrl && (panel.imagePrompt || panel.generationError),
+  );
+  if (!missing.length) return App.toast('There are no missing panel images to retry', 'info');
+  App.showModal(`
+    <div class="modal-title">Retry ${missing.length} missing image${missing.length === 1 ? '' : 's'}?</div>
+    <p>A previous provider job may still complete or incur cost. This action submits only the panels that still have no usable image.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="App.hideModal();CreatePage.confirmRetryMissingImages()">Retry missing</button>
+    </div>
+  `);
+}
+
+async function confirmRetryMissingImages() {
+  if (state.isGenerating || state.pages.length === 0) return;
+  const pageIndex = state.pages.length - 1;
+  const page = state.pages[pageIndex];
+  const panelIndexes = page.panels
+    .map((panel, index) => (!panel.imageUrl && (panel.imagePrompt || panel.generationError) ? index : -1))
+    .filter((index) => index >= 0);
+  if (!panelIndexes.length) return;
+  abortController = new AbortController();
+  state.isGenerating = true;
+  state.step = 'generating';
+  state.generatingContext = 'reimage';
+  beginGenerationProgress();
+  await App.refreshPage();
+  try {
+    await preflightImageGeneration();
+    if (state.plannerMode && page.planned && Array.isArray(page.renderStates)) {
+      await generateContinuityPageImages(page, null, { panelIndexes });
+    } else {
+      const hiddenPrompts = page.panels.map((panel, index) =>
+        panelIndexes.includes(index) ? null : panel.imagePrompt,
+      );
+      page.panels.forEach((panel, index) => {
+        if (!panelIndexes.includes(index)) panel.imagePrompt = '';
+      });
+      try {
+        await generatePanelImages(page, null);
+      } finally {
+        page.panels.forEach((panel, index) => {
+          if (hiddenPrompts[index] !== null) panel.imagePrompt = hiddenPrompts[index];
+        });
+      }
+    }
+    if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'saving-page', 'Saving page…'));
+    const pageId = state.pageIds[pageIndex];
+    const record = await DB.get(DB.STORES.pages, pageId).catch(() => null);
+    const retryOutcome = generationOutcomeForPage(page);
+    attachGenerationAttempt(page, retryOutcome);
+    await DB.put(DB.STORES.pages, {
+      id: pageId,
+      comicId: state.comicId,
+      pageNum: record?.pageNum ?? pageIndex + 1,
+      data: page,
+      createdAt: record?.createdAt ?? Date.now(),
+    });
+    const stillMissing = panelIndexes.filter((index) => !page.panels[index].imageUrl).length;
+    if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, retryOutcome));
+    App.toast(
+      stillMissing
+        ? `${panelIndexes.length - stillMissing} image(s) recovered; ${stillMissing} still missing`
+        : 'Missing images recovered',
+      stillMissing ? 'info' : 'success',
+    );
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      App.logError('Retry missing images', error);
+      App.toast(`Retry failed: ${error.message}`, 'error');
+    }
+  } finally {
+    abortController = null;
+    stopProgressTimer();
+    state.isGenerating = false;
+    state.step = 'reading';
+    await App.refreshPage();
+  }
+}
+
+async function copyGenerationDetails() {
+  const page = state.pages[state.pages.length - 1];
+  const details = page?.generation?.attempt
+    ? JSON.stringify(page.generation.attempt, null, 2)
+    : state.generationProgress
+      ? toSafeDiagnostics(state.generationProgress)
+      : JSON.stringify(page?.generation || {}, null, 2);
+  try {
+    await navigator.clipboard.writeText(details);
+    App.toast('Generation details copied', 'success');
+  } catch {
+    App.showModal(
+      `<div class="modal-title">Generation details</div><textarea rows="14" style="width:100%" readonly>${escHtml(details)}</textarea><div class="modal-actions"><button class="btn btn-secondary" onclick="App.hideModal()">Close</button></div>`,
+    );
   }
 }
 
@@ -2159,6 +2728,8 @@ function resetState() {
     isGenerating: false,
     generatingContext: 'initial',
     draftLoaded: false,
+    generationProgress: null,
+    imageGenerationConfig: null,
   };
 }
 
@@ -2174,6 +2745,7 @@ function onUnmount(): void {
     clearTimeout(streamTimeout);
     streamTimeout = null;
   }
+  stopProgressTimer();
   if (abortController) {
     abortController.abort();
     abortController = null;
@@ -2197,6 +2769,9 @@ const CreatePage: PageModule & Record<string, any> = {
   cancelGeneration,
   rerollPage,
   rerollImages,
+  retryMissingImages,
+  confirmRetryMissingImages,
+  copyGenerationDetails,
   undoChoice,
   zoomPanel,
   saveContinuityEdits,

@@ -1,4 +1,5 @@
 import DB from './db.js';
+import { IMAGE_REQUEST_TIMEOUT_MS, MODEL_METADATA_TIMEOUT_MS, runWithTimeout } from './generation-progress.js';
 
 /**
  * NanoGPT API Integration
@@ -80,6 +81,22 @@ export interface GenerateImagesOptions extends ImageGenOptions {
   exactReferences?: boolean;
   /** Max long-edge for reference preprocessing (default 1024 legacy, use 2048 for identity anchors). */
   refMaxDimension?: number;
+  timeoutMs?: number;
+  requestId?: string;
+  compressionCache?: Map<string, Promise<string>>;
+  onProgress?: (event: ImageApiProgressEvent) => void;
+}
+
+export interface ImageApiProgressEvent {
+  requestId?: string;
+  phase: 'preparing-references' | 'submitting' | 'waiting' | 'response-received' | 'response-parsed';
+  at: number;
+  receivedImageCount?: number;
+}
+
+export interface FetchImageModelOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface GeneratedImage {
@@ -141,6 +158,9 @@ export interface RefVariationOptions {
 const BASE_URL: string = 'https://nano-gpt.com/api/v1';
 // In-memory cache for model sizes to avoid repeated IndexedDB reads per session
 let _modelSizesCache: ImageModel[] | null = null;
+let _lastImageModelSource: 'live' | 'cache' | 'fallback' = 'fallback';
+const IMAGE_MODEL_CACHE_SCHEMA_VERSION = 2;
+const IMAGE_MODEL_CACHE_MIGRATION_RETRY_MS = 5 * 60 * 1000;
 
 // Static fallback sizes for well-known models when the live API doesn't return size info.
 // Keys are model IDs (or ID prefixes), values are arrays of supported WxH strings.
@@ -183,7 +203,8 @@ async function getModelSizes(modelId: string): Promise<string[] | null> {
 
   try {
     if (_modelSizesCache === null) {
-      _modelSizesCache = await DB.getSetting('cachedImageModels', null);
+      const cached = await DB.getSetting('cachedImageModels', null);
+      _modelSizesCache = Array.isArray(cached) ? cached.map(normalizeImageModel) : null;
     }
     if (Array.isArray(_modelSizesCache)) {
       const m = _modelSizesCache.find((x) => x.id === modelId);
@@ -455,7 +476,7 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
     // Anchored-continuity path: references were allocated deterministically.
     // Never truncate — validate against live model capability instead.
     rawRefs = options.imageDataUrls || [];
-    const meta = await getImageModelMeta(modelId);
+    const meta = await getImageModelMeta(modelId, { signal: options.signal });
     if (meta?.maxInputImages && rawRefs.length > meta.maxInputImages) {
       throw new Error(
         `Reference count ${rawRefs.length} exceeds ${modelId}'s input-image limit of ${meta.maxInputImages}. ` +
@@ -491,8 +512,18 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
   // Preserve reference order through preprocessing. Identity anchors keep a
   // larger long edge (up to 2048) so faces survive; legacy callers keep 1024.
   const refMaxDim = options.refMaxDimension || 1024;
-  const compressedRefs =
-    rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressDataUrl(u, refMaxDim))) : null;
+  options.onProgress?.({ requestId: options.requestId, phase: 'preparing-references', at: Date.now() });
+  const compressReference = (dataUrl: string) => {
+    if (!options.compressionCache) return compressDataUrl(dataUrl, refMaxDim);
+    const key = `${refMaxDim}:${dataUrl}`;
+    let pending = options.compressionCache.get(key);
+    if (!pending) {
+      pending = compressDataUrl(dataUrl, refMaxDim);
+      options.compressionCache.set(key, pending);
+    }
+    return pending;
+  };
+  const compressedRefs = rawRefs.length > 0 ? await Promise.all(rawRefs.map((u) => compressReference(u))) : null;
 
   // Prepend the legacy reference legend only when labeled refs are provided.
   // The anchored pipeline compiles its own reference map into the prompt.
@@ -534,36 +565,41 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
   // Pass caller-supplied negative prompt to models that support it (ignored by models that don't)
   if (options.negativePrompt?.trim()) body.negative_prompt = options.negativePrompt.trim();
 
-  const fetchOpts: any = {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const timeoutMs = options.timeoutMs ?? (await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS));
+  options.onProgress?.({ requestId: options.requestId, phase: 'submitting', at: Date.now() });
+  const data = await runWithTimeout(
+    async (signal) => {
+      const fetchOpts: any = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal,
+      };
+      options.onProgress?.({ requestId: options.requestId, phase: 'waiting', at: Date.now() });
+      const res = await fetch(`${BASE_URL}/images/generations`, fetchOpts);
+      options.onProgress?.({ requestId: options.requestId, phase: 'response-received', at: Date.now() });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const apiMsg = errData.error?.message || errData.message || `HTTP ${res.status} ${res.statusText}`;
+        const error = new Error(
+          `Image generation failed (${modelId}, ${resolution}, ${count} image${count === 1 ? '' : 's'}): ${apiMsg}`,
+        ) as any;
+        error.safeMessage = error.message;
+        error.status = res.status;
+        error.model = modelId;
+        error.resolution = resolution;
+        error.count = count;
+        error.phase = 'image-request';
+        console.error('Image generation failed:', { status: res.status, model: modelId, resolution, count, apiMsg });
+        throw error;
+      }
+      return res.json();
     },
-    body: JSON.stringify(body),
-  };
-  if (options.signal) fetchOpts.signal = options.signal;
-
-  const res = await fetch(`${BASE_URL}/images/generations`, fetchOpts);
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    const apiMsg = errData.error?.message || errData.message || `HTTP ${res.status} ${res.statusText}`;
-    const error = new Error(
-      `Image generation failed [HTTP ${res.status}]\n` +
-        `Model: ${modelId}  Size: ${resolution}  n: ${count}\n` +
-        `API: ${apiMsg}\n` +
-        `Prompt: ${prompt}`,
-    ) as any;
-    error.status = res.status;
-    error.model = modelId;
-    error.resolution = resolution;
-    error.prompt = prompt;
-    console.error('Image generation failed:', { status: res.status, model: modelId, resolution, apiMsg, prompt });
-    throw error;
-  }
-
-  const data = await res.json();
+    { signal: options.signal, timeoutMs, phase: 'image-request', modelId },
+  );
   const entries = Array.isArray(data.data) ? data.data : [];
   const results: GeneratedImage[] = [];
   for (let i = 0; i < entries.length && i < count; i++) {
@@ -572,6 +608,12 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
     else if (entry?.b64_json) results.push({ index: i, value: entry.b64_json, source: 'b64_json' });
   }
   if (results.length === 0) throw new Error('No image data in API response');
+  options.onProgress?.({
+    requestId: options.requestId,
+    phase: 'response-parsed',
+    at: Date.now(),
+    receivedImageCount: results.length,
+  });
   if (entries.length < count) {
     console.warn(`[generateImages] Requested ${count} images but the API returned ${entries.length}`);
   } else if (entries.length > count) {
@@ -1061,7 +1103,7 @@ function firstPositiveNumber(...candidates: any[]): number | null {
  * Accepts known field variants so response-shape differences don't leak
  * through the rest of the app (spec §6.1).
  */
-function normalizeImageModel(m: any): ImageModel {
+export function normalizeImageModel(m: any): ImageModel {
   const supportedParameters = m.supported_parameters || m.supportedParameters || null;
   const inputModalities =
     m.input_modalities || m.inputModalities || m.architecture?.input_modalities || m.modalities?.input || null;
@@ -1100,10 +1142,10 @@ function normalizeImageModel(m: any): ImageModel {
  * cache (populated by fetchImageModels). Returns null when neither live nor
  * cached metadata exists — callers must then take the conservative path.
  */
-async function getImageModelMeta(modelId: string): Promise<ImageModel | null> {
+async function getImageModelMeta(modelId: string, options: FetchImageModelOptions = {}): Promise<ImageModel | null> {
   if (!modelId) return null;
   try {
-    const models = await fetchImageModels();
+    const models = await fetchImageModels(false, options);
     return models.find((m) => m.id === modelId) || null;
   } catch (_) {
     return null;
@@ -1114,37 +1156,78 @@ async function getImageModelMeta(modelId: string): Promise<ImageModel | null> {
  * Fetch all available image generation models from NanoGPT.
  * Requires authentication so the API returns detailed info including supported sizes.
  */
-async function fetchImageModels(forceRefresh: boolean = false): Promise<ImageModel[]> {
+async function fetchImageModels(
+  forceRefresh: boolean = false,
+  options: FetchImageModelOptions = {},
+): Promise<ImageModel[]> {
   const CACHE_KEY = 'cachedImageModels';
   const CACHE_TS_KEY = 'cachedImageModelsAt';
+  const CACHE_SCHEMA_KEY = 'cachedImageModelsSchemaVersion';
+  const MIGRATION_RETRY_KEY = 'cachedImageModelsMigrationRetryAt';
   const CACHE_TTL = 6 * 60 * 60 * 1000;
+  const cached = await DB.getSetting(CACHE_KEY, null);
+  const cachedAt = await DB.getSetting(CACHE_TS_KEY, 0);
+  const cacheSchema = await DB.getSetting(CACHE_SCHEMA_KEY, 0);
+  const migrationRetryAt = await DB.getSetting(MIGRATION_RETRY_KEY, 0);
+  const normalizedCache = Array.isArray(cached) ? cached.map(normalizeImageModel).filter((model) => model.id) : null;
+  const cacheCurrent = cacheSchema === IMAGE_MODEL_CACHE_SCHEMA_VERSION;
 
-  if (!forceRefresh) {
-    const cached = await DB.getSetting(CACHE_KEY, null);
-    const cachedAt = await DB.getSetting(CACHE_TS_KEY, 0);
-    if (cached && Date.now() - cachedAt < CACHE_TTL) return cached;
+  if (!forceRefresh && normalizedCache && cacheCurrent && Date.now() - cachedAt < CACHE_TTL) {
+    _modelSizesCache = normalizedCache;
+    _lastImageModelSource = 'cache';
+    return normalizedCache;
+  }
+  const shouldAttemptMigration = !cacheCurrent && Date.now() >= migrationRetryAt;
+  if (!forceRefresh && normalizedCache && !cacheCurrent && !shouldAttemptMigration) {
+    _modelSizesCache = normalizedCache;
+    _lastImageModelSource = 'cache';
+    return normalizedCache;
   }
 
   try {
     const apiKey = await getApiKey();
     const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
-    const res = await fetch(`${BASE_URL}/image-models?detailed=true`, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await runWithTimeout(
+      async (signal) => {
+        const res = await fetch(`${BASE_URL}/image-models?detailed=true`, { headers, signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      },
+      {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs ?? MODEL_METADATA_TIMEOUT_MS,
+        phase: 'model-metadata',
+      },
+    );
     const models = (data.data || data || [])
       .map((m: any) => normalizeImageModel(m))
+      .filter((m: ImageModel) => m.id)
       .sort((a: ImageModel, b: ImageModel) => a.id.localeCompare(b.id));
 
     await DB.setSetting(CACHE_KEY, models);
     await DB.setSetting(CACHE_TS_KEY, Date.now());
+    await DB.setSetting(CACHE_SCHEMA_KEY, IMAGE_MODEL_CACHE_SCHEMA_VERSION);
+    await DB.setSetting(MIGRATION_RETRY_KEY, 0);
     _modelSizesCache = models; // Update in-memory cache immediately
+    _lastImageModelSource = 'live';
     return models;
   } catch (err) {
     if (typeof (globalThis as any).App !== 'undefined') (globalThis as any).App.logError('fetchImageModels', err);
-    const cached = await DB.getSetting(CACHE_KEY, null);
-    if (cached) return cached;
+    if (!cacheCurrent && normalizedCache) {
+      await DB.setSetting(MIGRATION_RETRY_KEY, Date.now() + IMAGE_MODEL_CACHE_MIGRATION_RETRY_MS);
+    }
+    if (normalizedCache) {
+      _modelSizesCache = normalizedCache;
+      _lastImageModelSource = 'cache';
+      return normalizedCache;
+    }
+    _lastImageModelSource = 'fallback';
     return FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
   }
+}
+
+function getImageModelSource(): 'live' | 'cache' | 'fallback' {
+  return _lastImageModelSource;
 }
 
 // Models that support the `dimensions` parameter for dimension reduction
@@ -1632,6 +1715,8 @@ const API = {
   getModelParams,
   fetchTextModels,
   fetchImageModels,
+  getImageModelSource,
+  normalizeImageModel,
   getModelSizes,
   generateRefVariation,
   CHARACTER_REF_VARIATIONS,
@@ -1644,6 +1729,7 @@ const API = {
   /** @internal Reset in-memory caches (for testing only) */
   _resetCacheForTesting() {
     _modelSizesCache = null;
+    _lastImageModelSource = 'fallback';
   },
 };
 export default API;

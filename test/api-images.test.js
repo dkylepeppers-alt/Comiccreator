@@ -97,6 +97,16 @@ describe('image model capability normalization', () => {
     expect(await API.getImageModelMeta('no-such-model')).toBeNull();
     expect((await API.getImageModelMeta('seedream-v4.5-sequential')).maxOutputImages).toBe(15);
   });
+
+  it('refreshes an old cache schema and stores normalized capability metadata', async () => {
+    await DB.setSetting('cachedImageModels', [{ id: 'seedream-v4.5-sequential', name: 'old' }]);
+    await DB.setSetting('cachedImageModelsAt', Date.now());
+    await DB.setSetting('cachedImageModelsSchemaVersion', 1);
+    mockImageApi({ models: [SEQ_MODEL] });
+    const models = await API.fetchImageModels();
+    expect(models[0]).toMatchObject({ maxInputImages: 10, maxOutputImages: 15 });
+    expect(await DB.getSetting('cachedImageModelsSchemaVersion', 0)).toBe(2);
+  });
 });
 
 describe('generateImages', () => {
@@ -190,6 +200,19 @@ describe('generateImages', () => {
       return new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 400 });
     };
     await expect(API.generateImages('p', { count: 1 })).rejects.toThrow(/boom/);
+  });
+
+  it('bounds a provider request and classifies the timeout', async () => {
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('/images/generations')) return new Promise(() => {});
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    };
+    await expect(API.generateImages('p', { count: 1, timeoutMs: 5 })).rejects.toMatchObject({
+      name: 'GenerationTimeoutError',
+      code: 'GENERATION_TIMEOUT',
+      phase: 'image-request',
+      retryable: true,
+    });
   });
 });
 

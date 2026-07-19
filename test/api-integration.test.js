@@ -277,8 +277,9 @@ describe('API integration', () => {
     expect(caught.status).toBe(500);
     expect(caught.model).toBe('unstable-model');
     expect(caught.resolution).toBe('1792x1024');
-    expect(caught.prompt).toBe('draw scene');
-    expect(caught.message).toMatch(/Image generation failed \[HTTP 500\]/);
+    expect(caught.prompt).toBeUndefined();
+    expect(caught.message).toMatch(/Image generation failed \(unstable-model, 1792x1024, 1 image\)/);
+    expect(caught.message).not.toContain('draw scene');
     expect(calls.length).toBe(1);
     expect([calls[0].model, calls[0].size]).toEqual(['unstable-model', '1792x1024']);
   });
