@@ -240,7 +240,8 @@ function addLogEntry(
     stack: stack || null,
     details: details || null,
   });
-  if (debugLog.length > MAX_LOG_ENTRIES) debugLog.splice(0, debugLog.length - MAX_LOG_ENTRIES);
+  // Trim in batches (hysteresis) so we don't shift the array on every push once at capacity.
+  if (debugLog.length > MAX_LOG_ENTRIES + 50) debugLog.splice(0, debugLog.length - MAX_LOG_ENTRIES);
   updateErrorBadge();
   if (errorPanelOpen) renderErrorPanel();
 }
