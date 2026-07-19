@@ -1983,7 +1983,7 @@ async function preflightImageGeneration() {
   const pageModel = models.find((model) => model.id === pageModelId) || null;
   if (!pageModel && source === 'live') throw new Error(`The selected image model "${pageModelId}" is not available.`);
   const pageModelWarning =
-    !pageModel && source === 'cache'
+    !pageModel && (source === 'cache-fresh' || source === 'cache-degraded')
       ? `The selected image model "${pageModelId}" was not found in the cached model list; generation will continue but may fail if the model is unavailable.`
       : null;
 
@@ -2018,7 +2018,7 @@ async function preflightImageGeneration() {
     companionWarning,
     companion.warning,
     size.warning,
-    source === 'cache'
+    source === 'cache-degraded'
       ? 'Live image-model metadata could not be fetched; using cached model data that may be stale.'
       : null,
     source === 'fallback'
