@@ -57,6 +57,31 @@ test/             Vitest unit tests + test/e2e/ Playwright smoke tests
 
 All AI calls go directly from the browser to `https://nano-gpt.com/api/v1`.
 
+## Android app
+
+The same codebase ships as a native Android app via [Capacitor](https://capacitorjs.com)
+— the web build is bundled inside the APK, so the app works fully offline and
+doesn't depend on the hosted site.
+
+**Install it:** download `comic-creator-v*-debug.apk` from the
+[android-latest release](https://github.com/dkylepeppers-alt/Comiccreator/releases/tag/android-latest)
+on your phone, allow installs from your browser when prompted, and open the
+app. Enter your NanoGPT API key in Settings, same as the web version. CI
+rebuilds this APK on every merge to `main` (`android-build.yml`).
+
+It's a **debug-signed build**: fine for personal sideloading, not for the Play
+Store. Publishing would need a release keystore and a Play developer account.
+
+Local Android development (requires the Android SDK + Java 21):
+
+```bash
+npm run build && npx cap sync android   # copy web assets into android/
+cd android && ./gradlew assembleDebug   # or open in Android Studio
+```
+
+The Android `versionName`/`versionCode` are derived from `package.json` at
+build time, so the auto-version-bump flows into the APK automatically.
+
 ## Deployment
 
 Merging to the default branch runs the **Post-Merge Pipeline** (auto version
