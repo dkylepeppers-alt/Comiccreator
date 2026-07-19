@@ -228,6 +228,13 @@ async function getApiKey(): Promise<string> {
   return DB.getSetting('apiKey', '');
 }
 
+/** Guarded App.logDebug — records non-failure events in the global debug log. */
+function appLogDebug(context: string, message: string, details?: string): void {
+  if (typeof (globalThis as any).App !== 'undefined' && typeof (globalThis as any).App.logDebug === 'function') {
+    (globalThis as any).App.logDebug(context, message, details);
+  }
+}
+
 async function getModel(): Promise<string> {
   return DB.getSetting('model', 'gpt-4o-mini');
 }
@@ -273,7 +280,12 @@ async function chatCompletion(messages: ChatMessage[], options: ChatCompletionOp
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+  const content = data.choices?.[0]?.message?.content || '';
+  appLogDebug(
+    'chatCompletion',
+    `Completed (model: ${model}, ${messages.length} messages, ${content.length} chars returned)`,
+  );
+  return content;
 }
 
 /**
@@ -350,6 +362,10 @@ async function chatCompletionStream(
     }
   }
 
+  appLogDebug(
+    'chatCompletionStream',
+    `Completed (model: ${model}, ${messages.length} messages, ${fullText.length} chars streamed)`,
+  );
   return fullText;
 }
 
@@ -566,6 +582,10 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
   if (options.negativePrompt?.trim()) body.negative_prompt = options.negativePrompt.trim();
 
   const timeoutMs = options.timeoutMs ?? (await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS));
+  appLogDebug(
+    'generateImages',
+    `Requesting ${count} image${count === 1 ? '' : 's'} (model: ${modelId}, ${resolution}, ${rawRefs.length} reference${rawRefs.length === 1 ? '' : 's'})`,
+  );
   options.onProgress?.({ requestId: options.requestId, phase: 'submitting', at: Date.now() });
   const data = await runWithTimeout(
     async (signal) => {
@@ -608,6 +628,10 @@ async function generateImages(prompt: string, options: GenerateImagesOptions): P
     else if (entry?.b64_json) results.push({ index: i, value: entry.b64_json, source: 'b64_json' });
   }
   if (results.length === 0) throw new Error('No image data in API response');
+  appLogDebug(
+    'generateImages',
+    `Generated ${results.length} image${results.length === 1 ? '' : 's'} (model: ${modelId}, ${resolution}, ${rawRefs.length} reference${rawRefs.length === 1 ? '' : 's'})`,
+  );
   options.onProgress?.({
     requestId: options.requestId,
     phase: 'response-parsed',
@@ -774,26 +798,43 @@ function repairTruncatedJson(str: string): string {
   const stack = [];
   let inString = false;
   let escape = false;
+  let out = '';
 
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (escape) {
       escape = false;
+      out += c;
       continue;
     }
     if (c === '\\' && inString) {
       escape = true;
+      out += c;
       continue;
     }
     if (c === '"') {
       inString = !inString;
+      out += c;
       continue;
     }
-    if (inString) continue;
+    if (inString) {
+      out += c;
+      continue;
+    }
+    // Drop trailing commas before a closing brace/bracket (a common LLM
+    // output mistake that JSON.parse rejects with "Expected double-quoted
+    // property name" / "Unexpected token ]").
+    if (c === ',') {
+      let j = i + 1;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      if (j < s.length && (s[j] === '}' || s[j] === ']')) continue;
+    }
     if (c === '{') stack.push('}');
     else if (c === '[') stack.push(']');
     else if (c === '}' || c === ']') stack.pop();
+    out += c;
   }
+  s = out;
 
   // Close any unclosed string literal.
   // If the string ended on a dangling backslash (escape still true), the '\' is
@@ -849,7 +890,7 @@ function parseComicResponse(text: string): ComicPageResult | null {
 
   try {
     return buildResult(JSON.parse(jsonStr));
-  } catch (e) {
+  } catch (_e) {
     // First parse failed — the LLM response may have been truncated.
     // Attempt to repair the JSON and retry before giving up.
     try {

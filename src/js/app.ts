@@ -143,6 +143,7 @@ async function navigate(page: string, param: string | null = null): Promise<void
   // Render page
   const content = document.getElementById('content');
   try {
+    logDebug('Navigation', `Rendering page "${page}"${param ? ` (param: ${param})` : ''}`);
     const html = await pages[page].render(param);
     content.innerHTML = html;
     content.scrollTop = 0;
@@ -206,39 +207,67 @@ function toast(message: string, type: string = 'info', options: ToastOptions = {
   }
 }
 
-// --- Global Error Log ---
-interface ErrorLogEntry {
+// --- Global Debug Log ---
+// Captures errors, warnings, and informational debug events so the panel can
+// be used to trace app behavior, not just failures.
+type DebugLogLevel = 'error' | 'warn' | 'info';
+
+interface DebugLogEntry {
   timestamp: string;
+  level: DebugLogLevel;
   context: string;
   message: string;
   stack: string | null;
   details: string | null;
 }
 
-let errorLog: ErrorLogEntry[] = [];
+const MAX_LOG_ENTRIES = 500;
+const LOG_TRIM_HYSTERESIS = 50;
+let debugLog: DebugLogEntry[] = [];
 let errorPanelOpen: boolean = false;
 
-function logError(context: string, error: any, extraDetails?: string): void {
-  const entry = {
+function addLogEntry(
+  level: DebugLogLevel,
+  context: string,
+  message: string,
+  stack?: string | null,
+  details?: string | null,
+): void {
+  debugLog.push({
     timestamp: new Date().toISOString(),
+    level,
     context,
-    message: error?.message || String(error),
-    stack: error?.stack || null,
-    details: extraDetails || null,
-  };
-  errorLog.push(entry);
+    message,
+    stack: stack || null,
+    details: details || null,
+  });
+  // Trim in batches (hysteresis) so we don't shift the array on every push once at capacity.
+  if (debugLog.length > MAX_LOG_ENTRIES + LOG_TRIM_HYSTERESIS) debugLog.splice(0, debugLog.length - MAX_LOG_ENTRIES);
   updateErrorBadge();
   if (errorPanelOpen) renderErrorPanel();
+}
+
+function logError(context: string, error: any, extraDetails?: string): void {
+  addLogEntry('error', context, error?.message || String(error), error?.stack, extraDetails);
+}
+
+function logWarn(context: string, message: string, extraDetails?: string): void {
+  addLogEntry('warn', context, message, null, extraDetails);
+}
+
+function logDebug(context: string, message: string, extraDetails?: string): void {
+  addLogEntry('info', context, message, null, extraDetails);
 }
 
 function updateErrorBadge(): void {
   const badge = document.getElementById('error-badge');
   if (!badge) return;
-  if (errorLog.length === 0) {
+  const errorCount = debugLog.filter((e) => e.level === 'error').length;
+  if (errorCount === 0) {
     badge.classList.add('hidden');
   } else {
     badge.classList.remove('hidden');
-    badge.textContent = errorLog.length > 99 ? '99+' : String(errorLog.length);
+    badge.textContent = errorCount > 99 ? '99+' : String(errorCount);
   }
 }
 
@@ -257,15 +286,16 @@ function toggleErrorPanel(): void {
 function renderErrorPanel(): void {
   const body = document.getElementById('error-panel-body');
   if (!body) return;
-  if (errorLog.length === 0) {
-    body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">No errors logged.</div>';
+  if (debugLog.length === 0) {
+    body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">No log entries.</div>';
     return;
   }
   let html = '';
-  for (let i = errorLog.length - 1; i >= 0; i--) {
-    const e = errorLog[i];
-    html += `<div class="error-log-entry">`;
-    html += `<div class="error-log-header"><span class="error-log-context">${escHtml(e.context)}</span>`;
+  for (let i = debugLog.length - 1; i >= 0; i--) {
+    const e = debugLog[i];
+    html += `<div class="error-log-entry error-log-entry-${e.level}">`;
+    html += `<div class="error-log-header"><span class="error-log-level error-log-level-${e.level}">${e.level.toUpperCase()}</span>`;
+    html += `<span class="error-log-context">${escHtml(e.context)}</span>`;
     html += `<span class="error-log-time">${escHtml(e.timestamp.replace('T', ' ').substring(0, 19))}</span></div>`;
     html += `<div class="error-log-msg">${escHtml(e.message)}</div>`;
     if (e.details) html += `<div class="error-log-details">${escHtml(e.details)}</div>`;
@@ -276,13 +306,13 @@ function renderErrorPanel(): void {
 }
 
 async function copyErrorLog() {
-  if (errorLog.length === 0) {
-    toast('No errors to copy', 'info');
+  if (debugLog.length === 0) {
+    toast('No log entries to copy', 'info');
     return;
   }
-  const text = errorLog
+  const text = debugLog
     .map((e) => {
-      const lines = [`[${e.timestamp}] ${e.context}`, `Message: ${e.message}`];
+      const lines = [`[${e.timestamp}] [${e.level.toUpperCase()}] ${e.context}`, `Message: ${e.message}`];
       if (e.details) lines.push(`Details: ${e.details}`);
       if (e.stack) lines.push(`Stack:\n${e.stack}`);
       return lines.join('\n');
@@ -290,21 +320,21 @@ async function copyErrorLog() {
     .join('\n\n---\n\n');
   try {
     await navigator.clipboard.writeText(text);
-    toast('Error log copied!', 'success');
+    toast('Debug log copied!', 'success');
   } catch (err) {
     toast(`Copy failed: ${err.message}`, 'error');
   }
 }
 
 function clearErrorLog(): void {
-  errorLog = [];
+  debugLog = [];
   updateErrorBadge();
   renderErrorPanel();
-  toast('Error log cleared', 'info');
+  toast('Debug log cleared', 'info');
 }
 
-function getErrorLog(): ErrorLogEntry[] {
-  return errorLog;
+function getErrorLog(): DebugLogEntry[] {
+  return debugLog;
 }
 
 // Global error handlers
@@ -406,6 +436,8 @@ const App = {
   hideModal,
   toast,
   logError,
+  logWarn,
+  logDebug,
   toggleErrorPanel,
   copyErrorLog,
   clearErrorLog,
