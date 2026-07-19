@@ -230,7 +230,10 @@ async function getApiKey(): Promise<string> {
 
 /** Guarded App.logDebug — records non-failure events in the global debug log. */
 function appLogDebug(context: string, message: string, details?: string): void {
-  if (typeof (globalThis as any).App !== 'undefined' && (globalThis as any).App.logDebug)
+  if (
+    typeof (globalThis as any).App !== 'undefined' &&
+    typeof (globalThis as any).App.logDebug === 'function'
+  )
     (globalThis as any).App.logDebug(context, message, details);
 }
 
