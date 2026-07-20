@@ -1,23 +1,23 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml, buildImageEmbeddingText, newId } from '../utils.js';
+import { escHtml, newId } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
+import {
+  MAX_IMAGES,
+  createGalleryEditor,
+  renderEntityList,
+  exportEntityRecord,
+  showDeleteEntityModal,
+  confirmDeleteEntity,
+  embedImagesForSave,
+} from '../entity-gallery.js';
 
 /**
  * Character Builder Page
  */
 let currentView: string = 'list'; // 'list' or 'edit'
 let editingId: string | null = null;
-
-// In-editor image list: [{ id, dataUrl, tag, description, embedding }]
-let editorImages: any[] = [];
-let editorPrimaryIndex: number = 0;
-// Stable image ID of the identity anchor (authoritative for generation)
-let editorAnchorImageId: string | null = null;
-let editorName: string = '';
-// Index of the image slot currently being filled (for file picker)
-let _pendingSlotIdx: number = -1;
 
 const IMAGE_TAGS: string[] = [
   'default',
@@ -32,7 +32,52 @@ const IMAGE_TAGS: string[] = [
   'character-in-world',
   'custom',
 ];
-const MAX_IMAGES: number = 20;
+
+const gallery = createGalleryEditor({
+  page: 'CharactersPage',
+  idPrefix: 'char',
+  imageTags: IMAGE_TAGS,
+  defaultTag: 'default',
+  descPlaceholder: 'e.g. Battle armor with sword drawn',
+  anchorBadgeTitle: "Identity anchor — controls this character's stable identity in generated panels",
+  anchorButtonTitle: 'Set as identity anchor',
+  captionMeta: () => ({
+    type: 'character',
+    name: document.getElementById('char-name')?.value.trim() || '',
+    role: document.getElementById('char-role')?.value || '',
+    appearance: document.getElementById('char-appearance')?.value.trim() || '',
+  }),
+  fallbackName: 'the character',
+  refVariations: () => API.CHARACTER_REF_VARIATIONS,
+  resolveRefPrompt: (v) => v?.prompt || '',
+  fallbackRegenPrompt: (img) => {
+    const variation = API.CHARACTER_REF_VARIATIONS.find((v) => v.tag === img.tag);
+    if (variation) return variation.prompt;
+    return `Generate a ${img.tag.replace(/-/g, ' ')} of the character in the reference image, clean background`;
+  },
+  toolbarExtraHtml: (hasImages) => {
+    if (!hasImages) return '';
+    const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
+    return linkedWorldId
+      ? '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>'
+      : '';
+  },
+  slotHintIds: ['char-ref-slots', 'char-world-slots'],
+  anchorSetToast: (name) =>
+    `Identity anchor set — this image now controls ${name || 'this character'}'s stable identity`,
+  anchorFallbackLabel: (img) => img.description || img.tag || 'first gallery image',
+  anchorRemovedToast: (label) =>
+    `Identity anchor removed — falling back to "${label}". Pick a different anchor if needed.`,
+  anchorRemovedEmptyToast: 'Identity anchor removed — this character has no anchor until you add an image.',
+});
+
+const entityCfg = {
+  store: DB.STORES.characters,
+  label: 'Character',
+  collectionKey: 'characters',
+  filePrefix: 'character',
+  page: 'CharactersPage',
+};
 
 async function render(param?: string | null): Promise<string> {
   if (param === 'new') {
@@ -50,33 +95,19 @@ async function render(param?: string | null): Promise<string> {
 }
 
 async function renderList() {
-  const characters = await DB.getAll(DB.STORES.characters);
-  characters.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
-  return `
-    <div class="slide-up">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <div>
-          <h2 class="section-title" style="margin-bottom:4px;">Character Builder</h2>
-          <p class="text-sm text-muted">Design heroes, sidekicks, and villains</p>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="CharactersPage.newCharacter()">+ New</button>
-      </div>
-
-      ${
-        characters.length === 0
-          ? `
-        <div class="empty-state">
-          <div class="empty-state-icon">&#129464;</div>
-          <div class="empty-state-text">No characters yet. Create your first hero!</div>
-          <button class="btn btn-primary" onclick="CharactersPage.newCharacter()">Create Character</button>
-        </div>
-      `
-          : characters
-              .map((c) => {
-                const migrated = DB.migrateCharacter(c);
-                const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || migrated.imageData || '';
-                return `
+  return renderEntityList({
+    store: DB.STORES.characters,
+    page: 'CharactersPage',
+    newMethod: 'newCharacter',
+    title: 'Character Builder',
+    subtitle: 'Design heroes, sidekicks, and villains',
+    emptyIcon: '&#129464;',
+    emptyText: 'No characters yet. Create your first hero!',
+    emptyButtonLabel: 'Create Character',
+    listItem: (c) => {
+      const migrated = DB.migrateCharacter(c);
+      const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || migrated.imageData || '';
+      return `
         <div class="list-item" onclick="CharactersPage.editCharacter('${c.id}')">
           <div class="list-item-avatar">
             ${thumb ? `<img src="${thumb}" alt="${escHtml(c.name)}">` : '&#129464;'}
@@ -91,11 +122,8 @@ async function renderList() {
           </div>
         </div>
       `;
-              })
-              .join('')
-      }
-    </div>
-  `;
+    },
+  });
 }
 
 async function renderEditor() {
@@ -116,11 +144,12 @@ async function renderEditor() {
     const saved = await DB.get(DB.STORES.characters, editingId);
     if (saved) char = DB.normalizeCharacterRecord(saved).record;
   }
-  editorImages = (char.images || []).map((img) => Object.assign({}, img));
-  editorPrimaryIndex = char.primaryImageIndex ?? 0;
-  editorAnchorImageId = char.identityAnchorImageId ?? null;
-  editorName = char.name || '';
+  gallery.state.images = (char.images || []).map((img) => Object.assign({}, img));
+  gallery.state.primaryIndex = char.primaryImageIndex ?? 0;
+  gallery.state.anchorImageId = char.identityAnchorImageId ?? null;
+  gallery.state.name = char.name || '';
   const dvs = char.defaultVisualState || {};
+  const editorImages = gallery.state.images;
 
   const worlds = await DB.getAll(DB.STORES.worlds);
 
@@ -137,7 +166,7 @@ async function renderEditor() {
         <div class="form-group">
           <label class="form-label">Reference Images (up to ${MAX_IMAGES})</label>
           <div class="char-img-gallery" id="char-img-gallery">
-            ${renderGallerySlots(editorImages, editorPrimaryIndex)}
+            ${gallery.renderGallerySlots()}
           </div>
           <input type="file" id="char-img-input" accept="image/*" class="hidden" onchange="CharactersPage.handleImage(event)">
           <div class="char-img-toolbar" id="char-img-toolbar">
@@ -221,114 +250,6 @@ async function renderEditor() {
   `;
 }
 
-function renderGallerySlots(images: any[], primaryIdx: number): string {
-  const charName = editorName;
-  return images
-    .map((img, i) => {
-      // Embedding status badge
-      let embBadge = '';
-      if (img.dataUrl) {
-        if (img.embedding && img.embeddingText) {
-          const enriched = typeof buildImageEmbeddingText === 'function' ? buildImageEmbeddingText(img, charName) : '';
-          if (enriched && img.embeddingText === enriched) {
-            embBadge =
-              '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
-          } else {
-            embBadge =
-              '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
-          }
-        } else if (img.description?.trim()) {
-          embBadge =
-            '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
-        }
-      }
-      const isAnchor = !!img.id && img.id === editorAnchorImageId;
-      return `
-    <div class="char-img-slot" data-idx="${i}">
-      <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="CharactersPage.pickImageForSlot(${i})">
-        ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i + 1}">` : '<span>&#128247; Upload</span>'}
-        ${isAnchor ? '<span class="char-img-anchor-badge" title="Identity anchor — controls this character\'s stable identity in generated panels">&#9875; Anchor</span>' : ''}
-      </div>
-      <div class="char-img-meta">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <select class="char-img-tag" data-idx="${i}" onchange="CharactersPage.updateTag(${i},this.value)" style="flex:1;">
-            ${IMAGE_TAGS.map((t) => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
-          </select>
-          ${embBadge}
-        </div>
-        <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="e.g. Battle armor with sword drawn" oninput="CharactersPage.updateDesc(${i},this.value)">
-        <div class="char-img-actions">
-          <button class="char-img-primary ${i === primaryIdx ? 'active' : ''}" title="Set as thumbnail" onclick="CharactersPage.setPrimary(${i})">&#11088;</button>
-          ${img.dataUrl ? `<button class="char-img-anchor ${isAnchor ? 'active' : ''}" title="Set as identity anchor" onclick="CharactersPage.setAnchor(${i})">&#9875;</button>` : ''}
-          ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="CharactersPage.recaptionImage(${i})">&#128221;</button>` : ''}
-          ${img.dataUrl && img.aiGenerated ? `<button class="char-img-regen" title="Regenerate this reference" onclick="CharactersPage.regenerateImage(${i})">&#128260;</button>` : ''}
-          <button class="char-img-delete" title="Remove" onclick="CharactersPage.removeImage(${i})">&#x2715;</button>
-        </div>
-      </div>
-    </div>
-  `;
-    })
-    .join('');
-}
-
-function refreshGallery() {
-  const gallery = document.getElementById('char-img-gallery');
-  if (!gallery) return;
-  // Sync editorName from DOM (available after initial render)
-  const nameEl = document.getElementById('char-name');
-  if (nameEl) editorName = nameEl.value.trim();
-  gallery.innerHTML = renderGallerySlots(editorImages, editorPrimaryIndex);
-  // Update toolbar button visibility
-  const toolbar = document.getElementById('char-img-toolbar');
-  if (toolbar) {
-    const hasImages = editorImages.some((img) => img.dataUrl);
-    const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
-    // Rebuild toolbar contents to reflect current state
-    let btns = '';
-    if (editorImages.length < MAX_IMAGES) {
-      btns += '<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>';
-    }
-    if (hasImages) {
-      btns +=
-        '<button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()">&#128221; Caption All</button>';
-      btns +=
-        '<button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>';
-      if (linkedWorldId) {
-        btns +=
-          '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>';
-      }
-    }
-    toolbar.innerHTML = btns;
-  }
-  // Keep slot-count hints in any open dropdown panels in sync
-  const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
-  const slotText = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
-  const charRefSlots = document.getElementById('char-ref-slots');
-  if (charRefSlots) charRefSlots.textContent = slotText;
-  const charWorldSlots = document.getElementById('char-world-slots');
-  if (charWorldSlots) charWorldSlots.textContent = slotText;
-}
-
-function addImageSlot() {
-  if (editorImages.length >= MAX_IMAGES) return App.toast(`Maximum ${MAX_IMAGES} images`, 'error');
-  editorImages.push({
-    id: newId(),
-    dataUrl: '',
-    tag: 'default',
-    description: '',
-    embedding: null,
-    embeddingText: null,
-  });
-  refreshGallery();
-  // Immediately open file picker for the new slot
-  pickImageForSlot(editorImages.length - 1);
-}
-
-function pickImageForSlot(idx: number): void {
-  _pendingSlotIdx = idx;
-  document.getElementById('char-img-input').click();
-}
-
 function newCharacter() {
   App.navigate('characters', 'new');
 }
@@ -343,365 +264,7 @@ function backToList() {
 
 // Legacy single-upload handler (kept for backward compat)
 function pickImage() {
-  pickImageForSlot(0);
-}
-
-async function handleImage(event: any): Promise<void> {
-  const file = event.target.files[0];
-  if (!file) {
-    // File picker was cancelled — remove the empty slot created by addImageSlot()
-    if (_pendingSlotIdx >= 0 && _pendingSlotIdx < editorImages.length && !editorImages[_pendingSlotIdx].dataUrl) {
-      editorImages.splice(_pendingSlotIdx, 1);
-      if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
-      refreshGallery();
-    }
-    _pendingSlotIdx = -1;
-    return;
-  }
-  const dataUrl = await DB.fileToDataURL(file);
-  const idx = _pendingSlotIdx >= 0 ? _pendingSlotIdx : 0;
-  if (idx >= editorImages.length) {
-    editorImages.push({ id: newId(), dataUrl, tag: 'default', description: '', embedding: null, embeddingText: null });
-  } else {
-    editorImages[idx] = Object.assign({ id: newId() }, editorImages[idx], {
-      dataUrl,
-      embedding: null,
-      embeddingText: null,
-    });
-  }
-  refreshGallery();
-  // Reset file input so same file can be re-picked
-  event.target.value = '';
-
-  // Auto-caption: if the slot has no description, generate one via vision model
-  const img = editorImages[idx];
-  if (img && !img.description?.trim()) {
-    const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
-    if (descInput) {
-      descInput.disabled = true;
-      descInput.placeholder = 'Generating caption\u2026';
-    }
-    const name = document.getElementById('char-name')?.value.trim() || '';
-    const role = document.getElementById('char-role')?.value || '';
-    const appearance = document.getElementById('char-appearance')?.value.trim() || '';
-    const caption = await API.generateImageCaption(dataUrl, {
-      type: 'character',
-      name,
-      role,
-      tag: img.tag,
-      appearance,
-    }).catch(() => null);
-    // Only apply if this slot wasn't replaced while we were waiting
-    if (editorImages[idx] === img && !img.description?.trim() && caption) {
-      img.description = caption;
-      img.embedding = null;
-      img.embeddingText = null;
-    }
-    if (descInput) {
-      descInput.disabled = false;
-      descInput.placeholder = 'e.g. Battle armor with sword drawn';
-      if (img.description) descInput.value = img.description;
-    }
-  }
-}
-
-async function recaptionImage(idx: number): Promise<void> {
-  const img = editorImages[idx];
-  if (!img || !img.dataUrl) return App.toast('No image to caption', 'error');
-
-  const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
-  const captionBtn = document.querySelector(`.char-img-caption[onclick*="recaptionImage(${idx})"]`);
-  if (descInput) {
-    descInput.disabled = true;
-    descInput.placeholder = 'Generating caption\u2026';
-  }
-  if (captionBtn) captionBtn.disabled = true;
-
-  const name = document.getElementById('char-name')?.value.trim() || '';
-  const role = document.getElementById('char-role')?.value || '';
-  const appearance = document.getElementById('char-appearance')?.value.trim() || '';
-  const caption = await API.generateImageCaption(img.dataUrl, {
-    type: 'character',
-    name,
-    role,
-    tag: img.tag,
-    appearance,
-  }).catch(() => null);
-
-  if (caption) {
-    img.description = caption;
-    img.embedding = null;
-    img.embeddingText = null;
-    if (descInput) descInput.value = caption;
-  } else {
-    App.toast('Caption generation failed or is unsupported by this model', 'error');
-  }
-
-  if (descInput) {
-    descInput.disabled = false;
-    descInput.placeholder = 'e.g. Battle armor with sword drawn';
-  }
-  if (captionBtn) captionBtn.disabled = false;
-}
-
-async function recaptionAll() {
-  const imagesWithData = editorImages.filter((img) => img.dataUrl);
-  if (!imagesWithData.length) return App.toast('No images to caption', 'error');
-
-  const captionAllBtn = document.getElementById('char-caption-all-btn');
-  if (captionAllBtn) {
-    captionAllBtn.disabled = true;
-    captionAllBtn.textContent = 'Captioning\u2026';
-  }
-
-  const name = document.getElementById('char-name')?.value.trim() || '';
-  const role = document.getElementById('char-role')?.value || '';
-  const appearance = document.getElementById('char-appearance')?.value.trim() || '';
-
-  let done = 0;
-  let failed = 0;
-  for (let i = 0; i < editorImages.length; i++) {
-    const img = editorImages[i];
-    if (!img.dataUrl) continue;
-    done++;
-    if (captionAllBtn) captionAllBtn.textContent = `Captioning ${done}/${imagesWithData.length}\u2026`;
-
-    const descInput = document.querySelector(`.char-img-desc[data-idx="${i}"]`);
-    if (descInput) {
-      descInput.disabled = true;
-      descInput.placeholder = 'Generating caption\u2026';
-    }
-
-    const caption = await API.generateImageCaption(img.dataUrl, {
-      type: 'character',
-      name,
-      role,
-      tag: img.tag,
-      appearance,
-    }).catch(() => null);
-
-    if (caption && editorImages[i] === img) {
-      img.description = caption;
-      img.embedding = null;
-      img.embeddingText = null;
-      if (descInput) descInput.value = caption;
-    } else {
-      failed++;
-    }
-    if (descInput) {
-      descInput.disabled = false;
-      descInput.placeholder = 'e.g. Battle armor with sword drawn';
-    }
-  }
-
-  if (captionAllBtn) {
-    captionAllBtn.disabled = false;
-    captionAllBtn.textContent = '\u{1F4DD} Caption All';
-  }
-  if (failed > 0) {
-    App.toast(`Captioned ${done - failed}/${done} images (${failed} failed)`, 'info');
-  } else {
-    App.toast(`Captioned ${done} image(s)`, 'success');
-  }
-  refreshGallery();
-}
-
-/**
- * Toggle an inline dropdown panel for generating reference image variations.
- * Replaces the old modal with a dropdown below the toolbar giving users
- * a type selector, an editable prompt, and a one-click generate button.
- */
-function generateReferences() {
-  // Toggle: close if already open
-  const existing = document.getElementById('char-ref-dropdown');
-  if (existing) {
-    existing.remove();
-    return;
-  }
-
-  const primaryCandidate = editorImages[editorPrimaryIndex];
-  const primaryImg =
-    primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
-  if (!primaryImg) return App.toast('Upload at least one image first', 'error');
-
-  const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
-  if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
-
-  const variations = API.CHARACTER_REF_VARIATIONS;
-
-  // Build <option> list from predefined variations + a custom option
-  const options = variations
-    .map((v, i) => `<option value="${i}">${escHtml(v.tag)} — ${escHtml(v.desc)}</option>`)
-    .join('');
-
-  const toolbar = document.getElementById('char-img-toolbar');
-  if (!toolbar) return;
-
-  const panel = document.createElement('div');
-  panel.id = 'char-ref-dropdown';
-  panel.className = 'gen-ref-dropdown';
-  panel.innerHTML = `
-    <div class="gen-ref-row">
-      <select id="char-ref-type">${options}<option value="custom">✏️ Custom prompt</option></select>
-    </div>
-    <textarea id="char-ref-prompt" class="gen-ref-prompt" placeholder="Describe the reference image you want to generate…">${escHtml(variations[0].prompt)}</textarea>
-    <div class="gen-ref-hint" id="char-ref-slots">${slotsAvailable} image slot${slotsAvailable !== 1 ? 's' : ''} available</div>
-    <div class="gen-ref-actions">
-      <button class="btn btn-primary btn-sm" id="char-ref-go-btn" onclick="CharactersPage._doGenerateReferences()">Generate</button>
-      <button class="btn btn-secondary btn-sm" onclick="CharactersPage.generateReferences()">Close</button>
-    </div>
-  `;
-  toolbar.insertAdjacentElement('afterend', panel);
-
-  // Update prompt textarea when dropdown selection changes
-  document.getElementById('char-ref-type').addEventListener('change', (e) => {
-    const idx = e.target.value;
-    const promptEl = document.getElementById('char-ref-prompt');
-    if (idx === 'custom') {
-      promptEl.value = '';
-      promptEl.focus();
-    } else {
-      promptEl.value = variations[parseInt(idx, 10)]?.prompt || '';
-    }
-  });
-}
-
-/** Execute reference generation from the inline dropdown panel. */
-async function _doGenerateReferences() {
-  const typeSelect = document.getElementById('char-ref-type');
-  const promptEl = document.getElementById('char-ref-prompt');
-  if (!typeSelect || !promptEl) return;
-
-  const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
-  if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
-
-  const prompt = promptEl.value.trim();
-  if (!prompt) return App.toast('Enter a prompt describing the image to generate', 'error');
-
-  const variations = API.CHARACTER_REF_VARIATIONS;
-  const selectedIdx = typeSelect.value;
-  const variation = selectedIdx !== 'custom' ? variations[parseInt(selectedIdx, 10)] : null;
-  const tag = variation ? variation.tag : 'custom';
-
-  const primaryCandidate = editorImages[editorPrimaryIndex];
-  const primaryImg =
-    primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
-  if (!primaryImg) return App.toast('Upload at least one image first', 'error');
-
-  const name = document.getElementById('char-name')?.value.trim() || 'the character';
-  const appearance = document.getElementById('char-appearance')?.value.trim() || '';
-
-  const goBtn = document.getElementById('char-ref-go-btn');
-  if (goBtn) {
-    goBtn.disabled = true;
-    goBtn.textContent = 'Generating\u2026';
-  }
-
-  const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
-
-  if (dataUrl) {
-    const newImg = {
-      id: newId(),
-      dataUrl,
-      tag,
-      description: '',
-      embedding: null,
-      embeddingText: null,
-      aiGenerated: true,
-      generationPrompt: prompt,
-    };
-    editorImages.push(newImg);
-    refreshGallery();
-
-    // Auto-caption the generated image
-    const caption = await API.generateImageCaption(dataUrl, {
-      type: 'character',
-      name,
-      role: document.getElementById('char-role')?.value || '',
-      tag,
-      appearance,
-    }).catch(() => null);
-    if (caption) {
-      newImg.description = caption;
-      newImg.embedding = null;
-      newImg.embeddingText = null;
-      refreshGallery();
-    }
-    App.toast('Reference image generated', 'success');
-  } else {
-    App.toast('Generation failed — try again or adjust the prompt', 'error');
-  }
-
-  if (goBtn) {
-    goBtn.disabled = false;
-    goBtn.textContent = 'Generate';
-  }
-  // Update slot count in dropdown
-  const slotsEl = document.getElementById('char-ref-slots');
-  if (slotsEl) {
-    const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
-    slotsEl.textContent = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
-  }
-}
-
-/**
- * Regenerate a single AI-generated reference image.
- * Uses the primary uploaded image as the source and the stored generation prompt.
- */
-async function regenerateImage(idx: number): Promise<void> {
-  const img = editorImages[idx];
-  if (!img || !img.aiGenerated) return App.toast('This image was not AI-generated', 'error');
-
-  const primaryImg = editorImages.find((src) => src.dataUrl && !src.aiGenerated);
-  if (!primaryImg) return App.toast('No source image found for regeneration', 'error');
-
-  const name = document.getElementById('char-name')?.value.trim() || 'the character';
-  const appearance = document.getElementById('char-appearance')?.value.trim() || '';
-
-  // Re-derive the prompt from the tag variation or use stored prompt
-  let prompt = img.generationPrompt;
-  if (!prompt) {
-    const variation = API.CHARACTER_REF_VARIATIONS.find((v) => v.tag === img.tag);
-    if (variation) {
-      prompt = variation.prompt;
-    } else {
-      prompt = `Generate a ${img.tag.replace(/-/g, ' ')} of the character in the reference image, clean background`;
-    }
-  }
-
-  const preview = document.querySelector(`.char-img-slot[data-idx="${idx}"] .char-img-slot-preview`);
-  if (preview) preview.style.opacity = '0.5';
-  const regenBtn = document.querySelector(`.char-img-slot[data-idx="${idx}"] .char-img-regen`);
-  if (regenBtn) regenBtn.disabled = true;
-
-  const dataUrl = await API.generateRefVariation(primaryImg.dataUrl, prompt).catch(() => null);
-
-  if (dataUrl) {
-    img.dataUrl = dataUrl;
-    img.embedding = null;
-    img.embeddingText = null;
-    img.generationPrompt = prompt;
-
-    // Re-caption
-    const caption = await API.generateImageCaption(dataUrl, {
-      type: 'character',
-      name,
-      role: document.getElementById('char-role')?.value || '',
-      tag: img.tag,
-      appearance,
-    }).catch(() => null);
-    if (caption) {
-      img.description = caption;
-      img.embedding = null;
-      img.embeddingText = null;
-    }
-    refreshGallery();
-    App.toast('Reference image regenerated', 'success');
-  } else {
-    if (preview) preview.style.opacity = '1';
-    if (regenBtn) regenBtn.disabled = false;
-    App.toast('Regeneration failed', 'error');
-  }
+  gallery.pickImageForSlot(0);
 }
 
 /**
@@ -716,9 +279,9 @@ async function generateWorldInteractions() {
     return;
   }
 
-  const primaryCandidate = editorImages[editorPrimaryIndex];
+  const primaryCandidate = gallery.state.images[gallery.state.primaryIndex];
   const primaryImg =
-    primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
+    primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : gallery.state.images.find((img) => img.dataUrl);
   if (!primaryImg) return App.toast('Upload at least one character image first', 'error');
 
   const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
@@ -729,7 +292,7 @@ async function generateWorldInteractions() {
 
   const name = document.getElementById('char-name')?.value.trim() || 'the character';
 
-  const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
+  const slotsAvailable = MAX_IMAGES - gallery.state.images.filter((img) => img.dataUrl).length;
   if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
   const variations = API.CHARACTER_WORLD_VARIATIONS;
@@ -802,7 +365,7 @@ async function _doGenerateWorldInteractions() {
   const promptEl = document.getElementById('char-world-prompt');
   if (!typeSelect || !promptEl) return;
 
-  const slotsAvailable = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
+  const slotsAvailable = MAX_IMAGES - gallery.state.images.filter((img) => img.dataUrl).length;
   if (slotsAvailable <= 0) return App.toast('Gallery is full — remove some images first', 'info');
 
   const prompt = promptEl.value.trim();
@@ -819,9 +382,9 @@ async function _doGenerateWorldInteractions() {
   // Read fresh values from the DOM so edits made while the panel was open are reflected
   const name = document.getElementById('char-name')?.value.trim() || 'the character';
 
-  const primaryCandidate = editorImages[editorPrimaryIndex];
+  const primaryCandidate = gallery.state.images[gallery.state.primaryIndex];
   const primaryImg =
-    primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : editorImages.find((img) => img.dataUrl);
+    primaryCandidate && primaryCandidate.dataUrl ? primaryCandidate : gallery.state.images.find((img) => img.dataUrl);
   if (!primaryImg) return App.toast('Upload at least one character image first', 'error');
 
   const appearance = document.getElementById('char-appearance')?.value.trim() || '';
@@ -834,7 +397,7 @@ async function _doGenerateWorldInteractions() {
   const goBtn = document.getElementById('char-world-go-btn');
   if (goBtn) {
     goBtn.disabled = true;
-    goBtn.textContent = 'Generating\u2026';
+    goBtn.textContent = 'Generating…';
   }
 
   const dataUrl = await API.generateRefVariation(null, prompt, { imageDataUrls: refUrls }).catch(() => null);
@@ -853,8 +416,8 @@ async function _doGenerateWorldInteractions() {
       aiGenerated: true,
       generationPrompt: prompt,
     };
-    editorImages.push(newImg);
-    refreshGallery();
+    gallery.state.images.push(newImg);
+    gallery.refreshGallery();
 
     const caption = await API.generateImageCaption(dataUrl, {
       type: 'character-in-world',
@@ -867,7 +430,7 @@ async function _doGenerateWorldInteractions() {
       newImg.description = caption;
       newImg.embedding = null;
       newImg.embeddingText = null;
-      refreshGallery();
+      gallery.refreshGallery();
     }
     App.toast('World interaction image generated', 'success');
   } else {
@@ -881,66 +444,9 @@ async function _doGenerateWorldInteractions() {
   // Update slot count
   const slotsEl = document.getElementById('char-world-slots');
   if (slotsEl) {
-    const remaining = MAX_IMAGES - editorImages.filter((img) => img.dataUrl).length;
+    const remaining = MAX_IMAGES - gallery.state.images.filter((img) => img.dataUrl).length;
     slotsEl.textContent = `${remaining} image slot${remaining !== 1 ? 's' : ''} available`;
   }
-}
-
-function updateTag(idx: number, value: string): void {
-  if (editorImages[idx]) {
-    editorImages[idx].tag = value;
-    editorImages[idx].embedding = null; // tag is part of enriched embedding text
-    editorImages[idx].embeddingText = null;
-  }
-}
-
-function updateDesc(idx: number, value: string): void {
-  if (editorImages[idx]) {
-    editorImages[idx].description = value;
-    editorImages[idx].embedding = null; // invalidate stale embedding
-    editorImages[idx].embeddingText = null;
-  }
-}
-
-function setPrimary(idx: number): void {
-  // Toggle: clicking the already-active star deselects it
-  editorPrimaryIndex = idx === editorPrimaryIndex ? -1 : idx;
-  // Update star button states in place
-  document.querySelectorAll('.char-img-primary').forEach((btn, i) => {
-    btn.classList.toggle('active', i === editorPrimaryIndex);
-  });
-}
-
-/** Set the identity anchor to the image at idx (explicit control, spec §12.1). */
-function setAnchor(idx: number): void {
-  const img = editorImages[idx];
-  if (!img?.dataUrl) return App.toast('Upload an image first', 'error');
-  if (!img.id) img.id = newId();
-  editorAnchorImageId = img.id;
-  refreshGallery();
-  App.toast(
-    `Identity anchor set — this image now controls ${editorName || 'this character'}'s stable identity`,
-    'success',
-  );
-}
-
-function removeImage(idx: number): void {
-  const removed = editorImages[idx];
-  editorImages.splice(idx, 1);
-  if (editorPrimaryIndex >= editorImages.length) editorPrimaryIndex = Math.max(0, editorImages.length - 1);
-  // Deleting the active anchor: fall back deterministically and tell the user
-  // exactly which image becomes the anchor so they can pick a different one.
-  if (removed?.id && removed.id === editorAnchorImageId) {
-    const fallback = editorImages.find((img) => img.dataUrl);
-    editorAnchorImageId = fallback?.id || null;
-    if (fallback) {
-      const label = fallback.description || fallback.tag || 'first gallery image';
-      App.toast(`Identity anchor removed — falling back to "${label}". Pick a different anchor if needed.`, 'info');
-    } else {
-      App.toast('Identity anchor removed — this character has no anchor until you add an image.', 'info');
-    }
-  }
-  refreshGallery();
 }
 
 async function saveCharacter() {
@@ -950,36 +456,11 @@ async function saveCharacter() {
   if (!description) return App.toast('Description is required', 'error');
 
   // Filter out empty slots (no dataUrl)
-  const validImages = editorImages.filter((img) => img.dataUrl);
-  let primaryIdx = editorPrimaryIndex;
+  const validImages = gallery.state.images.filter((img) => img.dataUrl);
+  let primaryIdx = gallery.state.primaryIndex;
   if (primaryIdx >= validImages.length) primaryIdx = validImages.length > 0 ? 0 : -1;
 
-  // Generate (or re-generate) embeddings for images whose enriched text has changed
-  const needsEmbedding = validImages.filter((img) => {
-    if (!img.description?.trim()) return false;
-    const enriched = buildImageEmbeddingText(img, name);
-    // Re-embed if text changed (new description, tag change, name change, or first-time)
-    return img.embeddingText !== enriched || !img.embedding;
-  });
-  if (needsEmbedding.length > 0) {
-    const saveBtn = document.getElementById('char-save-btn');
-    if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
-    await Promise.all(
-      needsEmbedding.map(async (img) => {
-        const enriched = buildImageEmbeddingText(img, name);
-        try {
-          const emb = await API.generateEmbedding(enriched);
-          if (emb) {
-            img.embedding = emb;
-            img.embeddingText = enriched;
-          }
-        } catch {
-          /* skip on error */
-        }
-      }),
-    );
-    if (saveBtn) saveBtn.textContent = editingId ? 'Update Character' : 'Create Character';
-  }
+  await embedImagesForSave(validImages, name, 'char-save-btn', editingId ? 'Update Character' : 'Create Character');
 
   const existingChar = editingId ? await DB.get(DB.STORES.characters, editingId) : null;
 
@@ -1000,7 +481,7 @@ async function saveCharacter() {
     linkedWorldId: document.getElementById('char-linked-world')?.value || '',
     images: validImages,
     primaryImageIndex: primaryIdx,
-    identityAnchorImageId: editorAnchorImageId,
+    identityAnchorImageId: gallery.state.anchorImageId,
     defaultVisualState: {
       wardrobeDescription: document.getElementById('char-dvs-wardrobe')?.value.trim() || '',
       hairState: document.getElementById('char-dvs-hair')?.value.trim() || '',
@@ -1021,61 +502,37 @@ async function saveCharacter() {
 }
 
 async function exportCharacter(id: string): Promise<void> {
-  const char = await DB.get(DB.STORES.characters, id);
-  if (!char) return App.toast('Character not found', 'error');
-  const data = {
-    characters: [char],
-    exportedAt: new Date().toISOString(),
-  };
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const safeName = char.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  a.download = `character-${safeName}-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  App.toast('Character exported!', 'success');
+  return exportEntityRecord(entityCfg, id);
 }
 
 async function deleteCharacter(id: string, name: string): Promise<void> {
-  App.showModal(`
-    <div class="modal-title">Delete Character</div>
-    <p>Are you sure you want to delete <strong>${escHtml(name)}</strong>?</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="CharactersPage.confirmDelete('${id}')">Delete</button>
-    </div>
-  `);
+  showDeleteEntityModal(entityCfg, id, name);
 }
 
 async function confirmDelete(id: string): Promise<void> {
-  await DB.del(DB.STORES.characters, id);
-  App.hideModal();
-  App.toast('Character deleted', 'info');
-  App.refreshPage();
+  return confirmDeleteEntity(entityCfg, id);
 }
 
 const CharactersPage: PageModule & Record<string, any> = {
   render,
-  refreshGallery,
+  refreshGallery: gallery.refreshGallery,
   newCharacter,
   editCharacter,
   backToList,
   pickImage,
-  pickImageForSlot,
-  handleImage,
-  addImageSlot,
-  updateTag,
-  updateDesc,
-  setPrimary,
-  setAnchor,
-  removeImage,
-  recaptionImage,
-  recaptionAll,
-  generateReferences,
-  _doGenerateReferences,
-  regenerateImage,
+  pickImageForSlot: gallery.pickImageForSlot,
+  handleImage: gallery.handleImage,
+  addImageSlot: gallery.addImageSlot,
+  updateTag: gallery.updateTag,
+  updateDesc: gallery.updateDesc,
+  setPrimary: gallery.setPrimary,
+  setAnchor: gallery.setAnchor,
+  removeImage: gallery.removeImage,
+  recaptionImage: gallery.recaptionImage,
+  recaptionAll: gallery.recaptionAll,
+  generateReferences: gallery.generateReferences,
+  _doGenerateReferences: gallery._doGenerateReferences,
+  regenerateImage: gallery.regenerateImage,
   generateWorldInteractions,
   _doGenerateWorldInteractions,
   _pendingWorldData: null,
