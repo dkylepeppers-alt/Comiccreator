@@ -47,7 +47,6 @@ const IMAGE_TAGS: string[] = [
 ];
 
 const gallery = createGalleryEditor({
-  page: 'WorldsPage',
   idPrefix: 'world',
   imageTags: IMAGE_TAGS,
   defaultTag: 'establishing',
@@ -56,7 +55,7 @@ const gallery = createGalleryEditor({
   anchorBadgeTitle: 'Default world anchor — used when a planned location has no exact match',
   anchorButtonTitle: 'Set as default world anchor',
   slotExtraInputs: (img, i) =>
-    `<input type="text" class="char-img-lockey" data-idx="${i}" value="${escHtml(img.locationKey || '')}" placeholder="location key, e.g. main-street" oninput="WorldsPage.updateLocationKey(${i},this.value)" title="Unique key the story planner uses to pick this image as the location anchor">`,
+    `<input type="text" class="char-img-lockey" data-idx="${i}" value="${escHtml(img.locationKey || '')}" placeholder="location key, e.g. main-street" data-action-input="updateLocationKey" data-args="[${i}]" title="Unique key the story planner uses to pick this image as the location anchor">`,
   captionMeta: () => ({
     type: 'world',
     name: document.getElementById('world-name')?.value.trim() || '',
@@ -90,7 +89,7 @@ const gallery = createGalleryEditor({
         const linked = chars.filter((c) => c.linkedWorldId === editingId);
         if (linked.length >= 2 && toolbar.parentNode) {
           const interBtn =
-            '<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>';
+            '<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" data-action="generateCharacterInteractions" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>';
           if (!toolbar.querySelector('#world-gen-interactions-btn')) {
             toolbar.insertAdjacentHTML('beforeend', interBtn);
           }
@@ -114,7 +113,6 @@ const entityCfg = {
   label: 'World',
   collectionKey: 'worlds',
   filePrefix: 'world',
-  page: 'WorldsPage',
 };
 
 async function render(param?: string | null): Promise<string> {
@@ -137,7 +135,6 @@ async function render(param?: string | null): Promise<string> {
 async function renderList() {
   return renderEntityList({
     store: DB.STORES.worlds,
-    page: 'WorldsPage',
     newMethod: 'newWorld',
     title: 'World Builder',
     subtitle: 'Create settings for your comics',
@@ -148,7 +145,7 @@ async function renderList() {
       const migrated = DB.migrateWorld(w);
       const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || '';
       return `
-        <div class="list-item" onclick="WorldsPage.editWorld('${w.id}')">
+        <div class="list-item" data-action="editWorld" data-args="${escHtml(JSON.stringify([w.id]))}">
           <div class="list-item-avatar">
             ${thumb ? `<img src="${escHtml(thumb)}" alt="${escHtml(w.name)}">` : '&#127758;'}
           </div>
@@ -157,8 +154,8 @@ async function renderList() {
             <div class="list-item-desc">${escHtml(w.description || '').slice(0, 80)}</div>
           </div>
           <div class="list-item-actions">
-            <button class="btn btn-sm btn-secondary" title="Export" onclick="event.stopPropagation();WorldsPage.exportWorld('${w.id}')">&#128229;</button>
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();WorldsPage.deleteWorld('${w.id}','${escHtml(w.name)}')">&#128465;</button>
+            <button class="btn btn-sm btn-secondary" title="Export" data-action="exportWorld" data-args="${escHtml(JSON.stringify([w.id]))}">&#128229;</button>
+            <button class="btn btn-sm btn-danger" data-action="deleteWorld" data-args="${escHtml(JSON.stringify([w.id, w.name]))}">&#128465;</button>
           </div>
         </div>
       `;
@@ -195,9 +192,9 @@ async function renderEditor() {
   return `
     <div class="slide-up">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <button class="btn btn-sm btn-secondary" onclick="WorldsPage.backToList()">&#8592; Back</button>
+        <button class="btn btn-sm btn-secondary" data-action="backToList">&#8592; Back</button>
         <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} World</h2>
-        ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" onclick="WorldsPage.exportWorld('${editingId}')">&#128229; Export</button>` : ''}
+        ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" data-action="exportWorld" data-args="${escHtml(JSON.stringify([editingId]))}">&#128229; Export</button>` : ''}
       </div>
 
       <div class="card">
@@ -207,12 +204,12 @@ async function renderEditor() {
           <div class="char-img-gallery" id="world-img-gallery">
             ${gallery.renderGallerySlots()}
           </div>
-          <input type="file" id="world-img-input" accept="image/*" class="hidden" onchange="WorldsPage.handleImage(event)">
+          <input type="file" id="world-img-input" accept="image/*" class="hidden" data-action-change="handleImage">
           <div class="char-img-toolbar" id="world-img-toolbar">
-            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="WorldsPage.addImageSlot()">+ Add Image</button>` : ''}
-            <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" onclick="WorldsPage.recaptionAll()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
-            <button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" onclick="WorldsPage.generateReferences()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
-            ${editorImages.some((img) => img.dataUrl) && linkedChars.length >= 2 ? `<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" onclick="WorldsPage.generateCharacterInteractions()" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>` : ''}
+            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" data-action="addImageSlot">+ Add Image</button>` : ''}
+            <button class="btn btn-secondary btn-sm" id="world-caption-all-btn" data-action="recaptionAll" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+            <button class="btn btn-secondary btn-sm" id="world-gen-refs-btn" data-action="generateReferences" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
+            ${editorImages.some((img) => img.dataUrl) && linkedChars.length >= 2 ? `<button class="btn btn-secondary btn-sm" id="world-gen-interactions-btn" data-action="generateCharacterInteractions" title="Generate images of linked characters interacting in this world">&#129489; Generate Interactions</button>` : ''}
           </div>
         </div>
 
@@ -250,7 +247,7 @@ async function renderEditor() {
             ${linkedChars
               .map(
                 (c) => `
-              <div class="chip" onclick="App.navigate('characters','${c.id}')" style="cursor:pointer;" title="Edit ${escHtml(c.name)}">
+              <div class="chip" data-navigate="characters" data-param="${c.id}" style="cursor:pointer;" title="Edit ${escHtml(c.name)}">
                 ${escHtml(c.name)}${c.role ? ` <span class="text-muted" style="font-size:0.75em;">(${escHtml(c.role)})</span>` : ''}
               </div>
             `,
@@ -264,7 +261,7 @@ async function renderEditor() {
         }
       </div>
 
-      <button class="btn btn-primary btn-block mt-sm" id="world-save-btn" onclick="WorldsPage.saveWorld()">
+      <button class="btn btn-primary btn-block mt-sm" id="world-save-btn" data-action="saveWorld">
         ${editingId ? 'Update' : 'Create'} World
       </button>
     </div>
@@ -365,8 +362,8 @@ async function generateCharacterInteractions() {
     <textarea id="world-inter-prompt" class="gen-ref-prompt" placeholder="Describe the character interaction scene you want to generate…">${escHtml(interactionPrompts[0].prompt)}</textarea>
     <div class="gen-ref-hint" id="world-inter-slots">${slotsAvailable} image slot${slotsAvailable !== 1 ? 's' : ''} available</div>
     <div class="gen-ref-actions">
-      <button class="btn btn-primary btn-sm" id="world-inter-go-btn" onclick="WorldsPage._doGenerateCharacterInteractions()">Generate</button>
-      <button class="btn btn-secondary btn-sm" onclick="WorldsPage.generateCharacterInteractions()">Close</button>
+      <button class="btn btn-primary btn-sm" id="world-inter-go-btn" data-action="_doGenerateCharacterInteractions">Generate</button>
+      <button class="btn btn-secondary btn-sm" data-action="generateCharacterInteractions">Close</button>
     </div>
   `;
   toolbar.insertAdjacentElement('afterend', panel);
@@ -481,9 +478,9 @@ async function _doGenerateCharacterInteractions() {
 }
 
 /** Update an image's location key (normalized to slug form on save). */
-function updateLocationKey(idx: number, value: string): void {
+function updateLocationKey(idx: number, input: any): void {
   if (gallery.state.images[idx]) {
-    gallery.state.images[idx].locationKey = value.trim() || null;
+    gallery.state.images[idx].locationKey = input.value.trim() || null;
   }
 }
 

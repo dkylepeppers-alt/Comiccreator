@@ -34,7 +34,6 @@ const IMAGE_TAGS: string[] = [
 ];
 
 const gallery = createGalleryEditor({
-  page: 'CharactersPage',
   idPrefix: 'char',
   imageTags: IMAGE_TAGS,
   defaultTag: 'default',
@@ -59,7 +58,7 @@ const gallery = createGalleryEditor({
     if (!hasImages) return '';
     const linkedWorldId = document.getElementById('char-linked-world')?.value || '';
     return linkedWorldId
-      ? '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>'
+      ? '<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" data-action="generateWorldInteractions" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>'
       : '';
   },
   slotHintIds: ['char-ref-slots', 'char-world-slots'],
@@ -76,7 +75,6 @@ const entityCfg = {
   label: 'Character',
   collectionKey: 'characters',
   filePrefix: 'character',
-  page: 'CharactersPage',
 };
 
 async function render(param?: string | null): Promise<string> {
@@ -97,7 +95,6 @@ async function render(param?: string | null): Promise<string> {
 async function renderList() {
   return renderEntityList({
     store: DB.STORES.characters,
-    page: 'CharactersPage',
     newMethod: 'newCharacter',
     title: 'Character Builder',
     subtitle: 'Design heroes, sidekicks, and villains',
@@ -108,7 +105,7 @@ async function renderList() {
       const migrated = DB.migrateCharacter(c);
       const thumb = migrated.images?.[migrated.primaryImageIndex ?? 0]?.dataUrl || migrated.imageData || '';
       return `
-        <div class="list-item" onclick="CharactersPage.editCharacter('${c.id}')">
+        <div class="list-item" data-action="editCharacter" data-args="${escHtml(JSON.stringify([c.id]))}">
           <div class="list-item-avatar">
             ${thumb ? `<img src="${thumb}" alt="${escHtml(c.name)}">` : '&#129464;'}
           </div>
@@ -117,8 +114,8 @@ async function renderList() {
             <div class="list-item-desc">${escHtml(c.role || 'No role')} &middot; ${escHtml(c.description || '').slice(0, 60)}</div>
           </div>
           <div class="list-item-actions">
-            <button class="btn btn-sm btn-secondary" title="Export" onclick="event.stopPropagation();CharactersPage.exportCharacter('${c.id}')">&#128229;</button>
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();CharactersPage.deleteCharacter('${c.id}','${escHtml(c.name)}')">&#128465;</button>
+            <button class="btn btn-sm btn-secondary" title="Export" data-action="exportCharacter" data-args="${escHtml(JSON.stringify([c.id]))}">&#128229;</button>
+            <button class="btn btn-sm btn-danger" data-action="deleteCharacter" data-args="${escHtml(JSON.stringify([c.id, c.name]))}">&#128465;</button>
           </div>
         </div>
       `;
@@ -156,9 +153,9 @@ async function renderEditor() {
   return `
     <div class="slide-up">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <button class="btn btn-sm btn-secondary" onclick="CharactersPage.backToList()">&#8592; Back</button>
+        <button class="btn btn-sm btn-secondary" data-action="backToList">&#8592; Back</button>
         <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} Character</h2>
-        ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" onclick="CharactersPage.exportCharacter('${editingId}')">&#128229; Export</button>` : ''}
+        ${editingId ? `<button class="btn btn-sm btn-secondary" style="margin-left:auto;" title="Exports last saved version" data-action="exportCharacter" data-args="${escHtml(JSON.stringify([editingId]))}">&#128229; Export</button>` : ''}
       </div>
 
       <div class="card">
@@ -168,12 +165,12 @@ async function renderEditor() {
           <div class="char-img-gallery" id="char-img-gallery">
             ${gallery.renderGallerySlots()}
           </div>
-          <input type="file" id="char-img-input" accept="image/*" class="hidden" onchange="CharactersPage.handleImage(event)">
+          <input type="file" id="char-img-input" accept="image/*" class="hidden" data-action-change="handleImage">
           <div class="char-img-toolbar" id="char-img-toolbar">
-            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" onclick="CharactersPage.addImageSlot()">+ Add Image</button>` : ''}
-            <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" onclick="CharactersPage.recaptionAll()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
-            <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" onclick="CharactersPage.generateReferences()" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
-            ${editorImages.some((img) => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" onclick="CharactersPage.generateWorldInteractions()" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
+            ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" data-action="addImageSlot">+ Add Image</button>` : ''}
+            <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" data-action="recaptionAll" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+            <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" data-action="generateReferences" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
+            ${editorImages.some((img) => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" data-action="generateWorldInteractions" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
           </div>
         </div>
 
@@ -196,7 +193,7 @@ async function renderEditor() {
 
         <div class="form-group">
           <label class="form-label">Linked World</label>
-          <select id="char-linked-world" onchange="CharactersPage.refreshGallery()">
+          <select id="char-linked-world" data-action-change="refreshGallery">
             <option value="">— None —</option>
             ${worlds.map((w) => `<option value="${w.id}" ${char.linkedWorldId === w.id ? 'selected' : ''}>${escHtml(w.name)}</option>`).join('')}
           </select>
@@ -243,7 +240,7 @@ async function renderEditor() {
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block mt-sm" id="char-save-btn" onclick="CharactersPage.saveCharacter()">
+      <button class="btn btn-primary btn-block mt-sm" id="char-save-btn" data-action="saveCharacter">
         ${editingId ? 'Update' : 'Create'} Character
       </button>
     </div>
@@ -328,8 +325,8 @@ async function generateWorldInteractions() {
     <textarea id="char-world-prompt" class="gen-ref-prompt" placeholder="Describe the scene you want to generate…">${escHtml(initialPrompt)}</textarea>
     <div class="gen-ref-hint" id="char-world-slots">${slotsAvailable} image slot${slotsAvailable !== 1 ? 's' : ''} available</div>
     <div class="gen-ref-actions">
-      <button class="btn btn-primary btn-sm" id="char-world-go-btn" onclick="CharactersPage._doGenerateWorldInteractions()">Generate</button>
-      <button class="btn btn-secondary btn-sm" onclick="CharactersPage.generateWorldInteractions()">Close</button>
+      <button class="btn btn-primary btn-sm" id="char-world-go-btn" data-action="_doGenerateWorldInteractions">Generate</button>
+      <button class="btn btn-secondary btn-sm" data-action="generateWorldInteractions">Close</button>
     </div>
   `;
   toolbar.insertAdjacentElement('afterend', panel);

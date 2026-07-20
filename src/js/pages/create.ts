@@ -184,7 +184,7 @@ async function renderSetup() {
     <div class="slide-up">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <h2 class="section-title" style="margin:0;">Create New Comic</h2>
-        ${hasDraft ? `<button class="btn btn-sm btn-secondary" onclick="CreatePage.resetSetup()" title="Clear all setup and start fresh">&#x1F5D1; New Comic</button>` : ''}
+        ${hasDraft ? `<button class="btn btn-sm btn-secondary" data-action="resetSetup" title="Clear all setup and start fresh">&#x1F5D1; New Comic</button>` : ''}
       </div>
 
       <!-- Step 1: Genre -->
@@ -193,7 +193,7 @@ async function renderSetup() {
         <div class="genre-grid" id="genre-grid">
           ${GENRES.map(
             (g) => `
-            <div class="genre-card ${state.genre === g.id ? 'active' : ''}" data-genre="${g.id}" onclick="CreatePage.selectGenre('${g.id}')">
+            <div class="genre-card ${state.genre === g.id ? 'active' : ''}" data-genre="${g.id}" data-action="selectGenre" data-args="${escHtml(JSON.stringify([g.id]))}">
               <span class="genre-emoji">${g.emoji}</span>
               ${g.name}
             </div>
@@ -204,7 +204,7 @@ async function renderSetup() {
           state.genre === 'custom'
             ? `
           <div class="form-group mt-sm">
-            <input type="text" id="custom-genre" value="${escHtml(state.customGenre)}" placeholder="Enter your custom genre..." onchange="CreatePage.setCustomGenre(this.value)">
+            <input type="text" id="custom-genre" value="${escHtml(state.customGenre)}" placeholder="Enter your custom genre..." data-action-change="setCustomGenre">
           </div>
         `
             : ''
@@ -218,14 +218,14 @@ async function renderSetup() {
           characters.length === 0
             ? `
           <p class="text-sm text-muted mb-sm">No characters created yet.</p>
-          <button class="btn btn-sm btn-secondary" onclick="App.navigate('characters', 'new')">Create Character</button>
+          <button class="btn btn-sm btn-secondary" data-navigate="characters" data-param="new">Create Character</button>
         `
             : `
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${characters
               .map(
                 (c) => `
-              <div class="chip ${state.selectedCharacters.includes(c.id) ? 'active' : ''}" onclick="CreatePage.toggleCharacter('${c.id}')">
+              <div class="chip ${state.selectedCharacters.includes(c.id) ? 'active' : ''}" data-action="toggleCharacter" data-args="${escHtml(JSON.stringify([c.id]))}">
                 ${escHtml(c.name)}
               </div>
             `,
@@ -244,15 +244,15 @@ async function renderSetup() {
           worlds.length === 0
             ? `
           <p class="text-sm text-muted mb-sm">No worlds created yet.</p>
-          <button class="btn btn-sm btn-secondary" onclick="App.navigate('worlds', 'new')">Create World</button>
+          <button class="btn btn-sm btn-secondary" data-navigate="worlds" data-param="new">Create World</button>
         `
             : `
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            <div class="chip ${!state.selectedWorld ? 'active' : ''}" onclick="CreatePage.selectWorld(null)">None</div>
+            <div class="chip ${!state.selectedWorld ? 'active' : ''}" data-action="selectWorld" data-args="[null]">None</div>
             ${worlds
               .map(
                 (w) => `
-              <div class="chip ${state.selectedWorld === w.id ? 'active' : ''}" onclick="CreatePage.selectWorld('${w.id}')">
+              <div class="chip ${state.selectedWorld === w.id ? 'active' : ''}" data-action="selectWorld" data-args="${escHtml(JSON.stringify([w.id]))}">
                 ${escHtml(w.name)}
               </div>
             `,
@@ -267,11 +267,11 @@ async function renderSetup() {
       <div class="card">
         <h3 class="card-title mb-sm">4. Prompt Preset (optional)</h3>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          <div class="chip ${!state.selectedPreset ? 'active' : ''}" onclick="CreatePage.selectPreset(null)">Default</div>
+          <div class="chip ${!state.selectedPreset ? 'active' : ''}" data-action="selectPreset" data-args="[null]">Default</div>
           ${presets
             .map(
               (p) => `
-            <div class="chip ${state.selectedPreset === p.id ? 'active' : ''}" onclick="CreatePage.selectPreset('${p.id}')">
+            <div class="chip ${state.selectedPreset === p.id ? 'active' : ''}" data-action="selectPreset" data-args="${escHtml(JSON.stringify([p.id]))}">
               ${escHtml(p.name)}
             </div>
           `,
@@ -284,11 +284,11 @@ async function renderSetup() {
       <div class="card">
         <h3 class="card-title mb-sm">5. Image Style Preset (optional)</h3>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          <div class="chip ${!state.selectedImagePreset ? 'active' : ''}" onclick="CreatePage.selectImagePreset(null)">Default</div>
+          <div class="chip ${!state.selectedImagePreset ? 'active' : ''}" data-action="selectImagePreset" data-args="[null]">Default</div>
           ${imagePresets
             .map(
               (p) => `
-            <div class="chip ${state.selectedImagePreset === p.id ? 'active' : ''}" onclick="CreatePage.selectImagePreset('${p.id}')">
+            <div class="chip ${state.selectedImagePreset === p.id ? 'active' : ''}" data-action="selectImagePreset" data-args="${escHtml(JSON.stringify([p.id]))}">
               ${escHtml(p.name)}
             </div>
           `,
@@ -296,7 +296,7 @@ async function renderSetup() {
             .join('')}
         </div>
         <div class="form-hint" style="margin-top:8px;">
-          <a href="#" onclick="event.preventDefault();App.navigate('image-presets')">Manage image style presets</a>
+          <a href="#" data-navigate="image-presets">Manage image style presets</a>
         </div>
       </div>
 
@@ -305,16 +305,16 @@ async function renderSetup() {
         <h3 class="card-title mb-sm">6. Story Setup</h3>
         <div class="form-group">
           <label class="form-label">Comic Title</label>
-          <input type="text" id="comic-title" value="${escHtml(state.title)}" placeholder="e.g. The Last Guardian" oninput="CreatePage.setTitle(this.value)">
+          <input type="text" id="comic-title" value="${escHtml(state.title)}" placeholder="e.g. The Last Guardian" data-action-input="setTitle">
         </div>
         <div class="form-group">
           <label class="form-label">Opening Prompt</label>
-          <textarea id="story-prompt" rows="4" placeholder="Describe how you want the story to begin... (Leave blank for AI to decide)" oninput="CreatePage.setStoryPrompt(this.value)">${escHtml(state.storyPrompt)}</textarea>
+          <textarea id="story-prompt" rows="4" placeholder="Describe how you want the story to begin... (Leave blank for AI to decide)" data-action-input="setStoryPrompt">${escHtml(state.storyPrompt)}</textarea>
           <div class="form-hint">Be specific or leave blank for a surprise</div>
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block" onclick="CreatePage.startGenerating()" ${!state.genre ? 'disabled' : ''}>
+      <button class="btn btn-primary btn-block" data-action="startGenerating" ${!state.genre ? 'disabled' : ''}>
         Generate First Page
       </button>
     </div>
@@ -340,26 +340,26 @@ function renderInitialStateSection(characters: any[], plannerEnabled: boolean): 
           <div class="continuity-char-name">${escHtml(c.name)}</div>
           <input type="text" class="continuity-field" placeholder="Use identity-anchor outfit"
             value="${escHtml(val('wardrobe', dvs.wardrobeDescription || ''))}"
-            oninput="CreatePage.setInitialState('${cid}','wardrobe',this.value)" title="Opening wardrobe for this comic">
+            data-action-input="setInitialState" data-args="${escHtml(JSON.stringify([cid, 'wardrobe']))}" title="Opening wardrobe for this comic">
           <input type="text" class="continuity-field mt-sm" placeholder="Hair state"
             value="${escHtml(val('hair', dvs.hairState || ''))}"
-            oninput="CreatePage.setInitialState('${cid}','hair',this.value)">
+            data-action-input="setInitialState" data-args="${escHtml(JSON.stringify([cid, 'hair']))}">
           <input type="text" class="continuity-field mt-sm" placeholder="Carried items (comma-separated)"
             value="${escHtml(val('items', (dvs.carriedItems || []).join(', ')))}"
-            oninput="CreatePage.setInitialState('${cid}','items',this.value)">
+            data-action-input="setInitialState" data-args="${escHtml(JSON.stringify([cid, 'items']))}">
           <input type="text" class="continuity-field mt-sm" placeholder="Injuries (comma-separated)"
             value="${escHtml(val('injuries', (dvs.injuries || []).join(', ')))}"
-            oninput="CreatePage.setInitialState('${cid}','injuries',this.value)">
+            data-action-input="setInitialState" data-args="${escHtml(JSON.stringify([cid, 'injuries']))}">
           <input type="text" class="continuity-field mt-sm" placeholder="Temporary changes (comma-separated)"
             value="${escHtml(val('temporary', (dvs.temporaryChanges || []).join(', ')))}"
-            oninput="CreatePage.setInitialState('${cid}','temporary',this.value)">
+            data-action-input="setInitialState" data-args="${escHtml(JSON.stringify([cid, 'temporary']))}">
         </div>`;
     })
     .join('');
   if (!rows) return '';
   return `
     <div class="mt-sm">
-      <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
+      <div class="collapsible-header collapsed" data-action="toggleAdvanced">
         <h3 class="card-title" style="margin:0;">Initial Visual State (optional)</h3>
       </div>
       <div class="collapsible-body collapsed">
@@ -370,10 +370,10 @@ function renderInitialStateSection(characters: any[], plannerEnabled: boolean): 
 }
 
 /** Record a per-comic initial-state override from the setup form. */
-function setInitialState(charId: string, field: string, value: string): void {
+function setInitialState(charId: string, field: string, input: any): void {
   state.initialVisualOverrides = state.initialVisualOverrides || {};
   state.initialVisualOverrides[charId] = state.initialVisualOverrides[charId] || {};
-  state.initialVisualOverrides[charId][field] = value;
+  state.initialVisualOverrides[charId][field] = input.value;
   scheduleDraftSave();
 }
 
@@ -428,7 +428,7 @@ function renderGenerating() {
             : ''
         }</p>
         <p id="gen-slow" class="generation-slow hidden"></p>
-        <button class="btn btn-secondary btn-sm mt-sm" onclick="CreatePage.cancelGeneration()">Cancel</button>
+        <button class="btn btn-secondary btn-sm mt-sm" data-action="cancelGeneration">Cancel</button>
       </div>
       <details id="gen-stream" class="card generation-story-response" ${state.generatingContext === 'reimage' ? 'hidden' : ''}>
         <summary id="gen-stream-title">Story response</summary>
@@ -449,9 +449,9 @@ function renderReading() {
         <h2 class="section-title" style="margin:0;">${escHtml(state.title || 'Untitled Comic')}</h2>
         <div style="display:flex;align-items:center;gap:6px;">
           <span class="text-sm text-muted">Page ${pages.length}</span>
-          <button class="btn btn-sm btn-secondary" onclick="CreatePage.rerollPage()" ${state.isGenerating ? 'disabled' : ''} title="Regenerate this page with different content">&#x1F3B2; Re-roll</button>
-          <button class="btn btn-sm btn-secondary" onclick="CreatePage.rerollImages()" ${state.isGenerating ? 'disabled' : ''} title="Regenerate images only — keep the story text">&#x1F5BC; Re-images</button>
-          ${canUndo ? `<button class="btn btn-sm btn-secondary" onclick="CreatePage.undoChoice()" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}
+          <button class="btn btn-sm btn-secondary" data-action="rerollPage" ${state.isGenerating ? 'disabled' : ''} title="Regenerate this page with different content">&#x1F3B2; Re-roll</button>
+          <button class="btn btn-sm btn-secondary" data-action="rerollImages" ${state.isGenerating ? 'disabled' : ''} title="Regenerate images only — keep the story text">&#x1F5BC; Re-images</button>
+          ${canUndo ? `<button class="btn btn-sm btn-secondary" data-action="undoChoice" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}
         </div>
       </div>
 
@@ -472,7 +472,7 @@ function renderReading() {
             ${currentPage.choices
               .map(
                 (choice, i) => `
-              <button class="choice-btn" onclick="CreatePage.makeChoice(${i})" ${state.isGenerating ? 'disabled' : ''}>
+              <button class="choice-btn" data-action="makeChoice" data-args="[${i}]" ${state.isGenerating ? 'disabled' : ''}>
                 <strong>Option ${i + 1}:</strong> ${escHtml(choice.text)}
               </button>
             `,
@@ -493,10 +493,10 @@ function renderReading() {
           <textarea id="custom-direction" rows="2" placeholder="Write your own direction for the next page..."></textarea>
         </div>
         <div class="btn-group">
-          <button class="btn btn-primary" onclick="CreatePage.continueStory()" ${state.isGenerating ? 'disabled' : ''}>
+          <button class="btn btn-primary" data-action="continueStory" ${state.isGenerating ? 'disabled' : ''}>
             ${state.isGenerating ? 'Generating...' : 'Continue Story'}
           </button>
-          <button class="btn btn-secondary" onclick="CreatePage.finishComic()">Finish Comic</button>
+          <button class="btn btn-secondary" data-action="finishComic">Finish Comic</button>
         </div>
       </div>
 
@@ -505,7 +505,7 @@ function renderReading() {
         pages.length > 1
           ? `
         <div class="card">
-          <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
+          <div class="collapsible-header collapsed" data-action="toggleAdvanced">
             <h3 class="card-title" style="margin:0;">Previous Pages (${pages.length - 1})</h3>
           </div>
           <div class="collapsible-body collapsed">
@@ -541,8 +541,8 @@ function renderGenerationSummary(page) {
     <strong>${created} of ${imagePanels.length} images were created.</strong>
     <p class="text-sm text-muted">The story and completed images were saved. Missing panels: ${missing.map((index) => index + 1).join(', ')}.</p>
     <div class="btn-group">
-      <button class="btn btn-primary btn-sm" onclick="CreatePage.retryMissingImages()">Retry missing images</button>
-      <button class="btn btn-secondary btn-sm" onclick="CreatePage.copyGenerationDetails()">Copy details</button>
+      <button class="btn btn-primary btn-sm" data-action="retryMissingImages">Retry missing images</button>
+      <button class="btn btn-secondary btn-sm" data-action="copyGenerationDetails">Copy details</button>
     </div>
   </div>`;
 }
@@ -556,7 +556,7 @@ function renderComicPage(page: any): string {
     <div class="comic-panel">
       ${
         panel.imageUrl
-          ? `<img src="${panel.imageUrl}" alt="Panel ${i + 1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;" onclick="CreatePage.zoomPanel(${i})">`
+          ? `<img src="${panel.imageUrl}" alt="Panel ${i + 1}" loading="lazy" class="zoomable-panel" style="cursor:zoom-in;" data-action="zoomPanel" data-args="[${i}]">`
           : panel.generationError
             ? `<div class="panel-gen-error"><strong>&#9888; Image not generated</strong><br>${escHtml(panel.generationError)}</div>`
             : panel.imagePrompt
@@ -631,13 +631,13 @@ function renderContinuityPanel(currentPage: any): string {
 
   return `
     <div class="card">
-      <div class="collapsible-header collapsed" onclick="CreatePage.toggleAdvanced(this)">
+      <div class="collapsible-header collapsed" data-action="toggleAdvanced">
         <h3 class="card-title" style="margin:0;">Continuity</h3>
       </div>
       <div class="collapsible-body collapsed">
         <p class="text-sm text-muted">Current visual state used for the next page. Edit to correct clothing or details before continuing.</p>
         ${charRows}
-        <button class="btn btn-secondary btn-sm" onclick="CreatePage.saveContinuityEdits()">Apply State Edits</button>
+        <button class="btn btn-secondary btn-sm" data-action="saveContinuityEdits">Apply State Edits</button>
         ${genDetails}
       </div>
     </div>`;
@@ -766,13 +766,13 @@ async function renderResume(comicId: string): Promise<string> {
 
 // --- User Actions ---
 
-function setTitle(value: string): void {
-  state.title = value;
+function setTitle(input: any): void {
+  state.title = input.value;
   scheduleDraftSave();
 }
 
-function setStoryPrompt(value: string): void {
-  state.storyPrompt = value;
+function setStoryPrompt(input: any): void {
+  state.storyPrompt = input.value;
   scheduleDraftSave();
 }
 
@@ -857,8 +857,8 @@ function selectGenre(id: string): void {
   }
 }
 
-function setCustomGenre(value: string): void {
-  state.customGenre = value;
+function setCustomGenre(input: any): void {
+  state.customGenre = input.value;
   scheduleDraftSave();
 }
 
@@ -1633,12 +1633,13 @@ function retryMissingImages() {
     <p>A previous provider job may still complete or incur cost. This action submits only the panels that still have no usable image.</p>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="App.hideModal();CreatePage.confirmRetryMissingImages()">Retry missing</button>
+      <button class="btn btn-primary btn-sm" data-action="confirmRetryMissingImages">Retry missing</button>
     </div>
   `);
 }
 
 async function confirmRetryMissingImages() {
+  App.hideModal();
   if (state.isGenerating || state.pages.length === 0) return;
   const pageIndex = state.pages.length - 1;
   const page = state.pages[pageIndex];

@@ -12,16 +12,16 @@ import API from './api.js';
  * `createGalleryEditor(config)` returns the gallery functions plus a mutable
  * `state` object the owning page initializes in its renderEditor() and reads
  * back in its save handler. All DOM ids follow the `${idPrefix}-*` naming both
- * pages already use (`char-img-gallery`, `world-img-toolbar`, ...), and all
- * generated onclick strings target `config.page` (the window global, e.g.
- * `CharactersPage`), so the page's public method names must stay stable.
+ * pages already use (`char-img-gallery`, `world-img-toolbar`, ...). Generated
+ * markup uses data-action attributes resolved against the current page module
+ * by app.ts's delegated dispatcher, so the page's public method names must
+ * stay stable.
  */
 
 export const MAX_IMAGES: number = 20;
 
 /**
  * config fields:
- * - page: window-global page name used in generated onclick strings
  * - idPrefix: DOM id prefix ('char' | 'world')
  * - imageTags: tag options for the per-image <select>
  * - defaultTag: tag assigned to newly created image slots
@@ -87,25 +87,25 @@ export function createGalleryEditor(config) {
         const isAnchor = !!img.id && img.id === state.anchorImageId;
         return `
     <div class="char-img-slot" data-idx="${i}">
-      <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" onclick="${config.page}.pickImageForSlot(${i})">
+      <div class="char-img-slot-preview ${!img.dataUrl ? 'char-img-slot-empty' : ''}" data-action="pickImageForSlot" data-args="[${i}]">
         ${img.dataUrl ? `<img src="${escHtml(img.dataUrl)}" alt="Ref ${i + 1}">` : '<span>&#128247; Upload</span>'}
         ${isAnchor ? `<span class="char-img-anchor-badge" title="${config.anchorBadgeTitle}">&#9875; Anchor</span>` : ''}
       </div>
       <div class="char-img-meta">
         <div style="display:flex;align-items:center;gap:6px;">
-          <select class="char-img-tag" data-idx="${i}" onchange="${config.page}.updateTag(${i},this.value)" style="flex:1;">
+          <select class="char-img-tag" data-idx="${i}" data-action-change="updateTag" data-args="[${i}]" style="flex:1;">
             ${config.imageTags.map((t) => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
           </select>
           ${embBadge}
         </div>
-        <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="${config.descPlaceholder}" oninput="${config.page}.updateDesc(${i},this.value)">
+        <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="${config.descPlaceholder}" data-action-input="updateDesc" data-args="[${i}]">
         ${config.slotExtraInputs ? config.slotExtraInputs(img, i) : ''}
         <div class="char-img-actions">
-          <button class="char-img-primary ${i === state.primaryIndex ? 'active' : ''}" title="Set as thumbnail" onclick="${config.page}.setPrimary(${i})">&#11088;</button>
-          ${img.dataUrl ? `<button class="char-img-anchor ${isAnchor ? 'active' : ''}" title="${config.anchorButtonTitle}" onclick="${config.page}.setAnchor(${i})">&#9875;</button>` : ''}
-          ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" onclick="${config.page}.recaptionImage(${i})">&#128221;</button>` : ''}
-          ${img.dataUrl && img.aiGenerated ? `<button class="char-img-regen" title="Regenerate this reference" onclick="${config.page}.regenerateImage(${i})">&#128260;</button>` : ''}
-          <button class="char-img-delete" title="Remove" onclick="${config.page}.removeImage(${i})">&#x2715;</button>
+          <button class="char-img-primary ${i === state.primaryIndex ? 'active' : ''}" title="Set as thumbnail" data-action="setPrimary" data-args="[${i}]">&#11088;</button>
+          ${img.dataUrl ? `<button class="char-img-anchor ${isAnchor ? 'active' : ''}" title="${config.anchorButtonTitle}" data-action="setAnchor" data-args="[${i}]">&#9875;</button>` : ''}
+          ${img.dataUrl ? `<button class="char-img-caption" title="Auto-caption this image" data-action="recaptionImage" data-args="[${i}]">&#128221;</button>` : ''}
+          ${img.dataUrl && img.aiGenerated ? `<button class="char-img-regen" title="Regenerate this reference" data-action="regenerateImage" data-args="[${i}]">&#128260;</button>` : ''}
+          <button class="char-img-delete" title="Remove" data-action="removeImage" data-args="[${i}]">&#x2715;</button>
         </div>
       </div>
     </div>
@@ -127,11 +127,11 @@ export function createGalleryEditor(config) {
       const hasImages = state.images.some((img) => img.dataUrl);
       let btns = '';
       if (state.images.length < MAX_IMAGES) {
-        btns += `<button class="btn btn-secondary btn-sm" onclick="${config.page}.addImageSlot()">+ Add Image</button>`;
+        btns += '<button class="btn btn-secondary btn-sm" data-action="addImageSlot">+ Add Image</button>';
       }
       if (hasImages) {
-        btns += `<button class="btn btn-secondary btn-sm" id="${config.idPrefix}-caption-all-btn" onclick="${config.page}.recaptionAll()">&#128221; Caption All</button>`;
-        btns += `<button class="btn btn-secondary btn-sm" id="${config.idPrefix}-gen-refs-btn" onclick="${config.page}.generateReferences()" title="Generate reference images from your uploaded image">&#127912; Generate References</button>`;
+        btns += `<button class="btn btn-secondary btn-sm" id="${config.idPrefix}-caption-all-btn" data-action="recaptionAll">&#128221; Caption All</button>`;
+        btns += `<button class="btn btn-secondary btn-sm" id="${config.idPrefix}-gen-refs-btn" data-action="generateReferences" title="Generate reference images from your uploaded image">&#127912; Generate References</button>`;
       }
       if (config.toolbarExtraHtml) btns += config.toolbarExtraHtml(hasImages);
       toolbar.innerHTML = btns;
@@ -159,8 +159,9 @@ export function createGalleryEditor(config) {
     document.getElementById(`${config.idPrefix}-img-input`).click();
   }
 
-  async function handleImage(event: any): Promise<void> {
-    const file = event.target.files[0];
+  /** Change handler for the hidden file input; `input` is the matched element. */
+  async function handleImage(input: any): Promise<void> {
+    const file = input.files[0];
     if (!file) {
       // File picker was cancelled — remove the empty slot created by addImageSlot()
       if (
@@ -188,7 +189,7 @@ export function createGalleryEditor(config) {
     }
     refreshGallery();
     // Reset file input so same file can be re-picked
-    event.target.value = '';
+    input.value = '';
 
     // Auto-caption: if the slot has no description, generate one via vision model
     const img = state.images[idx];
@@ -221,7 +222,7 @@ export function createGalleryEditor(config) {
     if (!img || !img.dataUrl) return App.toast('No image to caption', 'error');
 
     const descInput = document.querySelector(`.char-img-desc[data-idx="${idx}"]`);
-    const captionBtn = document.querySelector(`.char-img-caption[onclick*="recaptionImage(${idx})"]`);
+    const captionBtn = document.querySelector(`.char-img-slot[data-idx="${idx}"] .char-img-caption`);
     if (descInput) {
       descInput.disabled = true;
       descInput.placeholder = 'Generating caption…';
@@ -347,8 +348,8 @@ export function createGalleryEditor(config) {
     <textarea id="${config.idPrefix}-ref-prompt" class="gen-ref-prompt" placeholder="Describe the reference image you want to generate…">${escHtml(config.resolveRefPrompt(variations[0]))}</textarea>
     <div class="gen-ref-hint" id="${config.idPrefix}-ref-slots">${slotsAvailable} image slot${slotsAvailable !== 1 ? 's' : ''} available</div>
     <div class="gen-ref-actions">
-      <button class="btn btn-primary btn-sm" id="${config.idPrefix}-ref-go-btn" onclick="${config.page}._doGenerateReferences()">Generate</button>
-      <button class="btn btn-secondary btn-sm" onclick="${config.page}.generateReferences()">Close</button>
+      <button class="btn btn-primary btn-sm" id="${config.idPrefix}-ref-go-btn" data-action="_doGenerateReferences">Generate</button>
+      <button class="btn btn-secondary btn-sm" data-action="generateReferences">Close</button>
     </div>
   `;
     toolbar.insertAdjacentElement('afterend', panel);
@@ -471,17 +472,17 @@ export function createGalleryEditor(config) {
     }
   }
 
-  function updateTag(idx: number, value: string): void {
+  function updateTag(idx: number, select: any): void {
     if (state.images[idx]) {
-      state.images[idx].tag = value;
+      state.images[idx].tag = select.value;
       state.images[idx].embedding = null; // tag is part of enriched embedding text
       state.images[idx].embeddingText = null;
     }
   }
 
-  function updateDesc(idx: number, value: string): void {
+  function updateDesc(idx: number, input: any): void {
     if (state.images[idx]) {
-      state.images[idx].description = value;
+      state.images[idx].description = input.value;
       state.images[idx].embedding = null; // invalidate stale embedding
       state.images[idx].embeddingText = null;
     }
@@ -559,7 +560,7 @@ export async function renderEntityList(cfg): Promise<string> {
           <h2 class="section-title" style="margin-bottom:4px;">${cfg.title}</h2>
           <p class="text-sm text-muted">${cfg.subtitle}</p>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="${cfg.page}.${cfg.newMethod}()">+ New</button>
+        <button class="btn btn-primary btn-sm" data-action="${cfg.newMethod}">+ New</button>
       </div>
 
       ${
@@ -568,7 +569,7 @@ export async function renderEntityList(cfg): Promise<string> {
         <div class="empty-state">
           <div class="empty-state-icon">${cfg.emptyIcon}</div>
           <div class="empty-state-text">${cfg.emptyText}</div>
-          <button class="btn btn-primary" onclick="${cfg.page}.${cfg.newMethod}()">${cfg.emptyButtonLabel}</button>
+          <button class="btn btn-primary" data-action="${cfg.newMethod}">${cfg.emptyButtonLabel}</button>
         </div>
       `
           : records.map((r) => cfg.listItem(r)).join('')
@@ -596,14 +597,14 @@ export async function exportEntityRecord(cfg, id: string): Promise<void> {
   App.toast(`${cfg.label} exported!`, 'success');
 }
 
-/** Confirmation modal for deleting an entity; confirms via ${page}.confirmDelete(id). */
+/** Confirmation modal for deleting an entity; confirms via the page's confirmDelete action. */
 export function showDeleteEntityModal(cfg, id: string, name: string): void {
   App.showModal(`
     <div class="modal-title">Delete ${cfg.label}</div>
     <p>Are you sure you want to delete <strong>${escHtml(name)}</strong>?</p>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="${cfg.page}.confirmDelete('${id}')">Delete</button>
+      <button class="btn btn-danger btn-sm" data-action="confirmDelete" data-args="${escHtml(JSON.stringify([id]))}">Delete</button>
     </div>
   `);
 }

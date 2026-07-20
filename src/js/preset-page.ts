@@ -6,12 +6,12 @@ import DB from './db.js';
  * Shared page factory for the two preset pages (Prompt Presets and Image Style
  * Presets). Both pages are the same list/edit CRUD flow over a DB store; the
  * per-page pieces — list card markup, editor form, and field collection — are
- * injected via config. Generated onclick strings target `cfg.page` (the window
- * global, e.g. `PresetsPage`), so the returned method names must stay stable.
+ * injected via config. Generated markup uses data-action attributes resolved
+ * against the current page module by app.ts's delegated dispatcher, so the
+ * returned method names must stay stable.
  *
  * config fields:
  * - store: DB store name
- * - page: window-global page name used in generated onclick strings
  * - navKey: App.navigate() page key ('presets' | 'image-presets')
  * - label: entity label for toasts ('Preset' | 'Image preset')
  * - deleteModalTitle: title of the delete confirmation modal
@@ -54,7 +54,7 @@ export function createPresetPage(cfg) {
           <h2 class="section-title" style="margin-bottom:4px;">${cfg.title}</h2>
           <p class="text-sm text-muted">${cfg.subtitle}</p>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="${cfg.page}.newPreset()">+ New</button>
+        <button class="btn btn-primary btn-sm" data-action="newPreset">+ New</button>
       </div>
 
       ${
@@ -63,7 +63,7 @@ export function createPresetPage(cfg) {
         <div class="empty-state">
           <div class="empty-state-icon">${cfg.emptyIcon}</div>
           <div class="empty-state-text">${cfg.emptyText}</div>
-          <button class="btn btn-primary" onclick="${cfg.page}.newPreset()">Create Preset</button>
+          <button class="btn btn-primary" data-action="newPreset">Create Preset</button>
         </div>
       `
           : presets.map((p) => cfg.listItem(p)).join('')
@@ -116,7 +116,7 @@ export function createPresetPage(cfg) {
     <p>Delete preset <strong>${escHtml(name)}</strong>?</p>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="${cfg.page}.confirmDelete('${id}')">Delete</button>
+      <button class="btn btn-danger btn-sm" data-action="confirmDelete" data-args="${escHtml(JSON.stringify([id]))}">Delete</button>
     </div>
   `);
   }

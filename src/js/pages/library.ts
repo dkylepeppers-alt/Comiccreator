@@ -40,14 +40,14 @@ function renderComicItems(filtered: any[]): string {
     return `
       <div class="empty-state">
         <div class="empty-state-text">No comics match your search.</div>
-        <button class="btn btn-secondary btn-sm" onclick="LibraryPage.clearFilter()">Clear Filter</button>
+        <button class="btn btn-secondary btn-sm" data-action="clearFilter">Clear Filter</button>
       </div>
     `;
   }
   return filtered
     .map(
       (c) => `
-    <div class="list-item" onclick="App.navigate('library', '${c.id}')">
+    <div class="list-item" data-navigate="library" data-param="${c.id}">
       <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
       <div class="list-item-info">
         <div class="list-item-title">${escHtml(c.title || '')}</div>
@@ -58,7 +58,7 @@ function renderComicItems(filtered: any[]): string {
         </div>
       </div>
       <div class="list-item-actions">
-        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();LibraryPage.deleteComic('${c.id}','${escHtml(c.title || '')}')">&#128465;</button>
+        <button class="btn btn-sm btn-danger" data-action="deleteComic" data-args="${escHtml(JSON.stringify([c.id, c.title || '']))}">&#128465;</button>
       </div>
     </div>
   `,
@@ -70,8 +70,8 @@ function renderComicItems(filtered: any[]): string {
  * Update the search query and re-render only the list container in-place,
  * preserving input focus and caret position.
  */
-function setSearch(query: string): void {
-  _searchQuery = query;
+function setSearch(input: any): void {
+  _searchQuery = input.value;
   const container = document.getElementById('library-comics-list');
   if (container) {
     container.innerHTML = renderComicItems(applyFilter(_allComics));
@@ -80,8 +80,8 @@ function setSearch(query: string): void {
   }
 }
 
-function setGenre(genre: string): void {
-  _genreFilter = genre;
+function setGenre(select: any): void {
+  _genreFilter = select.value;
   App.refreshPage();
 }
 
@@ -110,12 +110,12 @@ async function renderList() {
           ? `
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <input type="search" placeholder="Search..." value="${escHtml(_searchQuery)}"
-            oninput="LibraryPage.setSearch(this.value)"
+            data-action-input="setSearch"
             style="flex:1;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;">
           ${
             usedGenres.length > 1
               ? `
-            <select onchange="LibraryPage.setGenre(this.value)"
+            <select data-action-change="setGenre"
               style="padding:8px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:0.9rem;">
               <option value="" ${!_genreFilter ? 'selected' : ''}>All Genres</option>
               ${usedGenres.map((g) => `<option value="${g.id}" ${_genreFilter === g.id ? 'selected' : ''}>${escHtml(g.name)}</option>`).join('')}
@@ -134,7 +134,7 @@ async function renderList() {
         <div class="empty-state">
           <div class="empty-state-icon">&#128214;</div>
           <div class="empty-state-text">No comics yet. Create your first one!</div>
-          <button class="btn btn-primary" onclick="App.navigate('create')">Create Comic</button>
+          <button class="btn btn-primary" data-navigate="create">Create Comic</button>
         </div>
       `
           : `<div id="library-comics-list">${renderComicItems(filtered)}</div>`
@@ -153,7 +153,7 @@ async function renderComic(comicId: string): Promise<string> {
   return `
     <div class="slide-up">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <button class="btn btn-sm btn-secondary" onclick="LibraryPage.backToList()">&#8592; Back</button>
+        <button class="btn btn-sm btn-secondary" data-action="backToList">&#8592; Back</button>
         <div style="flex:1;">
           <h2 class="section-title" style="margin:0;">${escHtml(comic.title)}</h2>
           <p class="text-sm text-muted">${escHtml(comic.genreName || comic.genre)} &middot; ${pages.length} pages</p>
@@ -162,9 +162,9 @@ async function renderComic(comicId: string): Promise<string> {
 
       <!-- Actions -->
       <div class="btn-group mb-md" style="flex-wrap:wrap;">
-        ${!comic.finished ? `<button class="btn btn-primary btn-sm" onclick="App.navigate('create', '${comic.id}')">Continue Story</button>` : ''}
-        <button class="btn btn-secondary btn-sm" onclick="LibraryPage.exportPDF('${comic.id}')">Export PDF</button>
-        <button class="btn btn-danger btn-sm" onclick="LibraryPage.deleteComic('${comic.id}','${escHtml(comic.title)}')">Delete</button>
+        ${!comic.finished ? `<button class="btn btn-primary btn-sm" data-navigate="create" data-param="${comic.id}">Continue Story</button>` : ''}
+        <button class="btn btn-secondary btn-sm" data-action="exportPDF" data-args="${escHtml(JSON.stringify([comic.id]))}">Export PDF</button>
+        <button class="btn btn-danger btn-sm" data-action="deleteComic" data-args="${escHtml(JSON.stringify([comic.id, comic.title]))}">Delete</button>
       </div>
 
       <!-- Comic Pages -->
@@ -175,7 +175,7 @@ async function renderComic(comicId: string): Promise<string> {
           <div class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
               <span class="card-title">Page ${i + 1}${p.data?.title ? ': ' + escHtml(p.data.title) : ''}</span>
-              <button class="btn btn-sm btn-secondary" onclick="LibraryPage.downloadPageImage(${i})">&#128247; Save Image</button>
+              <button class="btn btn-sm btn-secondary" data-action="downloadPageImage" data-args="[${i}]">&#128247; Save Image</button>
             </div>
             <div class="comic-page${p.data?.panels?.length >= 3 ? ' layout-grid' : ''}">
               ${renderPanels(p.data)}
@@ -263,7 +263,7 @@ async function deleteComic(id: string, title: string): Promise<void> {
     <p>Delete <strong>${escHtml(title)}</strong> and all its pages?</p>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="LibraryPage.confirmDelete('${id}')">Delete</button>
+      <button class="btn btn-danger btn-sm" data-action="confirmDelete" data-args="${escHtml(JSON.stringify([id]))}">Delete</button>
     </div>
   `);
 }

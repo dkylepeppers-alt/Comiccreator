@@ -67,7 +67,7 @@ async function render() {
           <label class="form-label">NanoGPT API Key *</label>
           <input type="password" id="set-apikey" value="${escHtml(apiKey)}" placeholder="Enter your NanoGPT API key">
           <div class="form-hint">Get your key from <a href="https://nano-gpt.com" target="_blank">nano-gpt.com</a></div>
-          <button class="btn btn-secondary btn-sm" id="test-conn-btn" onclick="SettingsPage.testConnection()" style="margin-top:8px;">Test Connection</button>
+          <button class="btn btn-secondary btn-sm" id="test-conn-btn" data-action="testConnection" style="margin-top:8px;">Test Connection</button>
         </div>
 
         <!-- Text Model Picker -->
@@ -75,13 +75,13 @@ async function render() {
           <label class="form-label">Text Model</label>
           <input type="hidden" id="set-model" value="${escHtml(model)}">
           <div class="model-picker" id="text-model-picker">
-            <div class="model-picker-selected" onclick="SettingsPage.togglePicker('text')">
+            <div class="model-picker-selected" data-action="togglePicker" data-args='["text"]'>
               <span id="text-model-display">${escHtml(model)}</span>
               <span class="model-picker-arrow">&#9662;</span>
             </div>
             <div class="model-picker-dropdown hidden" id="text-model-dropdown">
               <div class="model-picker-search-wrap">
-                <input type="text" class="model-picker-search" id="text-model-search" placeholder="Search 500+ models..." oninput="SettingsPage.filterModels('text', this.value)">
+                <input type="text" class="model-picker-search" id="text-model-search" placeholder="Search 500+ models..." data-action-input="filterModels" data-args='["text"]'>
               </div>
               <div class="model-picker-status" id="text-model-status">Loading models...</div>
               <div class="model-picker-list" id="text-model-list"></div>
@@ -89,7 +89,7 @@ async function render() {
           </div>
           <div class="form-hint">
             <span id="text-model-count">--</span> models available &middot;
-            <button class="btn-link" onclick="SettingsPage.refreshModels('text')">Refresh list</button>
+            <button class="btn-link" data-action="refreshModels" data-args='["text"]'>Refresh list</button>
           </div>
         </div>
 
@@ -98,13 +98,13 @@ async function render() {
           <label class="form-label">Image Model</label>
           <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
           <div class="model-picker" id="image-model-picker">
-            <div class="model-picker-selected" onclick="SettingsPage.togglePicker('image')">
+            <div class="model-picker-selected" data-action="togglePicker" data-args='["image"]'>
               <span id="image-model-display">${imageModel ? escHtml(imageModel) : 'Select a model\u2026'}</span>
               <span class="model-picker-arrow">&#9662;</span>
             </div>
             <div class="model-picker-dropdown hidden" id="image-model-dropdown">
               <div class="model-picker-search-wrap">
-                <input type="text" class="model-picker-search" id="image-model-search" placeholder="Search image models..." oninput="SettingsPage.filterModels('image', this.value)">
+                <input type="text" class="model-picker-search" id="image-model-search" placeholder="Search image models..." data-action-input="filterModels" data-args='["image"]'>
               </div>
               <div class="model-picker-status" id="image-model-status">Loading models...</div>
               <div class="model-picker-list" id="image-model-list"></div>
@@ -112,7 +112,7 @@ async function render() {
           </div>
           <div class="form-hint">
             <span id="image-model-count">--</span> models available &middot;
-            <button class="btn-link" onclick="SettingsPage.refreshModels('image')">Refresh list</button>
+            <button class="btn-link" data-action="refreshModels" data-args='["image"]'>Refresh list</button>
           </div>
           <div class="form-hint" id="image-model-caps"></div>
         </div>
@@ -156,13 +156,13 @@ async function render() {
           <label class="form-label">Auto-Caption Model</label>
           <input type="hidden" id="set-captionmodel" value="${escHtml(captionModel)}">
           <div class="model-picker" id="caption-model-picker">
-            <div class="model-picker-selected" onclick="SettingsPage.togglePicker('caption')">
+            <div class="model-picker-selected" data-action="togglePicker" data-args='["caption"]'>
               <span id="caption-model-display">${captionModel ? escHtml(captionModel) : 'Auto (use text model)\u2026'}</span>
               <span class="model-picker-arrow">&#9662;</span>
             </div>
             <div class="model-picker-dropdown hidden" id="caption-model-dropdown">
               <div class="model-picker-search-wrap">
-                <input type="text" class="model-picker-search" id="caption-model-search" placeholder="Search vision models..." oninput="SettingsPage.filterModels('caption', this.value)">
+                <input type="text" class="model-picker-search" id="caption-model-search" placeholder="Search vision models..." data-action-input="filterModels" data-args='["caption"]'>
               </div>
               <div class="model-picker-status" id="caption-model-status">Loading models...</div>
               <div class="model-picker-list" id="caption-model-list"></div>
@@ -170,7 +170,7 @@ async function render() {
           </div>
           <div class="form-hint">
             <span id="caption-model-count">--</span> vision models available &middot;
-            <button class="btn-link" onclick="SettingsPage.clearCaptionModel()">Clear (use text model)</button>
+            <button class="btn-link" data-action="clearCaptionModel">Clear (use text model)</button>
           </div>
         </div>
 
@@ -241,7 +241,7 @@ async function render() {
 
         <div class="form-group">
           <label class="form-label">Single-Image Companion</label>
-          <select id="set-companionmode" onchange="SettingsPage.updateCompanionMode()">
+          <select id="set-companionmode" data-action-change="updateCompanionMode">
             <option value="auto" ${companion.mode === 'auto' ? 'selected' : ''}>Auto — use the recommended companion when available</option>
             <option value="same" ${companion.mode === 'same' ? 'selected' : ''}>Same — use the selected page model</option>
             <option value="custom" ${companion.mode === 'custom' ? 'selected' : ''}>Custom — use an exact model ID</option>
@@ -279,7 +279,7 @@ async function render() {
         </div>
 
         <div class="form-group">
-          <div class="form-hint">Image style presets (prompt prefixes) are managed on the <a href="#" onclick="event.preventDefault();App.navigate('image-presets')">Image Style Presets</a> page. Select a preset when creating a comic.</div>
+          <div class="form-hint">Image style presets (prompt prefixes) are managed on the <a href="#" data-navigate="image-presets">Image Style Presets</a> page. Select a preset when creating a comic.</div>
         </div>
       </div>
 
@@ -325,17 +325,17 @@ async function render() {
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block" onclick="SettingsPage.save()">Save Settings</button>
+      <button class="btn btn-primary btn-block" data-action="save">Save Settings</button>
 
       <!-- Data Management -->
       <div class="card mt-md">
         <h3 class="card-title mb-sm">Data Management</h3>
         <div style="display:flex;flex-direction:column;gap:10px;">
-          <button class="btn btn-secondary btn-block" onclick="SettingsPage.exportData()">Export All Data (JSON)</button>
+          <button class="btn btn-secondary btn-block" data-action="exportData">Export All Data (JSON)</button>
           <button class="btn btn-secondary btn-block" onclick="document.getElementById('import-input').click()">Import Data (JSON)</button>
-          <input type="file" id="import-input" accept=".json" class="hidden" onchange="SettingsPage.importData(event)">
-          <button class="btn btn-secondary btn-block" onclick="SettingsPage.clearAppCache()">Clear App Cache</button>
-          <button class="btn btn-danger btn-block" onclick="SettingsPage.clearData()">Clear All Data</button>
+          <input type="file" id="import-input" accept=".json" class="hidden" data-action-change="importData">
+          <button class="btn btn-secondary btn-block" data-action="clearAppCache">Clear App Cache</button>
+          <button class="btn btn-danger btn-block" data-action="clearData">Clear All Data</button>
         </div>
       </div>
 
@@ -343,7 +343,7 @@ async function render() {
       <div class="card mt-md">
         <h3 class="card-title mb-sm">App Updates</h3>
         <p class="text-sm text-muted mb-sm">Current version: <strong>v${APP_VERSION}</strong></p>
-        <button class="btn btn-secondary btn-block" id="check-update-btn" onclick="SettingsPage.checkForUpdate()">Check for Updates</button>
+        <button class="btn btn-secondary btn-block" id="check-update-btn" data-action="checkForUpdate">Check for Updates</button>
         <div id="update-status" style="margin-top:10px;"></div>
         <div class="form-group" style="margin-top:12px;">
           <label class="form-label">Update Repository</label>
@@ -534,7 +534,7 @@ function renderModelList(type: string, models: any[]): string {
     for (const m of providerModels) {
       const isSelected = m.id === currentValue;
       const details = buildModelDetails(m);
-      html += `<div class="model-option ${isSelected ? 'selected' : ''}" data-model-id="${escHtml(m.id)}" onclick="SettingsPage.selectModel('${type}', '${escHtml(m.id)}')">`;
+      html += `<div class="model-option ${isSelected ? 'selected' : ''}" data-model-id="${escHtml(m.id)}" data-action="selectModel" data-args="${escHtml(JSON.stringify([type, m.id]))}">`;
       html += `<div class="model-option-name">${escHtml(m.name || m.id)}</div>`;
       if (m.name && m.name !== m.id) {
         html += `<div class="model-option-id">${escHtml(m.id)}</div>`;
@@ -600,7 +600,7 @@ function togglePicker(type: string): void {
       search.focus();
     }
     // Reset filter
-    filterModels(type, '');
+    filterModels(type, search);
   }
 }
 
@@ -609,7 +609,8 @@ function closePicker(type: string): void {
   if (dropdown) dropdown.classList.add('hidden');
 }
 
-function filterModels(type: string, query: string): void {
+function filterModels(type: string, input: any): void {
+  const query = input?.value || '';
   const models = type === 'text' ? textModels : type === 'caption' ? captionModels : imageModels;
   const q = query.toLowerCase().trim();
   if (!q) {
@@ -804,7 +805,7 @@ async function checkForUpdate() {
         <div style="padding:10px;border-radius:8px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);">
           <p class="text-sm" style="color:#ffc107;margin:0 0 4px 0;"><strong>Update available: v${escHtml(remote.version)}</strong></p>
           <p class="text-sm text-muted" style="margin:0 0 8px 0;">You have v${escHtml(localVersion)}. Use the button below to clear the cache and load the latest version.</p>
-          <button class="btn btn-primary btn-sm" onclick="SettingsPage.reloadForUpdate()">Reload &amp; Apply Update</button>
+          <button class="btn btn-primary btn-sm" data-action="reloadForUpdate">Reload &amp; Apply Update</button>
         </div>`;
       App.toast(`Update available: v${remote.version}`, 'info');
     } else {
@@ -954,8 +955,8 @@ async function exportData() {
   App.toast('Data exported!', 'success');
 }
 
-async function importData(event: any): Promise<void> {
-  const file = event.target.files[0];
+async function importData(input: any): Promise<void> {
+  const file = input.files[0];
   if (!file) return;
 
   try {
@@ -994,7 +995,7 @@ function clearData() {
     <p>This will permanently delete all your characters, worlds, comics, and presets. This cannot be undone.</p>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="SettingsPage.confirmClear()">Delete Everything</button>
+      <button class="btn btn-danger btn-sm" data-action="confirmClear">Delete Everything</button>
     </div>
   `);
 }
