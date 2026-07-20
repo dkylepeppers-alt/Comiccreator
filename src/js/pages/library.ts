@@ -270,10 +270,10 @@ async function deleteComic(id: string, title: string): Promise<void> {
 }
 
 async function confirmDelete(id: string): Promise<void> {
-  // Delete all pages for this comic
-  const pages = await DB.getByIndex(DB.STORES.pages, 'comicId', id);
-  for (const p of pages) await DB.del(DB.STORES.pages, p.id);
-  await DB.del(DB.STORES.comics, id);
+  // Delete the comic and all its pages in one transaction — a background
+  // generation write's existence check runs in the same [pages, comics]
+  // transaction scope, so this can't leave an orphaned page behind.
+  await DB.deleteComicAndPages(id);
   App.hideModal();
   App.toast('Comic deleted', 'info');
   viewingComicId = null;

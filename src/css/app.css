@@ -161,6 +161,30 @@ img {
 #settings-btn:hover {
   background: var(--bg-card);
 }
+#gen-indicator {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
+}
+#gen-indicator:hover {
+  background: var(--bg-card);
+}
+#gen-indicator.hidden {
+  display: none;
+}
+.spinner-topbar {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  box-shadow: none;
+}
 
 /* === Sidebar === */
 #sidebar {

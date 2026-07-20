@@ -10,6 +10,8 @@ declare const __APP_VERSION__: string;
 declare const App: {
   navigate(page: string, param?: string | null): Promise<void>;
   refreshPage(): void;
+  getCurrentPage(): string;
+  setGenIndicator(visible: boolean): void;
   showModal(html: string): void;
   hideModal(): void;
   toast(message: string, type?: string, options?: any): void;
