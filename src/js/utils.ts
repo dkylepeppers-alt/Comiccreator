@@ -99,6 +99,39 @@ export function timeAgo(ts: number | null | undefined): string {
   return new Date(ts).toLocaleDateString();
 }
 
+/** Compare two dotted version strings. Returns 1, -1, or 0 (missing segments count as 0). */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
+/**
+ * Prepare comic pages for JSON export: strip panel imageUrl fields (AI-generated
+ * images are large and can be regenerated) without mutating the input objects.
+ */
+export function prepareExportPages(pages: any[]): any[] {
+  return pages.map((p) => {
+    const copy = Object.assign({}, p);
+    if (copy.data && Array.isArray(copy.data.panels)) {
+      copy.data = Object.assign({}, copy.data, {
+        panels: copy.data.panels.map((panel: any) => {
+          const pc = Object.assign({}, panel);
+          delete pc.imageUrl;
+          return pc;
+        }),
+      });
+    }
+    return copy;
+  });
+}
+
 export function getGenreEmoji(genre: string | null | undefined): string {
   const g = GENRES.find((x) => x.id === genre);
   return g ? g.emoji : '&#128214;';

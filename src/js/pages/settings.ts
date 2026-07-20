@@ -1,6 +1,7 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml } from '../utils.js';
+import { escHtml, compareVersions, prepareExportPages } from '../utils.js';
+import { extractProvider, buildModelDetails } from '../model-catalog.js';
 import DB from '../db.js';
 import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
@@ -549,77 +550,6 @@ function renderModelList(type: string, models: any[]): string {
   listEl.innerHTML = html || '<div class="model-picker-empty">No models found</div>';
 }
 
-function extractProvider(model: any): string {
-  // Try owned_by first
-  if (model.owned_by) return model.owned_by;
-  // Try to extract from model id (e.g. "openai/gpt-4o" -> "openai")
-  const slashIdx = model.id.indexOf('/');
-  if (slashIdx > 0) return model.id.substring(0, slashIdx);
-  // Guess from common prefixes
-  const id = model.id.toLowerCase();
-  if (
-    id.startsWith('gpt-') ||
-    id.startsWith('chatgpt') ||
-    id.startsWith('dall-e') ||
-    id.startsWith('o1') ||
-    id.startsWith('o3') ||
-    id.startsWith('o4')
-  )
-    return 'OpenAI';
-  if (id.startsWith('claude')) return 'Anthropic';
-  if (id.startsWith('gemini') || id.startsWith('nano-banana')) return 'Google';
-  if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
-  if (id.startsWith('mistral') || id.startsWith('codestral') || id.startsWith('pixtral')) return 'Mistral';
-  if (id.startsWith('deepseek')) return 'DeepSeek';
-  if (id.startsWith('grok')) return 'xAI';
-  if (id.startsWith('qwen') || id.startsWith('wan-') || id.startsWith('z-image')) return 'Alibaba';
-  if (id.startsWith('command')) return 'Cohere';
-  if (id.startsWith('flux') || id.startsWith('schnell')) return 'Black Forest Labs';
-  if (id.startsWith('stable-diffusion') || id.startsWith('sdxl') || id.startsWith('sd3')) return 'Stability AI';
-  if (id.startsWith('seedream') || id.startsWith('seedvr')) return 'ByteDance';
-  if (id.startsWith('hunyuan')) return 'Tencent';
-  if (id.startsWith('cogview') || id.startsWith('glm')) return 'Zhipu';
-  if (id.startsWith('kling')) return 'Kling';
-  if (id.startsWith('vidu')) return 'Vidu';
-  if (id.startsWith('minimax')) return 'MiniMax';
-  if (id.startsWith('yi-')) return '01.AI';
-  if (id.startsWith('phi-')) return 'Microsoft';
-  if (id.startsWith('nova-') || id.startsWith('amazon')) return 'Amazon';
-  if (id.startsWith('kimi')) return 'Moonshot';
-  // Retained for cached model data from older sessions or future API additions
-  if (id.startsWith('hidream')) return 'HiDream';
-  if (id.startsWith('midjourney')) return 'Midjourney';
-  if (id.startsWith('riverflow')) return 'Sourceful';
-  if (id.startsWith('lucid')) return 'Leonardo AI';
-  return 'Other';
-}
-
-function buildModelDetails(m: any): string {
-  const parts = [];
-  if (m.context_length) parts.push(`${(m.context_length / 1000).toFixed(0)}K ctx`);
-  if (m.supports_vision) parts.push('vision');
-  if (m.supports_tools) parts.push('tools');
-  if (m.supports_edit) parts.push('edit');
-  if (m.pricing) {
-    if (typeof m.pricing === 'object') {
-      // Text models: pricing.prompt is per-million-tokens
-      if (m.pricing.prompt != null) {
-        parts.push(`$${m.pricing.prompt}/1M in`);
-        // Image models: pricing.per_image is { resolution: cost }
-      } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
-        const prices = Object.values(m.pricing.per_image).filter((v) => typeof v === 'number');
-        if (prices.length > 0) {
-          const minPrice = Math.min(...prices);
-          parts.push(`$${minPrice}/img`);
-        }
-      }
-    } else if (typeof m.pricing === 'string') {
-      parts.push(m.pricing);
-    }
-  }
-  return parts.length > 0 ? parts.join(' &middot; ') : '';
-}
-
 /**
  * Rebuild the image size control to show only the sizes supported by modelId.
  * Renders a <select> when API-provided sizes are available, or a free-form
@@ -802,18 +732,6 @@ async function testConnection() {
 }
 
 // --- Update Check ---
-
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (na > nb) return 1;
-    if (na < nb) return -1;
-  }
-  return 0;
-}
 
 async function checkForUpdate() {
   const statusEl = document.getElementById('update-status');
@@ -1015,19 +933,7 @@ async function save() {
 async function exportData() {
   const rawPages = await DB.getAll(DB.STORES.pages);
   // Strip imageUrl from panels — AI-generated images are large and can be regenerated
-  const strippedPages = rawPages.map((p) => {
-    const copy = Object.assign({}, p);
-    if (copy.data && Array.isArray(copy.data.panels)) {
-      copy.data = Object.assign({}, copy.data, {
-        panels: copy.data.panels.map((panel) => {
-          const pc = Object.assign({}, panel);
-          delete pc.imageUrl;
-          return pc;
-        }),
-      });
-    }
-    return copy;
-  });
+  const strippedPages = prepareExportPages(rawPages);
   const data = {
     characters: await DB.getAll(DB.STORES.characters),
     worlds: await DB.getAll(DB.STORES.worlds),
