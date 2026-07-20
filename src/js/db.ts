@@ -319,15 +319,53 @@ function normalizeWorldRecord(world: any): { record: any; changed: boolean } {
 /**
  * Commit a page record and its comic record in one multi-store transaction.
  * Used so continuity snapshots and the comic's current ledger can never
- * diverge: either both writes land or neither does.
+ * diverge: either both writes land or neither does. The comic's continued
+ * existence is re-checked inside this same transaction (background
+ * generation can outlive the comic being deleted from the Library) — if it's
+ * gone, neither write happens and this resolves to `false`.
  */
-async function commitPageAndComic(pageRecord: ComicPage, comicRecord: Comic): Promise<void> {
+async function commitPageAndComic(pageRecord: ComicPage, comicRecord: Comic): Promise<boolean> {
   await open();
   return new Promise((resolve, reject) => {
     const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
-    transaction.objectStore(STORES.pages).put(pageRecord);
-    transaction.objectStore(STORES.comics).put(comicRecord);
-    transaction.oncomplete = () => resolve();
+    const comicsStore = transaction.objectStore(STORES.comics);
+    let comicExists = false;
+    const existingReq = comicsStore.get(comicRecord.id);
+    existingReq.onsuccess = () => {
+      if (!existingReq.result) return;
+      comicExists = true;
+      transaction.objectStore(STORES.pages).put(pageRecord);
+      comicsStore.put(comicRecord);
+    };
+    transaction.oncomplete = () => resolve(comicExists);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+  });
+}
+
+/**
+ * Put a page record only if its parent comic still exists, checked inside
+ * the same transaction as the write — used by background reroll/retry paths
+ * so a comic deleted from the Library mid-generation can't have an orphaned
+ * page recreated after LibraryPage's delete loop has already passed it.
+ * Optionally bumps the comic's `updatedAt` in the same transaction.
+ * Resolves to `false` (writing nothing) if the comic is gone.
+ */
+async function putPageIfComicExists(pageRecord: ComicPage, comicId: string, touchComic = false): Promise<boolean> {
+  await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
+    const comicsStore = transaction.objectStore(STORES.comics);
+    let comicExists = false;
+    const existingReq = comicsStore.get(comicId);
+    existingReq.onsuccess = () => {
+      const comic = existingReq.result;
+      if (!comic) return;
+      comicExists = true;
+      transaction.objectStore(STORES.pages).put(pageRecord);
+      if (touchComic) comicsStore.put(Object.assign({}, comic, { updatedAt: Date.now() }));
+    };
+    transaction.oncomplete = () => resolve(comicExists);
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
   });
@@ -489,6 +527,7 @@ const DB = {
   normalizeCharacterRecord,
   normalizeWorldRecord,
   commitPageAndComic,
+  putPageIfComicExists,
   seedDefaults,
   dedupePresets,
 };

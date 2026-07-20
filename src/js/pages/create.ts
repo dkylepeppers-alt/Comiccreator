@@ -2216,7 +2216,17 @@ async function generatePage(presetData: any): Promise<void> {
       comic.visualContinuity = pageData.continuityAfter;
     }
     comic.updatedAt = Date.now();
-    await DB.commitPageAndComic(pageRecord, comic);
+    const committed = await DB.commitPageAndComic(pageRecord, comic);
+    if (!committed) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      stopProgressTimer();
+      generationEnded();
+      _rerollBackup = null;
+      App.toast('This comic was deleted while generating — the page was discarded.', 'info');
+      resetState();
+      await App.refreshPage();
+      return;
+    }
     if (state.plannerMode && pageData.continuityAfter) {
       state.visualContinuity = pageData.continuityAfter;
     }
@@ -2236,7 +2246,8 @@ async function generatePage(presetData: any): Promise<void> {
     }
     stopProgressTimer();
     generationEnded();
-    if (App.getCurrentPage() === 'create') {
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create') {
       App.toast(`Page ${pageNum} ready!`, 'success');
     } else {
       // Finished while the user was on another screen — persistent, tap to view
@@ -2245,7 +2256,11 @@ async function generatePage(presetData: any): Promise<void> {
         onClick: () => App.navigate('create'),
       });
     }
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the new page —
+    // refreshing elsewhere (e.g. Settings) would wipe unrelated in-progress UI state.
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   } catch (err) {
     App.logError('Comic generation', err);
     if (err.name === 'AbortError') {
@@ -2609,20 +2624,28 @@ async function rerollImages() {
     const reimageOutcome = generationOutcomeForPage(currentPage);
     attachGenerationAttempt(currentPage, reimageOutcome);
     const existingRecord = await DB.get(DB.STORES.pages, currentPageId).catch(() => null);
-    await DB.put(DB.STORES.pages, {
-      id: currentPageId,
-      comicId: state.comicId,
-      pageNum: existingRecord?.pageNum ?? currentPageIdx + 1,
-      data: currentPage,
-      createdAt: existingRecord?.createdAt ?? Date.now(),
-    });
-
-    // Bump parent comic's updatedAt so the library reflects the change
-    if (state.comicId) {
-      const comic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
-      if (comic) {
-        await DB.put(DB.STORES.comics, { ...comic, updatedAt: Date.now() }).catch(() => {});
-      }
+    // Existence was checked above, but the comic can still be deleted before
+    // this write lands — re-checked atomically inside the same transaction,
+    // which also bumps the comic's updatedAt so the library reflects the change.
+    const committed = await DB.putPageIfComicExists(
+      {
+        id: currentPageId,
+        comicId: state.comicId,
+        pageNum: existingRecord?.pageNum ?? currentPageIdx + 1,
+        data: currentPage,
+        createdAt: existingRecord?.createdAt ?? Date.now(),
+      },
+      state.comicId,
+      true,
+    );
+    if (!committed) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      stopProgressTimer();
+      generationEnded();
+      App.toast('This comic was deleted while generating — the regenerated images were discarded.', 'info');
+      resetState();
+      await App.refreshPage();
+      return;
     }
 
     state.isGenerating = false;
@@ -2632,7 +2655,8 @@ async function rerollImages() {
     }
     stopProgressTimer();
     generationEnded();
-    if (App.getCurrentPage() === 'create') {
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create') {
       App.toast('Images regenerated!', 'success');
     } else {
       App.toast('Images regenerated — tap to view', 'success', {
@@ -2640,7 +2664,11 @@ async function rerollImages() {
         onClick: () => App.navigate('create'),
       });
     }
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the new images —
+    // refreshing elsewhere would wipe unrelated in-progress UI state.
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   } catch (err) {
     // Restore prior images on any failure
     currentPage.panels.forEach((p, i) => {
@@ -2726,13 +2754,25 @@ async function confirmRetryMissingImages() {
     const record = await DB.get(DB.STORES.pages, pageId).catch(() => null);
     const retryOutcome = generationOutcomeForPage(page);
     attachGenerationAttempt(page, retryOutcome);
-    await DB.put(DB.STORES.pages, {
-      id: pageId,
-      comicId: state.comicId,
-      pageNum: record?.pageNum ?? pageIndex + 1,
-      data: page,
-      createdAt: record?.createdAt ?? Date.now(),
-    });
+    // Existence was checked above, but the comic can still be deleted before
+    // this write lands — re-checked atomically inside the same transaction.
+    const committed = await DB.putPageIfComicExists(
+      {
+        id: pageId,
+        comicId: state.comicId,
+        pageNum: record?.pageNum ?? pageIndex + 1,
+        data: page,
+        createdAt: record?.createdAt ?? Date.now(),
+      },
+      state.comicId,
+    );
+    if (!committed) {
+      discarded = true;
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      App.toast('This comic was deleted while generating — the recovered images were discarded.', 'info');
+      resetState();
+      return;
+    }
     const stillMissing = panelIndexes.filter((index) => !page.panels[index].imageUrl).length;
     if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, retryOutcome));
     App.toast(
@@ -2754,7 +2794,12 @@ async function confirmRetryMissingImages() {
       state.isGenerating = false;
       state.step = 'reading';
     }
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the retried images —
+    // refreshing elsewhere would wipe unrelated in-progress UI state.
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   }
 }
 

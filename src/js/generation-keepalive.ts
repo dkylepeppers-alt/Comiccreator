@@ -13,10 +13,18 @@ import { ForegroundService } from '@capawesome-team/capacitor-android-foreground
  * The service's foregroundServiceType is declared as dataSync in
  * android/app/src/main/AndroidManifest.xml; startForegroundService() without
  * an explicit serviceType uses the manifest-declared type on Android 14+.
+ *
+ * start/stop are serialized through a single operation queue so a stop that
+ * arrives while a start is still mid-flight (e.g. awaiting a permission
+ * prompt) waits for that start to actually finish instead of racing it —
+ * otherwise the stop can no-op against a service that hasn't started yet,
+ * and the subsequent start then leaves the foreground service/notification
+ * running with nothing left to ever stop it.
  */
 
 const NOTIFICATION_ID = 4821;
-let active = false;
+let started = false;
+let opQueue: Promise<void> = Promise.resolve();
 
 function logKeepAliveError(err: unknown): void {
   const g = globalThis as any;
@@ -25,9 +33,8 @@ function logKeepAliveError(err: unknown): void {
   }
 }
 
-export async function startGenerationKeepAlive(): Promise<void> {
-  if (!Capacitor.isNativePlatform() || active) return;
-  active = true;
+async function doStart(): Promise<void> {
+  if (started) return;
   try {
     // Best effort on Android 13+: the notification only shows with permission,
     // but the service keeps the process alive either way.
@@ -43,18 +50,30 @@ export async function startGenerationKeepAlive(): Promise<void> {
       body: 'Generating page…',
       smallIcon: 'ic_stat_generation',
     });
+    started = true;
   } catch (err) {
-    active = false;
     logKeepAliveError(err);
   }
 }
 
-export async function stopGenerationKeepAlive(): Promise<void> {
-  if (!Capacitor.isNativePlatform() || !active) return;
-  active = false;
+async function doStop(): Promise<void> {
+  if (!started) return;
+  started = false;
   try {
     await ForegroundService.stopForegroundService();
   } catch (err) {
     logKeepAliveError(err);
   }
+}
+
+export function startGenerationKeepAlive(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return Promise.resolve();
+  opQueue = opQueue.then(doStart);
+  return opQueue;
+}
+
+export function stopGenerationKeepAlive(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return Promise.resolve();
+  opQueue = opQueue.then(doStop);
+  return opQueue;
 }
