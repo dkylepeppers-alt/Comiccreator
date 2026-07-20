@@ -2293,7 +2293,12 @@ async function generatePage(presetData: any): Promise<void> {
     }
     state.step = state.pages.length > 0 ? 'reading' : 'setup';
     state.isGenerating = false;
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the failure —
+    // refreshing elsewhere would wipe unrelated in-progress UI state (e.g.
+    // unsaved Settings fields).
+    if (onCreatePage || App.getCurrentPage() === 'library') {
+      await App.refreshPage();
+    }
   }
 }
 
@@ -2686,7 +2691,12 @@ async function rerollImages() {
     if (err.name !== 'AbortError') {
       App.toast('Image regeneration failed: ' + (err.message || 'Please try again.'), 'error');
     }
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the failure —
+    // refreshing elsewhere would wipe unrelated in-progress UI state.
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   }
 }
 

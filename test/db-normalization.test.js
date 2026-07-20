@@ -98,6 +98,41 @@ describe('normalizeWorldRecord', () => {
   });
 });
 
+describe('deleteComicAndPages', () => {
+  it('deletes the comic and all of its pages', async () => {
+    const comicId = `comic-del-${Date.now()}`;
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'C' });
+    await DB.put(DB.STORES.pages, { id: `${comicId}-p1`, comicId, pageNum: 1, data: {} });
+    await DB.put(DB.STORES.pages, { id: `${comicId}-p2`, comicId, pageNum: 2, data: {} });
+
+    await DB.deleteComicAndPages(comicId);
+
+    expect(await DB.get(DB.STORES.comics, comicId)).toBeUndefined();
+    expect(await DB.getByIndex(DB.STORES.pages, 'comicId', comicId)).toEqual([]);
+  });
+
+  it('never leaves an orphaned page when it races a concurrent background write', async () => {
+    const comicId = `comic-race-${Date.now()}`;
+    const pageId = `page-race-${Date.now()}`;
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', pageCount: 1 });
+
+    // Whichever of these two transactions IndexedDB happens to run first,
+    // neither the comic nor the page it writes should survive both settling —
+    // either the write sees the comic already gone and discards itself, or
+    // the delete's page-deletion cursor sweeps up the page the write just landed.
+    await Promise.all([
+      DB.commitPageAndComic(
+        { id: pageId, comicId, pageNum: 2, data: { title: 'P2', panels: [] }, createdAt: 1 },
+        { id: comicId, title: 'C', pageCount: 2 },
+      ),
+      DB.deleteComicAndPages(comicId),
+    ]);
+
+    expect(await DB.get(DB.STORES.comics, comicId)).toBeUndefined();
+    expect(await DB.get(DB.STORES.pages, pageId)).toBeUndefined();
+  });
+});
+
 describe('commitPageAndComic', () => {
   it('writes page and comic in one transaction when the comic exists', async () => {
     const comicId = `comic-${Date.now()}`;

@@ -317,6 +317,37 @@ function normalizeWorldRecord(world: any): { record: any; changed: boolean } {
 }
 
 /**
+ * Delete a comic and all of its pages in one multi-store transaction.
+ * IndexedDB serializes readwrite transactions that share an object store, so
+ * this can never interleave with commitPageAndComic()/putPageIfComicExists()
+ * for the same comic — either this delete fully lands before a background
+ * generation write's existence check (which then correctly sees the comic
+ * gone), or it runs after that write has already committed, in which case
+ * the page-deletion cursor here picks up the newly-written page too. Without
+ * this atomicity, deleting the pages and the comic as separate operations
+ * leaves a window where a background write can see the comic still present
+ * (pages already gone) and insert a page that never gets cleaned up.
+ */
+async function deleteComicAndPages(comicId: string): Promise<void> {
+  await open();
+  return new Promise((resolve, reject) => {
+    const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
+    const pagesIndex = transaction.objectStore(STORES.pages).index('comicId');
+    const cursorReq = pagesIndex.openCursor(IDBKeyRange.only(comicId));
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (!cursor) return;
+      cursor.delete();
+      cursor.continue();
+    };
+    transaction.objectStore(STORES.comics).delete(comicId);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+  });
+}
+
+/**
  * Commit a page record and its comic record in one multi-store transaction.
  * Used so continuity snapshots and the comic's current ledger can never
  * diverge: either both writes land or neither does. The comic's continued
@@ -526,6 +557,7 @@ const DB = {
   migrateWorld,
   normalizeCharacterRecord,
   normalizeWorldRecord,
+  deleteComicAndPages,
   commitPageAndComic,
   putPageIfComicExists,
   seedDefaults,
