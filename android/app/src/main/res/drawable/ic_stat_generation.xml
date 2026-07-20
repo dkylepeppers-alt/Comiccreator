@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon for the "Generating page…" foreground-service notification.
+     Simple white sparkle glyph; status-bar icons must be single-color (alpha only). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2l2.09,5.66L19.75,9.75l-5.66,2.09L12,17.5l-2.09,-5.66L4.25,9.75l5.66,-2.09L12,2zM19,15l1.13,3.05L23.18,19.18l-3.05,1.13L19,23.36l-1.13,-3.05l-3.05,-1.13l3.05,-1.13L19,15z" />
+</vector>
