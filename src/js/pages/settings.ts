@@ -5,6 +5,7 @@ import DB from '../db.js';
 import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
 import { migrateCompanionSettings } from '../image-generation-config.js';
+import { saveBackupFile } from '../export-actions.js';
 
 /**
  * Settings Page
@@ -1038,14 +1039,7 @@ async function exportData() {
     exportedAt: new Date().toISOString(),
   };
 
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `comic-creator-backup-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  App.toast('Data exported!', 'success');
+  await saveBackupFile(data);
 }
 
 async function importData(event: any): Promise<void> {

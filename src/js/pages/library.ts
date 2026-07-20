@@ -2,6 +2,7 @@
 import type { PageModule } from '../utils.js';
 import { escHtml, timeAgo, getGenreEmoji, GENRES } from '../utils.js';
 import DB from '../db.js';
+import { saveRenderedPageImage } from '../export-actions.js';
 
 /**
  * Library Page - View, resume, export, and delete comics
@@ -557,17 +558,9 @@ async function downloadPageImage(pageIdx: number): Promise<void> {
     y += PAD;
   }
 
-  // Export as PNG download
-  canvas.toBlob((blob) => {
-    if (!blob) return App.toast('Failed to render image', 'error');
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `page-${pageIdx + 1}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
-    App.toast('Page image downloaded!', 'success');
-  }, 'image/png');
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) return App.toast('Failed to render image', 'error');
+  await saveRenderedPageImage(blob, pageIdx);
 }
 
 const LibraryPage: PageModule & Record<string, any> = {
