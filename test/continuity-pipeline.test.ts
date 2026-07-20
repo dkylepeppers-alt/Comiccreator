@@ -423,7 +423,7 @@ describe('executeSequentialPlan', () => {
 
   it('propagates AbortError without converting it to a safe failure', async () => {
     const plan = buildContinuityGenerationPlan(planningInput());
-    const abortError = new DOMException('Aborted', 'AbortError');
+    const abortError = Object.preventExtensions(new DOMException('Aborted', 'AbortError'));
     const dependencies = executionDependencies({
       generateImages: vi.fn(async () => {
         throw abortError;
@@ -493,6 +493,7 @@ describe('executeIndependentPlan', () => {
       ],
       world: null,
       referenceBudget: 1,
+      warnings: ['Panel 1: unrelated preflight warning'],
     });
     const pageData = pageFixture(2);
     const dependencies = executionDependencies();
@@ -500,6 +501,13 @@ describe('executeIndependentPlan', () => {
     const result = await executeIndependentPlan(plan, dependencies);
     applyContinuityResult(pageData, plan, result, 4000);
 
+    expect(plan.allocationFailures).toEqual([
+      {
+        panelIndex: 0,
+        detail:
+          'This request needs 2 mandatory reference image(s) (2 character identities, 1 location(s)) but only 1 fit.',
+      },
+    ]);
     expect(dependencies.generateImages).toHaveBeenCalledTimes(1);
     expect(pageData.panels[0].generationError).toBe(
       'This request needs 2 mandatory reference image(s) (2 character identities, 1 location(s)) but only 1 fit.',
@@ -543,7 +551,7 @@ describe('executeIndependentPlan', () => {
       panels: [panel(0), panel(1)],
       renderStates: planningInput().renderStates.slice(0, 2),
     });
-    const abortError = new DOMException('Aborted', 'AbortError');
+    const abortError = Object.preventExtensions(new DOMException('Aborted', 'AbortError'));
     const dependencies = executionDependencies({
       generateImages: vi.fn(async (_prompt, options) => {
         if (options.requestId === 'panel-1') throw abortError;
@@ -591,7 +599,7 @@ describe('runContinuityGeneration', () => {
       renderStates: planningInput().renderStates.slice(0, 2),
     });
     const pageData = pageFixture(2);
-    const abortError = new DOMException('Aborted', 'AbortError');
+    const abortError = Object.freeze(new DOMException('Aborted', 'AbortError'));
     const dependencies = executionDependencies({
       generateImages: vi.fn(async (_prompt, options) => {
         if (options.requestId === 'panel-1') throw abortError;
@@ -616,7 +624,7 @@ describe('runContinuityGeneration', () => {
       renderStates: planningInput().renderStates.slice(0, 2),
     });
     const pageData = pageFixture(2);
-    const abortError = new DOMException('Aborted', 'AbortError');
+    const abortError = Object.preventExtensions(new DOMException('Aborted', 'AbortError'));
     const dependencies = executionDependencies({
       generateImages: vi.fn(async () => {
         throw abortError;

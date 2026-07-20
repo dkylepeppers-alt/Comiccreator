@@ -1,6 +1,6 @@
 import { toSafeGenerationFailure } from '../../generation-progress.js';
+import { recordCancellationResult } from './cancellation-journal.js';
 import type {
-  ContinuityAbortError,
   ContinuityExecutionDependencies,
   ContinuityExecutionResult,
   ContinuityPanelExecutionResult,
@@ -10,15 +10,6 @@ import type { ContinuityGenerationPlan, SequentialContinuityGenerationPlan } fro
 function sequentialPlan(plan: ContinuityGenerationPlan): SequentialContinuityGenerationPlan {
   if (plan.strategy !== 'sequential-page') throw new Error('Sequential executor requires a sequential-page plan');
   return plan;
-}
-
-function attachCancellationResult(error: unknown, result: ContinuityExecutionResult): ContinuityAbortError {
-  const abortError = error as ContinuityAbortError;
-  Object.defineProperty(abortError, 'continuityExecutionResult', {
-    value: { ...result, cancelled: true },
-    configurable: true,
-  });
-  return abortError;
 }
 
 export async function executeSequentialPlan(
@@ -86,7 +77,8 @@ export async function executeSequentialPlan(
     });
   } catch (error) {
     if ((error as { name?: string })?.name === 'AbortError') {
-      throw attachCancellationResult(error, { panelResults, warnings });
+      recordCancellationResult(error, { panelResults, warnings });
+      throw error;
     }
     const failure = toSafeGenerationFailure(error, 'image-request');
     warnings.push(failure.message);

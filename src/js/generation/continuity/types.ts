@@ -64,6 +64,11 @@ export interface BlockedContinuityPanel {
   readonly capacity: number;
 }
 
+export interface ContinuityAllocationFailure {
+  readonly panelIndex: number;
+  readonly detail: string;
+}
+
 interface ContinuityGenerationPlanBase {
   readonly pageModelId: string;
   readonly effectiveModelId: string;
@@ -75,6 +80,7 @@ interface ContinuityGenerationPlanBase {
   readonly referenceManifest: readonly ReferenceManifestItem[];
   readonly warnings: readonly string[];
   readonly blockedPanels: readonly BlockedContinuityPanel[];
+  readonly allocationFailures: readonly ContinuityAllocationFailure[];
 }
 
 export interface SequentialContinuityGenerationPlan extends ContinuityGenerationPlanBase {

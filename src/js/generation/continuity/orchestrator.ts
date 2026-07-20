@@ -1,6 +1,7 @@
 import type { GenerateImagesOptions, GeneratedImage, ImageApiProgressEvent } from '../../api.js';
 import type { GenerationStage, ImageRequestProgress } from '../../generation-progress.js';
 import { buildContinuityGenerationPlan } from './build-plan.js';
+import { takeCancellationResult } from './cancellation-journal.js';
 import { executeIndependentPlan } from './execute-independent.js';
 import { executeSequentialPlan } from './execute-sequential.js';
 import { applyContinuityResult } from './apply-results.js';
@@ -83,10 +84,6 @@ export type ContinuityExecutor = (
   dependencies: ContinuityExecutionDependencies,
 ) => Promise<ContinuityExecutionResult>;
 
-export interface ContinuityAbortError extends Error {
-  continuityExecutionResult?: ContinuityExecutionResult;
-}
-
 const executors: Record<ContinuityStrategy, ContinuityExecutor> = {
   'sequential-page': (plan, dependencies) => executeSequentialPlan(plan, dependencies),
   'independent-panels': (plan, dependencies) => executeIndependentPlan(plan, dependencies),
@@ -106,9 +103,10 @@ export async function runContinuityGeneration(
     const result = await executors[plan.strategy](plan, dependencies);
     applyContinuityResult(input.pageData, plan, result, Date.now());
   } catch (error) {
-    const abortError = error as ContinuityAbortError;
-    if (abortError?.name === 'AbortError' && abortError.continuityExecutionResult) {
-      applyContinuityResult(input.pageData, plan, abortError.continuityExecutionResult, Date.now());
+    const cancellationResult =
+      (error as { name?: string })?.name === 'AbortError' ? takeCancellationResult(error) : undefined;
+    if (cancellationResult) {
+      applyContinuityResult(input.pageData, plan, cancellationResult, Date.now());
     }
     throw error;
   }

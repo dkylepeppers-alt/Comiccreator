@@ -12,6 +12,7 @@ import {
 import type { PlannedPage, ReferenceAllocation, ReferenceManifestItem } from '../../visual-continuity.js';
 import type {
   BlockedContinuityPanel,
+  ContinuityAllocationFailure,
   ContinuityGenerationPlan,
   ContinuityPlanningInput,
   PanelContinuityRequest,
@@ -68,6 +69,12 @@ function freezeBlockedPanels(items: readonly BlockedContinuityPanel[]): readonly
   return Object.freeze(items.map((item) => Object.freeze({ ...item })));
 }
 
+function freezeAllocationFailures(
+  items: readonly ContinuityAllocationFailure[],
+): readonly ContinuityAllocationFailure[] {
+  return Object.freeze(items.map((item) => Object.freeze({ ...item })));
+}
+
 function uniqueWarnings(warnings: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(warnings)]);
 }
@@ -112,6 +119,11 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
           anchorImageIdByCharacter: input.anchorImageIdByCharacter,
         })
       : emptyAllocation(),
+  );
+  const allocationFailures = freezeAllocationFailures(
+    panelAllocations.flatMap((allocation, panelIndex) =>
+      allocation.error ? [{ panelIndex, detail: allocation.error.detail }] : [],
+    ),
   );
 
   const pageSizeValid = supportsSize(pageModel, input.imageSize);
@@ -185,6 +197,7 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
       referenceManifest: freezeManifest(pageAllocation.manifest),
       warnings: uniqueWarnings(warnings),
       blockedPanels,
+      allocationFailures,
     });
   }
 
@@ -238,5 +251,6 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
     referenceManifest: freezeManifest(panelAllocations.flatMap(({ manifest }) => manifest)),
     warnings: uniqueWarnings(warnings),
     blockedPanels,
+    allocationFailures,
   });
 }

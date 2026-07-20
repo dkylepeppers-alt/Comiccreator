@@ -1,6 +1,6 @@
 import { toSafeGenerationFailure } from '../../generation-progress.js';
+import { recordCancellationResult } from './cancellation-journal.js';
 import type {
-  ContinuityAbortError,
   ContinuityExecutionDependencies,
   ContinuityExecutionResult,
   ContinuityPanelExecutionResult,
@@ -15,20 +15,7 @@ function independentPlan(plan: ContinuityGenerationPlan): IndependentContinuityG
 }
 
 function allocationFailures(plan: IndependentContinuityGenerationPlan): ContinuityPanelExecutionResult[] {
-  return plan.blockedPanels.flatMap(({ panelIndex }) => {
-    const prefix = `Panel ${panelIndex + 1}: `;
-    const warning = plan.warnings.find((candidate) => candidate.startsWith(prefix));
-    return warning ? [{ panelIndex, generationError: warning.slice(prefix.length) }] : [];
-  });
-}
-
-function attachCancellationResult(error: unknown, result: ContinuityExecutionResult): ContinuityAbortError {
-  const abortError = error as ContinuityAbortError;
-  Object.defineProperty(abortError, 'continuityExecutionResult', {
-    value: { ...result, cancelled: true },
-    configurable: true,
-  });
-  return abortError;
+  return plan.allocationFailures.map(({ panelIndex, detail }) => ({ panelIndex, generationError: detail }));
 }
 
 export async function executeIndependentPlan(
@@ -95,7 +82,8 @@ export async function executeIndependentPlan(
     (settlement) => settlement.status === 'rejected' && (settlement.reason as { name?: string })?.name === 'AbortError',
   );
   if (cancelled?.status === 'rejected') {
-    throw attachCancellationResult(cancelled.reason, { panelResults, warnings });
+    recordCancellationResult(cancelled.reason, { panelResults, warnings });
+    throw cancelled.reason;
   }
 
   return { panelResults, warnings };
