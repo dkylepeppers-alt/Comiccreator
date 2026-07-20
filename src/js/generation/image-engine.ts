@@ -19,19 +19,9 @@ import {
   resolveCompanionModel,
   selectCompatibleImageSize,
 } from '../image-generation-config.js';
-import {
-  PROMPT_VERSION,
-  collectPageCast,
-  collectPanelCast,
-  collectLocationKeys,
-  allocateReferences,
-  effectiveReferenceBudget,
-  resolveImageGenerationPlan,
-  compileSequentialPagePrompt,
-  compileIndependentPanelPrompt,
-  compilePanelDescription,
-} from '../visual-continuity.js';
+import { PROMPT_VERSION } from '../visual-continuity.js';
 import { sanitizeImagePrompt, cosineSimilarity } from '../utils.js';
+import { runContinuityGeneration } from './continuity/orchestrator.js';
 import type { CreateState, GenerationContext } from './types.js';
 
 /**
@@ -219,14 +209,6 @@ function getPreviousFrameRef(state: CreateState) {
     }
   }
   return null;
-}
-
-/** Panel cast IDs in stable comic selected-character order. */
-function orderedPanelCast(state: CreateState, panel) {
-  const cast = new Set(collectPanelCast(panel));
-  const ordered = state.selectedCharacters.filter((id) => cast.has(id));
-  const extras = [...cast].filter((id) => !ordered.includes(id)).sort();
-  return [...ordered, ...extras];
 }
 
 /**
@@ -678,349 +660,96 @@ export async function generateContinuityPageImages(
 ): Promise<void> {
   const planned = pageData.planned;
   const renderStates = pageData.renderStates || [];
-  const panels = pageData.panels;
-  const warnings = [];
-  const targetPanels = options.panelIndexes ? new Set(options.panelIndexes) : null;
-
   const config = ctx.state.imageGenerationConfig || (await preflightImageGeneration(ctx));
-  warnings.push(...(config?.warnings || []));
   const modelId = config?.pageModelId || (await DB.getSetting('imageModel', '')) || 'gpt-image-1';
-  const meta = config?.pageModel || (await API.getImageModelMeta(modelId, { signal: ctx.signal() }));
-  const sequentialEnabled = config?.sequentialEnabled ?? (await DB.getSetting('enableSequentialPages', false));
-  const refBudgetSetting = await DB.getSetting('refBudget', 'auto');
-  // The companion applies ONLY when the page model is the sequential adapter;
-  // a stale companion must never hijack generation for other selected models
-  const singleImageModelId = config?.companionModelId || modelId;
+  const pageModel = config?.pageModel || (await API.getImageModelMeta(modelId, { signal: ctx.signal() }));
+  const companionModelId = config?.companionModelId || modelId;
+  const companionModel =
+    config?.companionModel ||
+    (companionModelId === modelId
+      ? pageModel
+      : await API.getImageModelMeta(companionModelId, { signal: ctx.signal() }));
   const imageSize = config?.imageSize || (await DB.getSetting('imageSize', '1024x1024'));
-  const negativePrompt = await DB.getSetting('negativePrompt', '');
-  const useRefImages = await DB.getSetting('useRefImages', true);
   const imagePresetData = ctx.state.selectedImagePreset
     ? await DB.get(DB.STORES.imagePresets, ctx.state.selectedImagePreset)
     : null;
-  const stylePreset = imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', ''));
-
-  const byId = {};
-  for (const c of ctx.state.characters) byId[c.id] = c;
-
-  // Independent panel requests run on the companion model, so their budget
-  // and size validation use the companion's capabilities, not the page model's
-  const companionMeta =
-    config?.companionModel ||
-    (singleImageModelId === modelId ? meta : await API.getImageModelMeta(singleImageModelId, { signal: ctx.signal() }));
-  const budget = effectiveReferenceBudget(refBudgetSetting, meta?.maxInputImages);
-  const panelBudget = effectiveReferenceBudget(refBudgetSetting, companionMeta?.maxInputImages);
-  const previousFrame = useRefImages ? getPreviousFrameRef(ctx.state) : null;
-
-  // The ledger's recorded anchors are the comic's explicit continuity choice
+  const charactersById = Object.fromEntries(ctx.state.characters.map((character) => [character.id, character]));
   const ledgerStates = (pageData.continuityBefore || ctx.state.visualContinuity)?.characterStates || {};
-  const anchorImageIdByCharacter = {};
-  for (const [charId, charState] of Object.entries(ledgerStates)) {
-    anchorImageIdByCharacter[charId] = charState?.identityAnchorImageId ?? null;
-  }
-
-  const emptyAlloc = { manifest: [], dataUrls: [], unanchoredCharacterIds: [], warnings: [] };
-
-  // Page-wide reference union (sequential candidate)
-  const pageCast = collectPageCast(planned, ctx.state.selectedCharacters);
-  const pageAlloc = useRefImages
-    ? allocateReferences({
-        characterIds: pageCast,
-        charactersById: byId,
-        locationKeys: collectLocationKeys(planned.panels),
-        world: ctx.state.world,
-        budget,
-        previousFrame,
-        anchorImageIdByCharacter,
-      })
-    : emptyAlloc;
-  warnings.push(...pageAlloc.warnings);
-
-  // Per-panel allocations (routing counts + independent fallback)
-  const panelAllocs = planned.panels.map((panel) =>
-    useRefImages
-      ? allocateReferences({
-          characterIds: orderedPanelCast(ctx.state, panel),
-          charactersById: byId,
-          locationKeys: panel.visual?.locationKey ? [panel.visual.locationKey] : [],
-          world: ctx.state.world,
-          budget: panelBudget,
-          // Cross-page continuity applies to independent panels too — the
-          // allocator includes it only when spare capacity remains
-          previousFrame,
-          anchorImageIdByCharacter,
-        })
-      : emptyAlloc,
+  const anchorImageIdByCharacter = Object.fromEntries(
+    Object.entries(ledgerStates).map(([characterId, characterState]) => [
+      characterId,
+      characterState?.identityAnchorImageId ?? null,
+    ]),
   );
+  const signal = ctx.signal();
 
-  const sizeValid = !Array.isArray(meta?.sizes) || meta.sizes.length === 0 || meta.sizes.includes(imageSize);
-  if (!sizeValid) {
-    warnings.push(`Size ${imageSize} is not in ${modelId}'s supported resolution list — sequential batching skipped`);
-  }
-  const companionSizeValid =
-    !Array.isArray(companionMeta?.sizes) || companionMeta.sizes.length === 0 || companionMeta.sizes.includes(imageSize);
-  if (!companionSizeValid) {
-    warnings.push(
-      `Size ${imageSize} is not in ${singleImageModelId}'s supported resolution list — panel requests may be rejected`,
-    );
-  }
-
-  const plan = resolveImageGenerationPlan({
-    modelId,
-    modelMeta: meta ? { maxInputImages: budget, maxOutputImages: meta.maxOutputImages, sizes: meta.sizes } : null,
-    imagePanelCount: planned.panels.length,
-    pageReferenceCount: pageAlloc.error ? pageAlloc.error.required : pageAlloc.manifest.length,
-    panelReferenceCounts: panelAllocs.map((a) => (a.error ? a.error.required : a.manifest.length)),
-    requestedSizes: [imageSize],
-    sequentialEnabled: sequentialEnabled && sizeValid && !targetPanels,
-    panelCapacity: panelBudget,
-  });
-  warnings.push(...plan.reasons.filter((r) => r !== 'Sequential page request'));
-
-  const compiledPrompts = [];
-  const compressionCache = new Map();
-  const progress = ctx.state.generationProgress;
-  if (progress) {
-    let next = setRoute(progress, {
-      strategy: plan.strategy,
-      pageModelId: modelId,
-      effectiveImageModelId: plan.strategy === 'sequential-page' ? modelId : singleImageModelId,
-      resolution: imageSize,
-      expectedImageCount: targetPanels?.size ?? planned.panels.length,
-    });
-    next = enterStage(next, 'preparing-references', 'Preparing reference images…');
-    const requests =
-      plan.strategy === 'sequential-page'
-        ? [
-            {
-              id: 'page-sequence',
-              panelIndexes: planned.panels.map((_, i) => i),
-              modelId,
-              expectedImageCount: planned.panels.length,
-            },
-          ]
-        : planned.panels
-            .map((_, i) =>
-              (targetPanels && !targetPanels.has(i)) ||
-              panelAllocs[i].error ||
-              plan.blockedPanels.some((blockedPanel) => blockedPanel.panelIndex === i)
-                ? null
-                : { id: `panel-${i + 1}`, panelIndexes: [i], modelId: singleImageModelId, expectedImageCount: 1 },
-            )
-            .filter(Boolean);
-    next = registerRequests(next, requests);
-    ctx.setProgress(next);
-  }
-
-  if (plan.strategy === 'sequential-page' && !pageAlloc.error) {
-    // One ordered request for the whole page; data[i] maps ONLY to IMAGE i+1
-    const prompt = compileSequentialPagePrompt({
-      panels: planned.panels,
-      renderStates,
-      manifest: pageAlloc.manifest,
-      charactersById: byId,
-      stylePreset,
-    });
-    compiledPrompts.push(prompt);
-    planned.panels.forEach((panel, i) => {
-      panels[i].imagePrompt = compilePanelDescription({
-        panel,
-        renderState: renderStates[i] || {},
-        manifest: pageAlloc.manifest,
-        charactersById: byId,
-      });
-    });
-    if (statusMsg) statusMsg.textContent = `Generating ${planned.panels.length} panel images in one sequence...`;
-
-    const genOpts = {
-      count: planned.panels.length,
-      model: modelId,
-      resolution: imageSize,
-      exactReferences: true,
-      refMaxDimension: 2048,
-      signal: ctx.signal(),
-      requestId: 'page-sequence',
-      compressionCache,
-      onProgress: (event) => reportImageApiProgress(ctx, event),
-    };
-    if (pageAlloc.dataUrls.length > 0) genOpts.imageDataUrls = pageAlloc.dataUrls;
-    if (negativePrompt) genOpts.negativePrompt = negativePrompt;
-
-    try {
-      const results = await API.generateImages(prompt, genOpts);
-      if (ctx.state.generationProgress)
-        ctx.setProgress(
-          enterStage(ctx.state.generationProgress, 'persisting-images', 'Saving returned images locally…'),
-        );
-      if (ctx.state.generationProgress)
-        ctx.setProgress(
-          updateRequest(ctx.state.generationProgress, 'page-sequence', {
-            state: 'persisting',
-            receivedImageCount: results.length,
-          }),
-        );
-      const persisted = await Promise.all(
-        results.map((result) => imageResultToDataUrl(result.value, result.source, { signal: ctx.signal() })),
-      );
-      results.forEach((result, resultIndex) => {
-        const saved = persisted[resultIndex];
-        if (saved.value && panels[result.index]) panels[result.index].imageUrl = saved.value;
-        if (saved.warning) warnings.push(saved.warning);
-      });
-      if (results.length < planned.panels.length) {
-        const warning = `Model returned ${results.length} of ${planned.panels.length} images — missing panels were left empty`;
-        warnings.push(warning);
-        panels.forEach((panel) => {
-          if (!panel.imageUrl) panel.generationError = 'The page sequence did not return an image for this panel.';
+  await runContinuityGeneration(
+    {
+      pageData,
+      planningInput: {
+        pageModelId: modelId,
+        pageModel,
+        companionModelId,
+        companionModel,
+        imageSize,
+        sequentialEnabled: config?.sequentialEnabled ?? (await DB.getSetting('enableSequentialPages', false)),
+        panels: planned.panels,
+        renderStates,
+        charactersById,
+        selectedCharacterIds: ctx.state.selectedCharacters,
+        world: ctx.state.world,
+        referenceBudget: await DB.getSetting('refBudget', 'auto'),
+        useReferenceImages: await DB.getSetting('useRefImages', true),
+        previousFrame: getPreviousFrameRef(ctx.state),
+        anchorImageIdByCharacter,
+        ...(options.panelIndexes ? { targetPanelIndexes: options.panelIndexes } : {}),
+        stylePreset: imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', '')),
+        negativePrompt: await DB.getSetting('negativePrompt', ''),
+        warnings: config?.warnings || [],
+      },
+    },
+    {
+      generateImages: (prompt, generateOptions) => API.generateImages(prompt, generateOptions),
+      persistImage: (value, source, persistOptions) => imageResultToDataUrl(value, source, persistOptions),
+      startProgress: (plan, expectedImageCount) => {
+        const progress = ctx.state.generationProgress;
+        if (!progress) return;
+        let next = setRoute(progress, {
+          strategy: plan.strategy,
+          pageModelId: plan.pageModelId,
+          effectiveImageModelId: plan.effectiveModelId,
+          resolution: plan.imageSize,
+          expectedImageCount,
         });
-        ctx.toast(`Only ${results.length} of ${planned.panels.length} panel images were returned`, 'error');
-      }
-      if (ctx.state.generationProgress)
-        ctx.setProgress(
-          updateRequest(ctx.state.generationProgress, 'page-sequence', {
-            state: 'complete',
-            receivedImageCount: results.length,
-            completedAt: Date.now(),
-          }),
+        next = enterStage(next, 'preparing-references', 'Preparing reference images…');
+        next = registerRequests(
+          next,
+          plan.requests.map(({ id, panelIndexes, modelId: requestModelId, expectedImageCount: requestCount }) => ({
+            id,
+            panelIndexes: [...panelIndexes],
+            modelId: requestModelId,
+            expectedImageCount: requestCount,
+          })),
         );
-    } catch (error) {
-      if (error?.name === 'AbortError') throw error;
-      const failure = toSafeGenerationFailure(error, 'image-request');
-      warnings.push(failure.message);
-      panels.forEach((panel) => {
-        if (!panel.imageUrl) panel.generationError = failure.message;
-      });
-      if (ctx.state.generationProgress) {
-        ctx.setProgress(
-          updateRequest(ctx.state.generationProgress, 'page-sequence', {
-            state: failure.code === 'GENERATION_TIMEOUT' ? 'timed-out' : 'failed',
-            failure,
-            completedAt: Date.now(),
-          }),
-        );
-      }
-    }
-  } else {
-    // Independent panel requests with the same compiled state semantics
-    const blocked = new Set(plan.blockedPanels.map((b) => b.panelIndex));
-    const prompts = planned.panels.map((panel, i) => {
-      if (targetPanels && !targetPanels.has(i)) return null;
-      const alloc = panelAllocs[i];
-      if (alloc.error || blocked.has(i)) return null;
-      return compileIndependentPanelPrompt({
-        panel,
-        renderState: renderStates[i] || {},
-        manifest: alloc.manifest,
-        charactersById: byId,
-        stylePreset,
-      });
-    });
-    prompts.forEach((p, i) => {
-      if (p) {
-        compiledPrompts.push(p);
-        panels[i].imagePrompt = compilePanelDescription({
-          panel: planned.panels[i],
-          renderState: renderStates[i] || {},
-          manifest: panelAllocs[i].manifest,
-          charactersById: byId,
-        });
-      }
-    });
-
-    let done = 0;
-    const total = prompts.filter(Boolean).length;
-    if (statusMsg) statusMsg.textContent = `Generating images (0 / ${total})...`;
-    const settlements = await Promise.allSettled(
-      planned.panels.map(async (panel, i) => {
-        const alloc = panelAllocs[i];
-        if (alloc.error) {
-          // Never silently drop a required anchor — leave the panel empty with the exact conflict
-          panels[i].generationError = alloc.error.detail;
-          warnings.push(`Panel ${i + 1}: ${alloc.error.detail}`);
-          return;
+        ctx.setProgress(next);
+      },
+      enterStage: (stage, message) => {
+        if (ctx.state.generationProgress) {
+          ctx.setProgress(enterStage(ctx.state.generationProgress, stage, message));
         }
-        const prompt = prompts[i];
-        if (!prompt) return;
-        try {
-          const genOpts = {
-            count: 1,
-            model: singleImageModelId,
-            resolution: imageSize,
-            exactReferences: true,
-            refMaxDimension: 2048,
-            signal: ctx.signal(),
-            requestId: `panel-${i + 1}`,
-            compressionCache,
-            onProgress: (event) => reportImageApiProgress(ctx, event),
-          };
-          if (alloc.dataUrls.length > 0) genOpts.imageDataUrls = alloc.dataUrls;
-          if (negativePrompt) genOpts.negativePrompt = negativePrompt;
-          const results = await API.generateImages(prompt, genOpts);
-          if (ctx.state.generationProgress)
-            ctx.setProgress(
-              updateRequest(ctx.state.generationProgress, `panel-${i + 1}`, {
-                state: 'persisting',
-                receivedImageCount: 1,
-              }),
-            );
-          const saved = await imageResultToDataUrl(results[0].value, results[0].source, {
-            signal: ctx.signal(),
-          });
-          if (saved.value) {
-            panels[i].imageUrl = saved.value;
-            delete panels[i].generationError;
-          }
-          if (saved.warning) warnings.push(`Panel ${i + 1}: ${saved.warning}`);
-          if (ctx.state.generationProgress)
-            ctx.setProgress(
-              updateRequest(ctx.state.generationProgress, `panel-${i + 1}`, {
-                state: 'complete',
-                receivedImageCount: 1,
-                completedAt: Date.now(),
-              }),
-            );
-        } catch (imgErr) {
-          if (imgErr?.name === 'AbortError') throw imgErr;
-          ctx.logError('Panel image generation (continuity)', imgErr);
-          const failure = toSafeGenerationFailure(imgErr, 'image-request');
-          panels[i].generationError = failure.message;
-          warnings.push(`Panel ${i + 1}: ${failure.message}`);
-          if (ctx.state.generationProgress)
-            ctx.setProgress(
-              updateRequest(ctx.state.generationProgress, `panel-${i + 1}`, {
-                state: failure.code === 'GENERATION_TIMEOUT' ? 'timed-out' : 'failed',
-                failure,
-                completedAt: Date.now(),
-              }),
-            );
-          ctx.toast(`Panel ${i + 1} image failed: ${failure.message}`, 'error');
+      },
+      updateRequest: (requestId, update) => {
+        if (ctx.state.generationProgress) {
+          ctx.setProgress(updateRequest(ctx.state.generationProgress, requestId, update));
         }
-        done++;
-        if (statusMsg) statusMsg.textContent = `Generating images (${done} / ${total})...`;
-      }),
-    );
-    const cancelled = settlements.find(
-      (settlement) => settlement.status === 'rejected' && settlement.reason?.name === 'AbortError',
-    );
-    if (cancelled) throw cancelled.reason;
-  }
-
-  pageData.generation = {
-    schemaVersion: 2,
-    strategy: plan.strategy,
-    modelId,
-    ...(plan.strategy === 'independent-panels' ? { singleImageModelId } : {}),
-    resolution: imageSize,
-    promptVersion: PROMPT_VERSION,
-    compiledPrompts,
-    referenceManifest:
-      plan.strategy === 'sequential-page' ? pageAlloc.manifest : panelAllocs.flatMap((a) => a.manifest),
-    generatedAt: Date.now(),
-    outcome: generationOutcomeForPage(pageData),
-    failures: panels
-      .map((panel, panelIndex) =>
-        panel.generationError ? { panelIndexes: [panelIndex], message: panel.generationError } : null,
-      )
-      .filter(Boolean),
-  };
-  pageData.generationWarnings = [...new Set(warnings)];
+      },
+      reportApiProgress: (event) => reportImageApiProgress(ctx, event),
+      setStatus: (message) => {
+        if (statusMsg) statusMsg.textContent = message;
+      },
+      signal,
+      toast: (message, type) => ctx.toast(message, type),
+      logError: (context, error) => ctx.logError(context, error),
+    },
+  );
 }

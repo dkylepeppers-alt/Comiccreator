@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { applyContinuityResult } from '../src/js/generation/continuity/apply-results.js';
 import { buildContinuityGenerationPlan } from '../src/js/generation/continuity/build-plan.js';
+import { executeIndependentPlan } from '../src/js/generation/continuity/execute-independent.js';
+import { executeSequentialPlan } from '../src/js/generation/continuity/execute-sequential.js';
+import {
+  runContinuityGeneration,
+  type ContinuityExecutionDependencies,
+  type ContinuityPageData,
+} from '../src/js/generation/continuity/orchestrator.js';
 import type { ContinuityPlanningInput } from '../src/js/generation/continuity/types.js';
 import {
   SEQUENTIAL_MODEL_ID,
@@ -84,6 +92,36 @@ function planningInput(overrides: Partial<ContinuityPlanningInput> = {}): Contin
     stylePreset: 'inked dieselpunk comic',
     negativePrompt: 'photorealism',
     warnings: [],
+    ...overrides,
+  };
+}
+
+function pageFixture(panelCount: number): ContinuityPageData {
+  return {
+    panels: Array.from({ length: panelCount }, () => ({})),
+  };
+}
+
+function executionDependencies(
+  overrides: Partial<ContinuityExecutionDependencies> = {},
+): ContinuityExecutionDependencies {
+  return {
+    generateImages: vi.fn(async (_prompt, options) =>
+      Array.from({ length: options.count }, (_, index) => ({
+        index,
+        value: `image-${index}`,
+        source: 'b64_json' as const,
+      })),
+    ),
+    persistImage: vi.fn(async (value) => ({ value: `data:${value}`, persisted: true })),
+    startProgress: vi.fn(),
+    enterStage: vi.fn(),
+    updateRequest: vi.fn(),
+    reportApiProgress: vi.fn(),
+    setStatus: vi.fn(),
+    signal: undefined,
+    toast: vi.fn(),
+    logError: vi.fn(),
     ...overrides,
   };
 }
@@ -267,5 +305,328 @@ describe('buildContinuityGenerationPlan', () => {
       );
       expect(request.prompt).toBe(plan.compiledPrompts[requestIndex]);
     });
+  });
+});
+
+describe('executeSequentialPlan', () => {
+  it('maps persisted images by provider result index without mutating page data', async () => {
+    const input = planningInput({
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const plan = buildContinuityGenerationPlan(input);
+    expect(plan.strategy).toBe('sequential-page');
+    const pageData = pageFixture(2);
+    const before = structuredClone(pageData);
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async () => [
+        { index: 1, value: 'second', source: 'url' },
+        { index: 0, value: 'first', source: 'b64_json' },
+      ]),
+      persistImage: vi.fn(async (value) => ({ value: `saved:${value}`, persisted: true })),
+    });
+
+    const result = await executeSequentialPlan(plan, dependencies);
+
+    expect(pageData).toEqual(before);
+    expect(result.panelResults).toEqual([
+      { panelIndex: 1, imageUrl: 'saved:second' },
+      { panelIndex: 0, imageUrl: 'saved:first' },
+    ]);
+    expect(dependencies.generateImages).toHaveBeenCalledWith(
+      plan.requests[0].prompt,
+      expect.objectContaining({
+        count: 2,
+        model: plan.pageModelId,
+        resolution: plan.imageSize,
+        exactReferences: true,
+        refMaxDimension: 2048,
+        requestId: 'page-sequence',
+        negativePrompt: 'photorealism',
+      }),
+    );
+
+    applyContinuityResult(pageData, plan, result, 1234);
+    expect(pageData.panels.map(({ imageUrl }) => imageUrl)).toEqual(['saved:first', 'saved:second']);
+    expect(pageData.generation?.generatedAt).toBe(1234);
+  });
+
+  it('reports a short response and marks only still-empty panels after application', async () => {
+    const input = planningInput({
+      panels: [panel(0), panel(1), panel(2)],
+      renderStates: planningInput().renderStates.slice(0, 3),
+    });
+    const plan = buildContinuityGenerationPlan(input);
+    const pageData = pageFixture(3);
+    pageData.panels[2].imageUrl = 'existing-third';
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async () => [{ index: 0, value: 'first', source: 'b64_json' }]),
+    });
+
+    const result = await executeSequentialPlan(plan, dependencies);
+    applyContinuityResult(pageData, plan, result, 2000);
+
+    expect(result.warnings).toContain('Model returned 1 of 3 images — missing panels were left empty');
+    expect(pageData.panels[1].generationError).toBe('The page sequence did not return an image for this panel.');
+    expect(pageData.panels[2].generationError).toBeUndefined();
+    expect(dependencies.toast).toHaveBeenCalledWith('Only 1 of 3 panel images were returned', 'error');
+  });
+
+  it('returns persistence warnings for result application', async () => {
+    const input = planningInput({
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const plan = buildContinuityGenerationPlan(input);
+    const dependencies = executionDependencies({
+      persistImage: vi.fn(async (value) => ({
+        value,
+        persisted: false,
+        warning: 'A returned image could not be saved locally; its temporary URL may expire.',
+      })),
+    });
+
+    const result = await executeSequentialPlan(plan, dependencies);
+
+    expect(result.warnings).toEqual([
+      'A returned image could not be saved locally; its temporary URL may expire.',
+      'A returned image could not be saved locally; its temporary URL may expire.',
+    ]);
+  });
+
+  it('converts non-abort request failures into safe panel failures', async () => {
+    const input = planningInput({
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const plan = buildContinuityGenerationPlan(input);
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async () => {
+        const error = new Error('provider details');
+        Object.assign(error, { safeMessage: 'Provider is unavailable', status: 503 });
+        throw error;
+      }),
+    });
+
+    const result = await executeSequentialPlan(plan, dependencies);
+
+    expect(result.panelResults).toEqual([
+      { panelIndex: 0, generationError: 'Provider is unavailable', onlyIfEmpty: true },
+      { panelIndex: 1, generationError: 'Provider is unavailable', onlyIfEmpty: true },
+    ]);
+    expect(result.warnings).toEqual(['Provider is unavailable']);
+    expect(dependencies.updateRequest).toHaveBeenCalledWith(
+      'page-sequence',
+      expect.objectContaining({ state: 'failed', failure: expect.objectContaining({ status: 503 }) }),
+    );
+  });
+
+  it('propagates AbortError without converting it to a safe failure', async () => {
+    const plan = buildContinuityGenerationPlan(planningInput());
+    const abortError = new DOMException('Aborted', 'AbortError');
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async () => {
+        throw abortError;
+      }),
+    });
+
+    await expect(executeSequentialPlan(plan, dependencies)).rejects.toBe(abortError);
+    expect(dependencies.updateRequest).not.toHaveBeenCalledWith(
+      'page-sequence',
+      expect.objectContaining({ state: 'failed' }),
+    );
+  });
+});
+
+describe('executeIndependentPlan', () => {
+  function independentPlan(overrides: Partial<ContinuityPlanningInput> = {}) {
+    return buildContinuityGenerationPlan(
+      planningInput({
+        pageModelId: 'independent-model',
+        pageModel: { maxInputImages: 10, maxOutputImages: 1, sizes: ['1920x1920'] },
+        companionModelId: 'independent-model',
+        companionModel: { maxInputImages: 10, maxOutputImages: 1, sizes: ['1920x1920'] },
+        ...overrides,
+      }),
+    );
+  }
+
+  it('settles panel requests independently and returns successes and safe failures', async () => {
+    const plan = independentPlan({
+      panels: [panel(0), panel(1), panel(2)],
+      renderStates: planningInput().renderStates.slice(0, 3),
+    });
+    const pageData = pageFixture(3);
+    const before = structuredClone(pageData);
+    const dispatchOrder: string[] = [];
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async (_prompt, options) => {
+        dispatchOrder.push(options.requestId || '');
+        if (options.requestId === 'panel-2') throw new Error('second failed');
+        return [{ index: 0, value: options.requestId || '', source: 'b64_json' }];
+      }),
+    });
+
+    const result = await executeIndependentPlan(plan, dependencies);
+
+    expect(dispatchOrder).toEqual(['panel-1', 'panel-2', 'panel-3']);
+    expect(pageData).toEqual(before);
+    applyContinuityResult(pageData, plan, result, 3000);
+    expect(pageData.panels[0].imageUrl).toBe('data:panel-1');
+    expect(pageData.panels[1].generationError).toBe('second failed');
+    expect(pageData.panels[2].imageUrl).toBe('data:panel-3');
+    expect(dependencies.logError).toHaveBeenCalledWith('Panel image generation (continuity)', expect.any(Error));
+    expect(dependencies.toast).toHaveBeenCalledWith('Panel 2 image failed: second failed', 'error');
+  });
+
+  it('preserves allocation failures while executing the remaining requests', async () => {
+    const panels = [panel(0, ['char-mara', 'char-ellis']), panel(1, ['char-mara'])];
+    const plan = independentPlan({
+      pageModelId: 'capacity-one-model',
+      pageModel: { maxInputImages: 1, maxOutputImages: 1, sizes: ['1920x1920'] },
+      companionModelId: 'capacity-one-model',
+      companionModel: { maxInputImages: 1, maxOutputImages: 1, sizes: ['1920x1920'] },
+      panels,
+      renderStates: [
+        { 'char-mara': createCharacterVisualState(mara), 'char-ellis': createCharacterVisualState(ellis) },
+        { 'char-mara': createCharacterVisualState(mara) },
+      ],
+      world: null,
+      referenceBudget: 1,
+    });
+    const pageData = pageFixture(2);
+    const dependencies = executionDependencies();
+
+    const result = await executeIndependentPlan(plan, dependencies);
+    applyContinuityResult(pageData, plan, result, 4000);
+
+    expect(dependencies.generateImages).toHaveBeenCalledTimes(1);
+    expect(pageData.panels[0].generationError).toBe(
+      'This request needs 2 mandatory reference image(s) (2 character identities, 1 location(s)) but only 1 fit.',
+    );
+    expect(pageData.panels[1].imageUrl).toBe('data:image-0');
+  });
+
+  it('updates only requested panels during a targeted retry', async () => {
+    const plan = buildContinuityGenerationPlan(planningInput({ targetPanelIndexes: [3, 1] }));
+    const pageData = pageFixture(4);
+    pageData.panels.forEach((pagePanel, index) => {
+      pagePanel.imageUrl = `old-${index}`;
+      pagePanel.generationError = `old-error-${index}`;
+    });
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async (_prompt, options) => [
+        { index: 0, value: `new-${options.requestId}`, source: 'b64_json' },
+      ]),
+    });
+
+    const result = await executeIndependentPlan(plan, dependencies);
+    applyContinuityResult(pageData, plan, result, 5000);
+
+    expect(pageData.panels.map(({ imageUrl }) => imageUrl)).toEqual([
+      'old-0',
+      'data:new-panel-2',
+      'old-2',
+      'data:new-panel-4',
+    ]);
+    expect(pageData.panels.map(({ generationError }) => generationError)).toEqual([
+      'old-error-0',
+      undefined,
+      'old-error-2',
+      undefined,
+    ]);
+    expect(dependencies.setStatus).toHaveBeenCalledWith('Generating images (0 / 2)...');
+  });
+
+  it('waits for concurrent settlements and then propagates AbortError', async () => {
+    const plan = independentPlan({
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const abortError = new DOMException('Aborted', 'AbortError');
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async (_prompt, options) => {
+        if (options.requestId === 'panel-1') throw abortError;
+        return [{ index: 0, value: 'second', source: 'b64_json' }];
+      }),
+    });
+
+    await expect(executeIndependentPlan(plan, dependencies)).rejects.toBe(abortError);
+    expect(dependencies.generateImages).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('runContinuityGeneration', () => {
+  it('registers the planned route and applies execution output through the orchestrator', async () => {
+    const input = planningInput({
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const pageData = pageFixture(2);
+    const dependencies = executionDependencies();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(6000);
+
+    await runContinuityGeneration({ planningInput: input, pageData }, dependencies);
+
+    expect(dependencies.startProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ strategy: 'sequential-page' }),
+      2,
+    );
+    expect(pageData.generation).toMatchObject({
+      strategy: 'sequential-page',
+      modelId: SEQUENTIAL_MODEL_ID,
+      generatedAt: 6000,
+      outcome: 'complete',
+    });
+    now.mockRestore();
+  });
+
+  it('applies settled independent results before propagating a sibling AbortError', async () => {
+    const input = planningInput({
+      pageModelId: 'independent-model',
+      pageModel: { maxInputImages: 10, maxOutputImages: 1, sizes: ['1920x1920'] },
+      companionModelId: 'independent-model',
+      companionModel: { maxInputImages: 10, maxOutputImages: 1, sizes: ['1920x1920'] },
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const pageData = pageFixture(2);
+    const abortError = new DOMException('Aborted', 'AbortError');
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async (_prompt, options) => {
+        if (options.requestId === 'panel-1') throw abortError;
+        return [{ index: 0, value: 'settled-second', source: 'b64_json' }];
+      }),
+    });
+
+    const pending = runContinuityGeneration({ planningInput: input, pageData }, dependencies);
+    expect(pageData).toEqual(pageFixture(2));
+    await expect(pending).rejects.toBe(abortError);
+
+    expect(pageData.panels[0].imagePrompt).toBeTruthy();
+    expect(pageData.panels[0].imageUrl).toBeUndefined();
+    expect(pageData.panels[1].imageUrl).toBe('data:settled-second');
+    expect(pageData.generation).toBeUndefined();
+    expect(pageData.generationWarnings).toBeUndefined();
+  });
+
+  it('applies sequential panel prompts before propagating AbortError', async () => {
+    const input = planningInput({
+      panels: [panel(0), panel(1)],
+      renderStates: planningInput().renderStates.slice(0, 2),
+    });
+    const pageData = pageFixture(2);
+    const abortError = new DOMException('Aborted', 'AbortError');
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async () => {
+        throw abortError;
+      }),
+    });
+
+    await expect(runContinuityGeneration({ planningInput: input, pageData }, dependencies)).rejects.toBe(abortError);
+
+    expect(pageData.panels.every(({ imagePrompt }) => Boolean(imagePrompt))).toBe(true);
+    expect(pageData.generation).toBeUndefined();
+    expect(pageData.generationWarnings).toBeUndefined();
   });
 });
