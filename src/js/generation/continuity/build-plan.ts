@@ -9,12 +9,7 @@ import {
   effectiveReferenceBudget,
   resolveImageGenerationPlan,
 } from '../../visual-continuity.js';
-import type {
-  ModelCapability,
-  PlannedPage,
-  ReferenceAllocation,
-  ReferenceManifestItem,
-} from '../../visual-continuity.js';
+import type { PlannedPage, ReferenceAllocation, ReferenceManifestItem } from '../../visual-continuity.js';
 import type {
   BlockedContinuityPanel,
   ContinuityGenerationPlan,
@@ -23,18 +18,24 @@ import type {
   SequentialContinuityRequest,
 } from './types.js';
 
+interface NarrowedModelCapability {
+  readonly maxInputImages?: number | null;
+  readonly maxOutputImages?: number | null;
+  readonly sizes?: readonly unknown[] | null;
+}
+
 function readOptionalNumber(value: unknown): number | null | undefined {
   if (value === null) return null;
   return typeof value === 'number' ? value : undefined;
 }
 
-function readOptionalSizes(value: unknown): string[] | null | undefined {
+function readOptionalSizes(value: unknown): readonly unknown[] | null | undefined {
   if (value === null) return null;
   if (!Array.isArray(value)) return undefined;
-  return value.filter((size): size is string => typeof size === 'string');
+  return [...value];
 }
 
-function narrowModelCapability(value: unknown): ModelCapability | null {
+function narrowModelCapability(value: unknown): NarrowedModelCapability | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const metadata = value as Record<string, unknown>;
   return {
@@ -55,7 +56,7 @@ function orderedPanelCast(input: ContinuityPlanningInput, panelIndex: number): s
   return [...ordered, ...extras];
 }
 
-function supportsSize(capability: ModelCapability | null, imageSize: string): boolean {
+function supportsSize(capability: NarrowedModelCapability | null, imageSize: string): boolean {
   return !Array.isArray(capability?.sizes) || capability.sizes.length === 0 || capability.sizes.includes(imageSize);
 }
 
@@ -132,7 +133,6 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
       ? {
           maxInputImages: pageBudget,
           maxOutputImages: pageModel.maxOutputImages,
-          sizes: pageModel.sizes,
         }
       : null,
     imagePanelCount: input.panels.length,

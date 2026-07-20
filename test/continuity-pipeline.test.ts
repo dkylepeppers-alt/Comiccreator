@@ -140,6 +140,19 @@ describe('buildContinuityGenerationPlan', () => {
     expect(plan.warnings).toContain('Sequential page generation is disabled (output-order contract test gate)');
   });
 
+  it('conservatively rejects malformed non-empty provider size lists', () => {
+    const plan = buildContinuityGenerationPlan(
+      planningInput({
+        pageModel: { maxInputImages: 10, maxOutputImages: 15, sizes: [42] },
+      }),
+    );
+
+    expect(plan.strategy).toBe('independent-panels');
+    expect(plan.warnings[0]).toBe(
+      `Size 1920x1920 is not in ${SEQUENTIAL_MODEL_ID}'s supported resolution list — sequential batching skipped`,
+    );
+  });
+
   it('omits allocation-error and blocked panels from independent requests', () => {
     const panels = [panel(0, ['char-mara', 'char-ellis']), panel(1, ['char-mara'])];
     const plan = buildContinuityGenerationPlan(
