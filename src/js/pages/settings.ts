@@ -472,7 +472,10 @@ async function loadModels(type: string, forceRefresh = false): Promise<void> {
       if (captionCountEl) captionCountEl.textContent = captionModels.length;
       const captionStatusEl = document.getElementById('caption-model-status');
       if (result.usedFallback) {
-        if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+        if (captionStatusEl) {
+          captionStatusEl.textContent = 'Using fallback list.';
+          captionStatusEl.classList.remove('hidden');
+        }
       } else {
         if (captionStatusEl) captionStatusEl.classList.add('hidden');
       }
@@ -515,7 +518,10 @@ async function loadModels(type: string, forceRefresh = false): Promise<void> {
       const captionCountEl = document.getElementById('caption-model-count');
       if (captionCountEl) captionCountEl.textContent = captionModels.length;
       const captionStatusEl = document.getElementById('caption-model-status');
-      if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+      if (captionStatusEl) {
+        captionStatusEl.textContent = 'Using fallback list.';
+        captionStatusEl.classList.remove('hidden');
+      }
       renderModelList('caption', captionModels);
     } else {
       imageModels = fallback.models;

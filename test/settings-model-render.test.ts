@@ -43,12 +43,28 @@ describe('settings.ts loadModels render-failure recovery', () => {
 
     const statusEl = document.getElementById('text-model-status');
     const listEl = document.getElementById('text-model-list');
+    const captionStatusEl = document.getElementById('caption-model-status');
 
     // Recovered into the same fallback UI a fetch failure would have produced.
     expect(statusEl.textContent).toBe('Failed to load models. Using fallback list.');
     expect(statusEl.classList.contains('hidden')).toBe(false);
     expect(listEl.innerHTML).toContain('fallback-text-a');
+    expect(captionStatusEl.textContent).toBe('Using fallback list.');
+    expect(captionStatusEl.classList.contains('hidden')).toBe(false);
     expect((global as any).App.logError).toHaveBeenCalled();
+  });
+
+  it('shows the caption fallback status when text-model fetching fails', async () => {
+    (API.fetchTextModels as any).mockRejectedValue(new Error('catalog unavailable'));
+
+    await SettingsPage.refreshModels('text');
+
+    const captionStatusEl = document.getElementById('caption-model-status');
+    const captionListEl = document.getElementById('caption-model-list');
+
+    expect(captionStatusEl.textContent).toBe('Using fallback list.');
+    expect(captionStatusEl.classList.contains('hidden')).toBe(false);
+    expect(captionListEl.innerHTML).toContain('fallback-text-a');
   });
 
   it('renders normally when the fetched catalog is well-formed', async () => {
