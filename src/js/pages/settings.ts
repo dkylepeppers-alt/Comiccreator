@@ -7,6 +7,7 @@ import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
 import { migrateCompanionSettings } from '../image-generation-config.js';
 import { parseBackup, importBackup } from '../settings/backup-import.js';
+import { loadModelCatalog } from '../settings/model-loader.js';
 
 /**
  * Settings Page
@@ -21,8 +22,6 @@ let textModels: any[] = [];
 let imageModels: any[] = [];
 // Vision-capable subset of textModels used for the caption model picker
 let captionModels: any[] = [];
-let textModelsLoading: boolean = false;
-let imageModelsLoading: boolean = false;
 
 // Delegate error logging to global App.logError
 function logError(context: string, error: any, extraDetails?: string): void {
@@ -451,54 +450,43 @@ async function loadModels(type: string, forceRefresh = false): Promise<void> {
   if (statusEl) statusEl.textContent = 'Loading models...';
   if (statusEl) statusEl.classList.remove('hidden');
 
-  try {
-    if (type === 'text') {
-      textModelsLoading = true;
-      textModels = await API.fetchTextModels(forceRefresh);
-      textModelsLoading = false;
-      // Refresh caption models (vision-capable subset) whenever text models reload.
-      // supports_vision === false means explicitly no vision; undefined/true means attempt it.
-      captionModels = textModels.filter((m) => m.supports_vision !== false);
-      const captionCountEl = document.getElementById('caption-model-count');
-      if (captionCountEl) captionCountEl.textContent = captionModels.length;
-      const captionStatusEl = document.getElementById('caption-model-status');
-      if (captionStatusEl) captionStatusEl.classList.add('hidden');
-      renderModelList('caption', captionModels);
-    } else {
-      imageModelsLoading = true;
-      imageModels = await API.fetchImageModels(forceRefresh);
-      imageModelsLoading = false;
-    }
+  const kind = type === 'text' ? 'text' : 'image';
+  const result = await loadModelCatalog(kind, forceRefresh, {
+    fetchText: (fr) => API.fetchTextModels(fr),
+    fetchImage: (fr) => API.fetchImageModels(fr),
+    fallbackTextModelIds: API.FALLBACK_TEXT_MODELS,
+    fallbackImageModelIds: API.FALLBACK_IMAGE_MODELS,
+  });
 
-    const models = type === 'text' ? textModels : imageModels;
-    if (countEl) countEl.textContent = models.length;
-    if (statusEl) statusEl.classList.add('hidden');
-
-    renderModelList(type, models);
-  } catch (err) {
-    logError(`loadModels(${type})`, err);
+  if (result.usedFallback) {
+    logError(`loadModels(${type})`, result.error);
     if (statusEl) statusEl.textContent = 'Failed to load models. Using fallback list.';
-    const fallback =
-      type === 'text'
-        ? API.FALLBACK_TEXT_MODELS.map((id) => ({ id, name: id, owned_by: '' }))
-        : API.FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
-
-    if (type === 'text') {
-      textModels = fallback;
-      // Also update caption models from fallback (all fallback text models assumed vision-capable)
-      captionModels = fallback;
-      const captionCountEl = document.getElementById('caption-model-count');
-      if (captionCountEl) captionCountEl.textContent = captionModels.length;
-      const captionStatusEl = document.getElementById('caption-model-status');
-      if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
-      renderModelList('caption', captionModels);
-    } else {
-      imageModels = fallback;
-    }
-
-    if (countEl) countEl.textContent = fallback.length;
-    renderModelList(type, fallback);
   }
+
+  if (type === 'text') {
+    textModels = result.models;
+    // Refresh caption models (vision-capable subset) whenever text models reload.
+    captionModels = result.captionModels;
+    const captionCountEl = document.getElementById('caption-model-count');
+    if (captionCountEl) captionCountEl.textContent = captionModels.length;
+    const captionStatusEl = document.getElementById('caption-model-status');
+    if (result.usedFallback) {
+      if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+    } else {
+      if (captionStatusEl) captionStatusEl.classList.add('hidden');
+    }
+    renderModelList('caption', captionModels);
+  } else {
+    imageModels = result.models;
+  }
+
+  const models = type === 'text' ? textModels : imageModels;
+  if (countEl) countEl.textContent = models.length;
+  if (!result.usedFallback) {
+    if (statusEl) statusEl.classList.add('hidden');
+  }
+
+  renderModelList(type, models);
 }
 
 function renderModelList(type: string, models: any[]): string {
