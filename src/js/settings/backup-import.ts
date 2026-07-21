@@ -101,8 +101,14 @@ function isValidCollection(value: unknown): value is readonly BackupRecord[] {
  */
 export function parseBackup(text: string): BackupPayload {
   const parsed: unknown = JSON.parse(text);
+  if (parsed === null) {
+    // Matches the original inline importData(), where `data.characters` on a null `data` threw a
+    // TypeError immediately, caught by the caller and surfaced as the "Invalid backup file" toast.
+    // Array/primitive roots deliberately still fall back to `{}` below (unchanged legacy behavior).
+    throw new Error('Invalid backup file: root is null');
+  }
   const root: Record<string, unknown> =
-    parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
 
   const payload: MutableBackupPayload = {};
   for (const descriptor of COLLECTION_DESCRIPTORS) {

@@ -97,6 +97,15 @@ describe('parseBackup', () => {
   it('propagates a SyntaxError for malformed JSON', () => {
     expect(() => parseBackup('{ not valid json')).toThrow();
   });
+
+  it('throws for a null JSON root instead of silently returning an empty payload', () => {
+    // A `null` root previously threw when the legacy inline importData() did `data.characters`
+    // on it (TypeError: Cannot read properties of null), which the caller's catch converted into
+    // the "Invalid backup file" toast. Restoring that behavior here (rather than falling back to
+    // `{}` and returning an empty-but-"valid" payload) keeps a corrupted/truncated `null`-root
+    // export on the error path instead of silently importing nothing while reporting success.
+    expect(() => parseBackup(JSON.stringify(null))).toThrow();
+  });
 });
 
 describe('importBackup', () => {
