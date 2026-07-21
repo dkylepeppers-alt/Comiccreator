@@ -21,8 +21,13 @@ import { PROMPT_VERSION } from '../visual-continuity.js';
 import { sanitizeImagePrompt, cosineSimilarity } from '../utils.js';
 import { runContinuityGeneration } from './continuity/orchestrator.js';
 import type { CreateState, GenerationContext } from './types.js';
-import type { ImageApiProgressEvent, LabeledRef } from '../api.js';
+import type { GenerateImagesOptions, GeneratedImage, ImageApiProgressEvent, LabeledRef } from '../api.js';
 import type { CharacterVisualState } from '../visual-continuity.js';
+import type {
+  ContinuityGeneratedImage,
+  ContinuityImageProgressEvent,
+  ContinuityImageRequestOptions,
+} from './continuity/types.js';
 
 /**
  * Image-generation engine for the create page: preflight model/config
@@ -656,6 +661,21 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
       .filter(Boolean),
   };
 }
+
+// ── Compile-time drift guard ─────────────────────────────────────────────
+// `continuity/types.ts` hand-mirrors these three api.ts shapes so the strict
+// continuity core (tsconfig.core.json) never depends on the loosely-typed
+// api.ts. Nothing else re-checks that the mirrors and the real shapes stay in
+// sync (api.ts is deliberately excluded from the strict program, and this
+// loose file's call-site checks alone wouldn't fail on drift) — if either side
+// changes shape without the other, these lines turn red instead of the
+// mismatch silently reaching runtime through the wiring below.
+/* eslint-disable @typescript-eslint/no-unused-vars -- type-level assertions only, never referenced at runtime */
+type AssertAssignable<_T extends _U, _U> = void;
+type _CheckGenerateImagesOptionsMirror = AssertAssignable<ContinuityImageRequestOptions, GenerateImagesOptions>;
+type _CheckGeneratedImageMirror = AssertAssignable<GeneratedImage, ContinuityGeneratedImage>;
+type _CheckImageProgressEventMirror = AssertAssignable<ContinuityImageProgressEvent, ImageApiProgressEvent>;
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
 /**
  * Anchored-continuity image generation for a planned page.
