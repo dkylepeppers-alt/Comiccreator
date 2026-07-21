@@ -463,30 +463,68 @@ async function loadModels(type: string, forceRefresh = false): Promise<void> {
     if (statusEl) statusEl.textContent = 'Failed to load models. Using fallback list.';
   }
 
-  if (type === 'text') {
-    textModels = result.models;
-    // Refresh caption models (vision-capable subset) whenever text models reload.
-    captionModels = result.captionModels;
-    const captionCountEl = document.getElementById('caption-model-count');
-    if (captionCountEl) captionCountEl.textContent = captionModels.length;
-    const captionStatusEl = document.getElementById('caption-model-status');
-    if (result.usedFallback) {
-      if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+  try {
+    if (type === 'text') {
+      textModels = result.models;
+      // Refresh caption models (vision-capable subset) whenever text models reload.
+      captionModels = result.captionModels;
+      const captionCountEl = document.getElementById('caption-model-count');
+      if (captionCountEl) captionCountEl.textContent = captionModels.length;
+      const captionStatusEl = document.getElementById('caption-model-status');
+      if (result.usedFallback) {
+        if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+      } else {
+        if (captionStatusEl) captionStatusEl.classList.add('hidden');
+      }
+      renderModelList('caption', captionModels);
     } else {
-      if (captionStatusEl) captionStatusEl.classList.add('hidden');
+      imageModels = result.models;
     }
-    renderModelList('caption', captionModels);
-  } else {
-    imageModels = result.models;
-  }
 
-  const models = type === 'text' ? textModels : imageModels;
-  if (countEl) countEl.textContent = models.length;
-  if (!result.usedFallback) {
-    if (statusEl) statusEl.classList.add('hidden');
-  }
+    const models = type === 'text' ? textModels : imageModels;
+    if (countEl) countEl.textContent = models.length;
+    if (!result.usedFallback) {
+      if (statusEl) statusEl.classList.add('hidden');
+    }
 
-  renderModelList(type, models);
+    renderModelList(type, models);
+  } catch (renderErr) {
+    // Rendering a successfully-fetched catalog can still throw (e.g. a malformed upstream model
+    // record reaching model-catalog.ts's extractProvider()). Recover into the same fallback UI a
+    // fetch failure produces above, rather than letting the exception propagate — this restores
+    // the original inline loadModels()'s single fetch-or-render try/catch blast radius.
+    logError(`loadModels(${type}) render`, renderErr);
+    if (statusEl) {
+      statusEl.textContent = 'Failed to load models. Using fallback list.';
+      statusEl.classList.remove('hidden');
+    }
+
+    // Reuse loadModelCatalog's own tested fallback path (rather than re-deriving fallback model
+    // records here) by forcing it down its catch branch; forceRefresh is irrelevant since these
+    // dependencies never resolve.
+    const fallback = await loadModelCatalog(kind, forceRefresh, {
+      fetchText: () => Promise.reject(renderErr),
+      fetchImage: () => Promise.reject(renderErr),
+      fallbackTextModelIds: API.FALLBACK_TEXT_MODELS,
+      fallbackImageModelIds: API.FALLBACK_IMAGE_MODELS,
+    });
+
+    if (type === 'text') {
+      textModels = fallback.models;
+      captionModels = fallback.captionModels;
+      const captionCountEl = document.getElementById('caption-model-count');
+      if (captionCountEl) captionCountEl.textContent = captionModels.length;
+      const captionStatusEl = document.getElementById('caption-model-status');
+      if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+      renderModelList('caption', captionModels);
+    } else {
+      imageModels = fallback.models;
+    }
+
+    const fallbackModels = type === 'text' ? textModels : imageModels;
+    if (countEl) countEl.textContent = fallbackModels.length;
+    renderModelList(type, fallbackModels);
+  }
 }
 
 function renderModelList(type: string, models: any[]): string {
