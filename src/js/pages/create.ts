@@ -1810,10 +1810,7 @@ async function confirmRetryMissingImages() {
       if (state.generationProgress) {
         setProgress(finishAttempt(state.generationProgress, 'cancelled'));
       }
-      App.toast(
-        'This comic was deleted while generating — the recovered images were discarded.',
-        'info',
-      );
+      App.toast('This comic was deleted while generating — the recovered images were discarded.', 'info');
       resetState();
       return;
     }
