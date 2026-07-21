@@ -46,11 +46,15 @@ export async function executeIndependentPlan(
           ...(request.imageDataUrls.length > 0 ? { imageDataUrls: [...request.imageDataUrls] } : {}),
           ...(request.negativePrompt ? { negativePrompt: request.negativePrompt } : {}),
         });
+        const first = results[0];
+        if (!first) {
+          throw new Error('The image provider returned no image for this panel.');
+        }
+
         dependencies.updateRequest(request.id, {
           state: 'persisting',
           receivedImageCount: 1,
         });
-        const first = results[0];
         const saved = await dependencies.persistImage(first.value, first.source, { signal: dependencies.signal });
         if (saved.value) {
           panelResults.push({ panelIndex, imageUrl: saved.value, clearGenerationError: true });

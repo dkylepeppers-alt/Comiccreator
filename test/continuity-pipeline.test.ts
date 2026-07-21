@@ -479,6 +479,39 @@ describe('executeIndependentPlan', () => {
     expect(dependencies.toast).toHaveBeenCalledWith('Panel 2 image failed: second failed', 'error');
   });
 
+  it('converts an empty provider response into a safe panel failure', async () => {
+    const plan = independentPlan({
+      panels: [panel(0)],
+      renderStates: planningInput().renderStates.slice(0, 1),
+    });
+    const dependencies = executionDependencies({
+      generateImages: vi.fn(async () => []),
+    });
+
+    const result = await executeIndependentPlan(plan, dependencies);
+
+    expect(result.panelResults).toEqual([
+      {
+        panelIndex: 0,
+        generationError: 'The image provider returned no image for this panel.',
+      },
+    ]);
+    expect(dependencies.persistImage).not.toHaveBeenCalled();
+    expect(dependencies.updateRequest).toHaveBeenCalledWith(
+      'panel-1',
+      expect.objectContaining({
+        state: 'failed',
+        failure: expect.objectContaining({
+          message: 'The image provider returned no image for this panel.',
+        }),
+      }),
+    );
+    expect(dependencies.toast).toHaveBeenCalledWith(
+      'Panel 1 image failed: The image provider returned no image for this panel.',
+      'error',
+    );
+  });
+
   it('preserves allocation failures while executing the remaining requests', async () => {
     const panels = [panel(0, ['char-mara', 'char-ellis']), panel(1, ['char-mara'])];
     const plan = independentPlan({
