@@ -6,6 +6,7 @@ import DB from '../db.js';
 import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
 import { migrateCompanionSettings } from '../image-generation-config.js';
+import { parseBackup, importBackup } from '../settings/backup-import.js';
 
 /**
  * Settings Page
@@ -961,25 +962,13 @@ async function importData(input: any): Promise<void> {
 
   try {
     const text = await file.text();
-    const data = JSON.parse(text);
-
-    // Validate imported data: each collection must be an array of objects with id fields
-    const validArray = (arr) => Array.isArray(arr) && arr.every((item) => item && typeof item === 'object' && item.id);
-    if (data.characters && !validArray(data.characters)) throw new Error('Invalid characters data');
-    if (data.worlds && !validArray(data.worlds)) throw new Error('Invalid worlds data');
-    if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
-    if (data.pages && !validArray(data.pages)) throw new Error('Invalid pages data');
-    if (data.presets && !validArray(data.presets)) throw new Error('Invalid presets data');
-    if (data.imagePresets && !validArray(data.imagePresets)) throw new Error('Invalid imagePresets data');
-
-    // Normalize on import: files may predate stable image IDs and anchors
-    if (data.characters)
-      for (const c of data.characters) await DB.put(DB.STORES.characters, DB.normalizeCharacterRecord(c).record);
-    if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, DB.normalizeWorldRecord(w).record);
-    if (data.comics) for (const c of data.comics) await DB.put(DB.STORES.comics, c);
-    if (data.pages) for (const p of data.pages) await DB.put(DB.STORES.pages, p);
-    if (data.presets) for (const p of data.presets) await DB.put(DB.STORES.presets, p);
-    if (data.imagePresets) for (const p of data.imagePresets) await DB.put(DB.STORES.imagePresets, p);
+    const payload = parseBackup(text);
+    await importBackup(payload, {
+      stores: DB.STORES,
+      put: DB.put,
+      normalizeCharacter: DB.normalizeCharacterRecord,
+      normalizeWorld: DB.normalizeWorldRecord,
+    });
 
     App.toast('Data imported!', 'success');
     App.refreshPage();

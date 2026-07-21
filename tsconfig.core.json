@@ -3,5 +3,10 @@
   "compilerOptions": {
     "strict": true
   },
-  "include": ["src/js/generation/continuity/**/*.ts", "src/js/visual-continuity.ts", "src/js/generation-progress.ts"]
+  "include": [
+    "src/js/generation/continuity/**/*.ts",
+    "src/js/visual-continuity.ts",
+    "src/js/generation-progress.ts",
+    "src/js/settings/backup-import.ts"
+  ]
 }
