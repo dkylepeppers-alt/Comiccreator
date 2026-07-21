@@ -1,11 +1,14 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml } from '../utils.js';
+import { escHtml, compareVersions, prepareExportPages } from '../utils.js';
+import { extractProvider, buildModelDetails } from '../model-catalog.js';
 import DB from '../db.js';
 import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
 import { migrateCompanionSettings } from '../image-generation-config.js';
 import { saveBackupFile } from '../export-actions.js';
+import { parseBackup, importBackup } from '../settings/backup-import.js';
+import { loadModelCatalog } from '../settings/model-loader.js';
 
 /**
  * Settings Page
@@ -20,8 +23,6 @@ let textModels: any[] = [];
 let imageModels: any[] = [];
 // Vision-capable subset of textModels used for the caption model picker
 let captionModels: any[] = [];
-let textModelsLoading: boolean = false;
-let imageModelsLoading: boolean = false;
 
 // Delegate error logging to global App.logError
 function logError(context: string, error: any, extraDetails?: string): void {
@@ -67,7 +68,7 @@ async function render() {
           <label class="form-label">NanoGPT API Key *</label>
           <input type="password" id="set-apikey" value="${escHtml(apiKey)}" placeholder="Enter your NanoGPT API key">
           <div class="form-hint">Get your key from <a href="https://nano-gpt.com" target="_blank">nano-gpt.com</a></div>
-          <button class="btn btn-secondary btn-sm" id="test-conn-btn" onclick="SettingsPage.testConnection()" style="margin-top:8px;">Test Connection</button>
+          <button class="btn btn-secondary btn-sm" id="test-conn-btn" data-action="testConnection" style="margin-top:8px;">Test Connection</button>
         </div>
 
         <!-- Text Model Picker -->
@@ -75,13 +76,13 @@ async function render() {
           <label class="form-label">Text Model</label>
           <input type="hidden" id="set-model" value="${escHtml(model)}">
           <div class="model-picker" id="text-model-picker">
-            <div class="model-picker-selected" onclick="SettingsPage.togglePicker('text')">
+            <div class="model-picker-selected" data-action="togglePicker" data-args='["text"]'>
               <span id="text-model-display">${escHtml(model)}</span>
               <span class="model-picker-arrow">&#9662;</span>
             </div>
             <div class="model-picker-dropdown hidden" id="text-model-dropdown">
               <div class="model-picker-search-wrap">
-                <input type="text" class="model-picker-search" id="text-model-search" placeholder="Search 500+ models..." oninput="SettingsPage.filterModels('text', this.value)">
+                <input type="text" class="model-picker-search" id="text-model-search" placeholder="Search 500+ models..." data-action-input="filterModels" data-args='["text"]'>
               </div>
               <div class="model-picker-status" id="text-model-status">Loading models...</div>
               <div class="model-picker-list" id="text-model-list"></div>
@@ -89,7 +90,7 @@ async function render() {
           </div>
           <div class="form-hint">
             <span id="text-model-count">--</span> models available &middot;
-            <button class="btn-link" onclick="SettingsPage.refreshModels('text')">Refresh list</button>
+            <button class="btn-link" data-action="refreshModels" data-args='["text"]'>Refresh list</button>
           </div>
         </div>
 
@@ -98,13 +99,13 @@ async function render() {
           <label class="form-label">Image Model</label>
           <input type="hidden" id="set-imgmodel" value="${escHtml(imageModel)}">
           <div class="model-picker" id="image-model-picker">
-            <div class="model-picker-selected" onclick="SettingsPage.togglePicker('image')">
+            <div class="model-picker-selected" data-action="togglePicker" data-args='["image"]'>
               <span id="image-model-display">${imageModel ? escHtml(imageModel) : 'Select a model\u2026'}</span>
               <span class="model-picker-arrow">&#9662;</span>
             </div>
             <div class="model-picker-dropdown hidden" id="image-model-dropdown">
               <div class="model-picker-search-wrap">
-                <input type="text" class="model-picker-search" id="image-model-search" placeholder="Search image models..." oninput="SettingsPage.filterModels('image', this.value)">
+                <input type="text" class="model-picker-search" id="image-model-search" placeholder="Search image models..." data-action-input="filterModels" data-args='["image"]'>
               </div>
               <div class="model-picker-status" id="image-model-status">Loading models...</div>
               <div class="model-picker-list" id="image-model-list"></div>
@@ -112,7 +113,7 @@ async function render() {
           </div>
           <div class="form-hint">
             <span id="image-model-count">--</span> models available &middot;
-            <button class="btn-link" onclick="SettingsPage.refreshModels('image')">Refresh list</button>
+            <button class="btn-link" data-action="refreshModels" data-args='["image"]'>Refresh list</button>
           </div>
           <div class="form-hint" id="image-model-caps"></div>
         </div>
@@ -156,13 +157,13 @@ async function render() {
           <label class="form-label">Auto-Caption Model</label>
           <input type="hidden" id="set-captionmodel" value="${escHtml(captionModel)}">
           <div class="model-picker" id="caption-model-picker">
-            <div class="model-picker-selected" onclick="SettingsPage.togglePicker('caption')">
+            <div class="model-picker-selected" data-action="togglePicker" data-args='["caption"]'>
               <span id="caption-model-display">${captionModel ? escHtml(captionModel) : 'Auto (use text model)\u2026'}</span>
               <span class="model-picker-arrow">&#9662;</span>
             </div>
             <div class="model-picker-dropdown hidden" id="caption-model-dropdown">
               <div class="model-picker-search-wrap">
-                <input type="text" class="model-picker-search" id="caption-model-search" placeholder="Search vision models..." oninput="SettingsPage.filterModels('caption', this.value)">
+                <input type="text" class="model-picker-search" id="caption-model-search" placeholder="Search vision models..." data-action-input="filterModels" data-args='["caption"]'>
               </div>
               <div class="model-picker-status" id="caption-model-status">Loading models...</div>
               <div class="model-picker-list" id="caption-model-list"></div>
@@ -170,7 +171,7 @@ async function render() {
           </div>
           <div class="form-hint">
             <span id="caption-model-count">--</span> vision models available &middot;
-            <button class="btn-link" onclick="SettingsPage.clearCaptionModel()">Clear (use text model)</button>
+            <button class="btn-link" data-action="clearCaptionModel">Clear (use text model)</button>
           </div>
         </div>
 
@@ -241,7 +242,7 @@ async function render() {
 
         <div class="form-group">
           <label class="form-label">Single-Image Companion</label>
-          <select id="set-companionmode" onchange="SettingsPage.updateCompanionMode()">
+          <select id="set-companionmode" data-action-change="updateCompanionMode">
             <option value="auto" ${companion.mode === 'auto' ? 'selected' : ''}>Auto — use the recommended companion when available</option>
             <option value="same" ${companion.mode === 'same' ? 'selected' : ''}>Same — use the selected page model</option>
             <option value="custom" ${companion.mode === 'custom' ? 'selected' : ''}>Custom — use an exact model ID</option>
@@ -279,7 +280,7 @@ async function render() {
         </div>
 
         <div class="form-group">
-          <div class="form-hint">Image style presets (prompt prefixes) are managed on the <a href="#" onclick="event.preventDefault();App.navigate('image-presets')">Image Style Presets</a> page. Select a preset when creating a comic.</div>
+          <div class="form-hint">Image style presets (prompt prefixes) are managed on the <a href="#" data-navigate="image-presets">Image Style Presets</a> page. Select a preset when creating a comic.</div>
         </div>
       </div>
 
@@ -325,17 +326,17 @@ async function render() {
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block" onclick="SettingsPage.save()">Save Settings</button>
+      <button class="btn btn-primary btn-block" data-action="save">Save Settings</button>
 
       <!-- Data Management -->
       <div class="card mt-md">
         <h3 class="card-title mb-sm">Data Management</h3>
         <div style="display:flex;flex-direction:column;gap:10px;">
-          <button class="btn btn-secondary btn-block" onclick="SettingsPage.exportData()">Export All Data (JSON)</button>
+          <button class="btn btn-secondary btn-block" data-action="exportData">Export All Data (JSON)</button>
           <button class="btn btn-secondary btn-block" onclick="document.getElementById('import-input').click()">Import Data (JSON)</button>
-          <input type="file" id="import-input" accept=".json" class="hidden" onchange="SettingsPage.importData(event)">
-          <button class="btn btn-secondary btn-block" onclick="SettingsPage.clearAppCache()">Clear App Cache</button>
-          <button class="btn btn-danger btn-block" onclick="SettingsPage.clearData()">Clear All Data</button>
+          <input type="file" id="import-input" accept=".json" class="hidden" data-action-change="importData">
+          <button class="btn btn-secondary btn-block" data-action="clearAppCache">Clear App Cache</button>
+          <button class="btn btn-danger btn-block" data-action="clearData">Clear All Data</button>
         </div>
       </div>
 
@@ -343,7 +344,7 @@ async function render() {
       <div class="card mt-md">
         <h3 class="card-title mb-sm">App Updates</h3>
         <p class="text-sm text-muted mb-sm">Current version: <strong>v${APP_VERSION}</strong></p>
-        <button class="btn btn-secondary btn-block" id="check-update-btn" onclick="SettingsPage.checkForUpdate()">Check for Updates</button>
+        <button class="btn btn-secondary btn-block" id="check-update-btn" data-action="checkForUpdate">Check for Updates</button>
         <div id="update-status" style="margin-top:10px;"></div>
         <div class="form-group" style="margin-top:12px;">
           <label class="form-label">Update Repository</label>
@@ -450,53 +451,86 @@ async function loadModels(type: string, forceRefresh = false): Promise<void> {
   if (statusEl) statusEl.textContent = 'Loading models...';
   if (statusEl) statusEl.classList.remove('hidden');
 
+  const kind = type === 'text' ? 'text' : 'image';
+  const result = await loadModelCatalog(kind, forceRefresh, {
+    fetchText: (fr) => API.fetchTextModels(fr),
+    fetchImage: (fr) => API.fetchImageModels(fr),
+    fallbackTextModelIds: API.FALLBACK_TEXT_MODELS,
+    fallbackImageModelIds: API.FALLBACK_IMAGE_MODELS,
+  });
+
+  if (result.usedFallback) {
+    logError(`loadModels(${type})`, result.error);
+    if (statusEl) statusEl.textContent = 'Failed to load models. Using fallback list.';
+  }
+
   try {
     if (type === 'text') {
-      textModelsLoading = true;
-      textModels = await API.fetchTextModels(forceRefresh);
-      textModelsLoading = false;
+      textModels = result.models;
       // Refresh caption models (vision-capable subset) whenever text models reload.
-      // supports_vision === false means explicitly no vision; undefined/true means attempt it.
-      captionModels = textModels.filter((m) => m.supports_vision !== false);
+      captionModels = result.captionModels;
       const captionCountEl = document.getElementById('caption-model-count');
       if (captionCountEl) captionCountEl.textContent = captionModels.length;
       const captionStatusEl = document.getElementById('caption-model-status');
-      if (captionStatusEl) captionStatusEl.classList.add('hidden');
+      if (result.usedFallback) {
+        if (captionStatusEl) {
+          captionStatusEl.textContent = 'Using fallback list.';
+          captionStatusEl.classList.remove('hidden');
+        }
+      } else {
+        if (captionStatusEl) captionStatusEl.classList.add('hidden');
+      }
       renderModelList('caption', captionModels);
     } else {
-      imageModelsLoading = true;
-      imageModels = await API.fetchImageModels(forceRefresh);
-      imageModelsLoading = false;
+      imageModels = result.models;
     }
 
     const models = type === 'text' ? textModels : imageModels;
     if (countEl) countEl.textContent = models.length;
-    if (statusEl) statusEl.classList.add('hidden');
+    if (!result.usedFallback) {
+      if (statusEl) statusEl.classList.add('hidden');
+    }
 
     renderModelList(type, models);
-  } catch (err) {
-    logError(`loadModels(${type})`, err);
-    if (statusEl) statusEl.textContent = 'Failed to load models. Using fallback list.';
-    const fallback =
-      type === 'text'
-        ? API.FALLBACK_TEXT_MODELS.map((id) => ({ id, name: id, owned_by: '' }))
-        : API.FALLBACK_IMAGE_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
+  } catch (renderErr) {
+    // Rendering a successfully-fetched catalog can still throw (e.g. a malformed upstream model
+    // record reaching model-catalog.ts's extractProvider()). Recover into the same fallback UI a
+    // fetch failure produces above, rather than letting the exception propagate — this restores
+    // the original inline loadModels()'s single fetch-or-render try/catch blast radius.
+    logError(`loadModels(${type}) render`, renderErr);
+    if (statusEl) {
+      statusEl.textContent = 'Failed to load models. Using fallback list.';
+      statusEl.classList.remove('hidden');
+    }
+
+    // Reuse loadModelCatalog's own tested fallback path (rather than re-deriving fallback model
+    // records here) by forcing it down its catch branch; forceRefresh is irrelevant since these
+    // dependencies never resolve.
+    const fallback = await loadModelCatalog(kind, forceRefresh, {
+      fetchText: () => Promise.reject(renderErr),
+      fetchImage: () => Promise.reject(renderErr),
+      fallbackTextModelIds: API.FALLBACK_TEXT_MODELS,
+      fallbackImageModelIds: API.FALLBACK_IMAGE_MODELS,
+    });
 
     if (type === 'text') {
-      textModels = fallback;
-      // Also update caption models from fallback (all fallback text models assumed vision-capable)
-      captionModels = fallback;
+      textModels = fallback.models;
+      captionModels = fallback.captionModels;
       const captionCountEl = document.getElementById('caption-model-count');
       if (captionCountEl) captionCountEl.textContent = captionModels.length;
       const captionStatusEl = document.getElementById('caption-model-status');
-      if (captionStatusEl) captionStatusEl.textContent = 'Using fallback list.';
+      if (captionStatusEl) {
+        captionStatusEl.textContent = 'Using fallback list.';
+        captionStatusEl.classList.remove('hidden');
+      }
       renderModelList('caption', captionModels);
     } else {
-      imageModels = fallback;
+      imageModels = fallback.models;
     }
 
-    if (countEl) countEl.textContent = fallback.length;
-    renderModelList(type, fallback);
+    const fallbackModels = type === 'text' ? textModels : imageModels;
+    if (countEl) countEl.textContent = fallbackModels.length;
+    renderModelList(type, fallbackModels);
   }
 }
 
@@ -534,7 +568,7 @@ function renderModelList(type: string, models: any[]): string {
     for (const m of providerModels) {
       const isSelected = m.id === currentValue;
       const details = buildModelDetails(m);
-      html += `<div class="model-option ${isSelected ? 'selected' : ''}" data-model-id="${escHtml(m.id)}" onclick="SettingsPage.selectModel('${type}', '${escHtml(m.id)}')">`;
+      html += `<div class="model-option ${isSelected ? 'selected' : ''}" data-model-id="${escHtml(m.id)}" data-action="selectModel" data-args="${escHtml(JSON.stringify([type, m.id]))}">`;
       html += `<div class="model-option-name">${escHtml(m.name || m.id)}</div>`;
       if (m.name && m.name !== m.id) {
         html += `<div class="model-option-id">${escHtml(m.id)}</div>`;
@@ -548,77 +582,6 @@ function renderModelList(type: string, models: any[]): string {
   }
 
   listEl.innerHTML = html || '<div class="model-picker-empty">No models found</div>';
-}
-
-function extractProvider(model: any): string {
-  // Try owned_by first
-  if (model.owned_by) return model.owned_by;
-  // Try to extract from model id (e.g. "openai/gpt-4o" -> "openai")
-  const slashIdx = model.id.indexOf('/');
-  if (slashIdx > 0) return model.id.substring(0, slashIdx);
-  // Guess from common prefixes
-  const id = model.id.toLowerCase();
-  if (
-    id.startsWith('gpt-') ||
-    id.startsWith('chatgpt') ||
-    id.startsWith('dall-e') ||
-    id.startsWith('o1') ||
-    id.startsWith('o3') ||
-    id.startsWith('o4')
-  )
-    return 'OpenAI';
-  if (id.startsWith('claude')) return 'Anthropic';
-  if (id.startsWith('gemini') || id.startsWith('nano-banana')) return 'Google';
-  if (id.startsWith('llama') || id.startsWith('meta-llama')) return 'Meta';
-  if (id.startsWith('mistral') || id.startsWith('codestral') || id.startsWith('pixtral')) return 'Mistral';
-  if (id.startsWith('deepseek')) return 'DeepSeek';
-  if (id.startsWith('grok')) return 'xAI';
-  if (id.startsWith('qwen') || id.startsWith('wan-') || id.startsWith('z-image')) return 'Alibaba';
-  if (id.startsWith('command')) return 'Cohere';
-  if (id.startsWith('flux') || id.startsWith('schnell')) return 'Black Forest Labs';
-  if (id.startsWith('stable-diffusion') || id.startsWith('sdxl') || id.startsWith('sd3')) return 'Stability AI';
-  if (id.startsWith('seedream') || id.startsWith('seedvr')) return 'ByteDance';
-  if (id.startsWith('hunyuan')) return 'Tencent';
-  if (id.startsWith('cogview') || id.startsWith('glm')) return 'Zhipu';
-  if (id.startsWith('kling')) return 'Kling';
-  if (id.startsWith('vidu')) return 'Vidu';
-  if (id.startsWith('minimax')) return 'MiniMax';
-  if (id.startsWith('yi-')) return '01.AI';
-  if (id.startsWith('phi-')) return 'Microsoft';
-  if (id.startsWith('nova-') || id.startsWith('amazon')) return 'Amazon';
-  if (id.startsWith('kimi')) return 'Moonshot';
-  // Retained for cached model data from older sessions or future API additions
-  if (id.startsWith('hidream')) return 'HiDream';
-  if (id.startsWith('midjourney')) return 'Midjourney';
-  if (id.startsWith('riverflow')) return 'Sourceful';
-  if (id.startsWith('lucid')) return 'Leonardo AI';
-  return 'Other';
-}
-
-function buildModelDetails(m: any): string {
-  const parts = [];
-  if (m.context_length) parts.push(`${(m.context_length / 1000).toFixed(0)}K ctx`);
-  if (m.supports_vision) parts.push('vision');
-  if (m.supports_tools) parts.push('tools');
-  if (m.supports_edit) parts.push('edit');
-  if (m.pricing) {
-    if (typeof m.pricing === 'object') {
-      // Text models: pricing.prompt is per-million-tokens
-      if (m.pricing.prompt != null) {
-        parts.push(`$${m.pricing.prompt}/1M in`);
-        // Image models: pricing.per_image is { resolution: cost }
-      } else if (m.pricing.per_image && typeof m.pricing.per_image === 'object') {
-        const prices = Object.values(m.pricing.per_image).filter((v) => typeof v === 'number');
-        if (prices.length > 0) {
-          const minPrice = Math.min(...prices);
-          parts.push(`$${minPrice}/img`);
-        }
-      }
-    } else if (typeof m.pricing === 'string') {
-      parts.push(m.pricing);
-    }
-  }
-  return parts.length > 0 ? parts.join(' &middot; ') : '';
 }
 
 /**
@@ -671,7 +634,7 @@ function togglePicker(type: string): void {
       search.focus();
     }
     // Reset filter
-    filterModels(type, '');
+    filterModels(type, search);
   }
 }
 
@@ -680,7 +643,8 @@ function closePicker(type: string): void {
   if (dropdown) dropdown.classList.add('hidden');
 }
 
-function filterModels(type: string, query: string): void {
+function filterModels(type: string, input: any): void {
+  const query = input?.value || '';
   const models = type === 'text' ? textModels : type === 'caption' ? captionModels : imageModels;
   const q = query.toLowerCase().trim();
   if (!q) {
@@ -804,18 +768,6 @@ async function testConnection() {
 
 // --- Update Check ---
 
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (na > nb) return 1;
-    if (na < nb) return -1;
-  }
-  return 0;
-}
-
 async function checkForUpdate() {
   const statusEl = document.getElementById('update-status');
   if (!statusEl) return;
@@ -887,7 +839,7 @@ async function checkForUpdate() {
         <div style="padding:10px;border-radius:8px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);">
           <p class="text-sm" style="color:#ffc107;margin:0 0 4px 0;"><strong>Update available: v${escHtml(remote.version)}</strong></p>
           <p class="text-sm text-muted" style="margin:0 0 8px 0;">You have v${escHtml(localVersion)}. Use the button below to clear the cache and load the latest version.</p>
-          <button class="btn btn-primary btn-sm" onclick="SettingsPage.reloadForUpdate()">Reload &amp; Apply Update</button>
+          <button class="btn btn-primary btn-sm" data-action="reloadForUpdate">Reload &amp; Apply Update</button>
         </div>`;
       App.toast(`Update available: v${remote.version}`, 'info');
     } else {
@@ -1016,19 +968,7 @@ async function save() {
 async function exportData() {
   const rawPages = await DB.getAll(DB.STORES.pages);
   // Strip imageUrl from panels — AI-generated images are large and can be regenerated
-  const strippedPages = rawPages.map((p) => {
-    const copy = Object.assign({}, p);
-    if (copy.data && Array.isArray(copy.data.panels)) {
-      copy.data = Object.assign({}, copy.data, {
-        panels: copy.data.panels.map((panel) => {
-          const pc = Object.assign({}, panel);
-          delete pc.imageUrl;
-          return pc;
-        }),
-      });
-    }
-    return copy;
-  });
+  const strippedPages = prepareExportPages(rawPages);
   const data = {
     characters: await DB.getAll(DB.STORES.characters),
     worlds: await DB.getAll(DB.STORES.worlds),
@@ -1042,31 +982,19 @@ async function exportData() {
   await saveBackupFile(data);
 }
 
-async function importData(event: any): Promise<void> {
-  const file = event.target.files[0];
+async function importData(input: any): Promise<void> {
+  const file = input.files[0];
   if (!file) return;
 
   try {
     const text = await file.text();
-    const data = JSON.parse(text);
-
-    // Validate imported data: each collection must be an array of objects with id fields
-    const validArray = (arr) => Array.isArray(arr) && arr.every((item) => item && typeof item === 'object' && item.id);
-    if (data.characters && !validArray(data.characters)) throw new Error('Invalid characters data');
-    if (data.worlds && !validArray(data.worlds)) throw new Error('Invalid worlds data');
-    if (data.comics && !validArray(data.comics)) throw new Error('Invalid comics data');
-    if (data.pages && !validArray(data.pages)) throw new Error('Invalid pages data');
-    if (data.presets && !validArray(data.presets)) throw new Error('Invalid presets data');
-    if (data.imagePresets && !validArray(data.imagePresets)) throw new Error('Invalid imagePresets data');
-
-    // Normalize on import: files may predate stable image IDs and anchors
-    if (data.characters)
-      for (const c of data.characters) await DB.put(DB.STORES.characters, DB.normalizeCharacterRecord(c).record);
-    if (data.worlds) for (const w of data.worlds) await DB.put(DB.STORES.worlds, DB.normalizeWorldRecord(w).record);
-    if (data.comics) for (const c of data.comics) await DB.put(DB.STORES.comics, c);
-    if (data.pages) for (const p of data.pages) await DB.put(DB.STORES.pages, p);
-    if (data.presets) for (const p of data.presets) await DB.put(DB.STORES.presets, p);
-    if (data.imagePresets) for (const p of data.imagePresets) await DB.put(DB.STORES.imagePresets, p);
+    const payload = parseBackup(text);
+    await importBackup(payload, {
+      stores: DB.STORES,
+      put: DB.put,
+      normalizeCharacter: DB.normalizeCharacterRecord,
+      normalizeWorld: DB.normalizeWorldRecord,
+    });
 
     App.toast('Data imported!', 'success');
     App.refreshPage();
@@ -1082,7 +1010,7 @@ function clearData() {
     <p>This will permanently delete all your characters, worlds, comics, and presets. This cannot be undone.</p>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="SettingsPage.confirmClear()">Delete Everything</button>
+      <button class="btn btn-danger btn-sm" data-action="confirmClear">Delete Everything</button>
     </div>
   `);
 }

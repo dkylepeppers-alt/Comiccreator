@@ -1,63 +1,29 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml, dedupeByNameLatest } from '../utils.js';
+import { escHtml } from '../utils.js';
 import DB from '../db.js';
+import { createPresetPage } from '../preset-page.js';
 
 /**
  * Prompt Presets Page
  */
-let currentView: string = 'list';
-let editingId: string | null = null;
-
-async function render(param?: string | null): Promise<string> {
-  if (param === 'new') {
-    currentView = 'edit';
-    editingId = null;
-  } else if (param) {
-    // param is a preset ID — switch to edit mode
-    currentView = 'edit';
-    editingId = param;
-  } else {
-    // Reset to list view on normal navigation (prevents stale edit state)
-    currentView = 'list';
-    editingId = null;
-  }
-  if (currentView === 'edit') return renderEditor();
-  return renderList();
-}
-
-async function renderList() {
-  const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
-
-  return `
-    <div class="slide-up">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <div>
-          <h2 class="section-title" style="margin-bottom:4px;">Prompt Presets</h2>
-          <p class="text-sm text-muted">Customize system prompts and sampler settings</p>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="PresetsPage.newPreset()">+ New</button>
-      </div>
-
-      ${
-        presets.length === 0
-          ? `
-        <div class="empty-state">
-          <div class="empty-state-icon">&#9881;</div>
-          <div class="empty-state-text">No presets yet.</div>
-          <button class="btn btn-primary" onclick="PresetsPage.newPreset()">Create Preset</button>
-        </div>
-      `
-          : presets
-              .map(
-                (p) => `
-        <div class="preset-card" onclick="PresetsPage.editPreset('${p.id}')">
+const PresetsPage: PageModule & Record<string, any> = createPresetPage({
+  store: DB.STORES.presets,
+  navKey: 'presets',
+  label: 'Preset',
+  deleteModalTitle: 'Delete Preset',
+  title: 'Prompt Presets',
+  subtitle: 'Customize system prompts and sampler settings',
+  emptyIcon: '&#9881;',
+  emptyText: 'No presets yet.',
+  listItem: (p) => `
+        <div class="preset-card" data-action="editPreset" data-args="${escHtml(JSON.stringify([p.id]))}">
           <div style="display:flex;justify-content:space-between;align-items:start;">
             <div>
               <div class="preset-card-name">${escHtml(p.name)}</div>
               <div class="text-sm text-muted">${escHtml(p.description || '')}</div>
             </div>
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();PresetsPage.deletePreset('${p.id}','${escHtml(p.name)}')">&#128465;</button>
+            <button class="btn btn-sm btn-danger" data-action="deletePreset" data-args="${escHtml(JSON.stringify([p.id, p.name]))}">&#128465;</button>
           </div>
           <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;">
             <span class="text-sm" style="color:var(--accent);">Temp: ${p.temperature}</span>
@@ -67,15 +33,7 @@ async function renderList() {
           <div class="preset-card-preview mt-sm">${escHtml((p.systemPrompt || '').slice(0, 120))}${(p.systemPrompt || '').length > 120 ? '...' : ''}</div>
         </div>
       `,
-              )
-              .join('')
-      }
-    </div>
-  `;
-}
-
-async function renderEditor() {
-  let preset = {
+  defaults: {
     name: '',
     description: '',
     temperature: 0.7,
@@ -84,16 +42,11 @@ async function renderEditor() {
     systemPrompt: '',
     frequencyPenalty: 0,
     presencePenalty: 0,
-  };
-  if (editingId) {
-    const saved = await DB.get(DB.STORES.presets, editingId);
-    if (saved) preset = { ...preset, ...saved };
-  }
-
-  return `
+  },
+  editorHtml: (preset, editingId) => `
     <div class="slide-up">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <button class="btn btn-sm btn-secondary" onclick="PresetsPage.backToList()">&#8592; Back</button>
+        <button class="btn btn-sm btn-secondary" data-action="backToList">&#8592; Back</button>
         <h2 class="section-title" style="margin:0;">${editingId ? 'Edit' : 'New'} Preset</h2>
       </div>
 
@@ -166,79 +119,27 @@ async function renderEditor() {
         </div>
       </div>
 
-      <button class="btn btn-primary btn-block mt-sm" onclick="PresetsPage.savePreset()">
+      <button class="btn btn-primary btn-block mt-sm" data-action="savePreset">
         ${editingId ? 'Update' : 'Create'} Preset
       </button>
     </div>
-  `;
-}
-
-function newPreset() {
-  App.navigate('presets', 'new');
-}
-
-async function editPreset(id: string): Promise<void> {
-  App.navigate('presets', id);
-}
-
-function backToList() {
-  App.navigate('presets', null);
-}
-
-async function savePreset() {
-  const name = document.getElementById('preset-name').value.trim();
-  if (!name) return App.toast('Name is required', 'error');
-
-  const preset = {
-    id: editingId || DB.uuid(),
-    name,
-    description: document.getElementById('preset-desc').value.trim(),
-    systemPrompt: document.getElementById('preset-system').value.trim(),
-    temperature: parseFloat(document.getElementById('preset-temp').value),
-    topP: parseFloat(document.getElementById('preset-topp').value),
-    maxTokens: parseInt(document.getElementById('preset-tokens').value),
-    frequencyPenalty: parseFloat(document.getElementById('preset-freq').value),
-    presencePenalty: parseFloat(document.getElementById('preset-pres').value),
-    createdAt: editingId ? (await DB.get(DB.STORES.presets, editingId))?.createdAt || Date.now() : Date.now(),
-    updatedAt: Date.now(),
-  };
-
-  await DB.put(DB.STORES.presets, preset);
-  App.toast(`Preset ${editingId ? 'updated' : 'created'}!`, 'success');
-  backToList();
-}
-
-async function deletePreset(id: string, name: string): Promise<void> {
-  App.showModal(`
-    <div class="modal-title">Delete Preset</div>
-    <p>Delete preset <strong>${escHtml(name)}</strong>?</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary btn-sm" onclick="App.hideModal()">Cancel</button>
-      <button class="btn btn-danger btn-sm" onclick="PresetsPage.confirmDelete('${id}')">Delete</button>
-    </div>
-  `);
-}
-
-async function confirmDelete(id: string): Promise<void> {
-  await DB.del(DB.STORES.presets, id);
-  App.hideModal();
-  App.toast('Preset deleted', 'info');
-  App.refreshPage();
-}
-
-function onUnmount(): void {
-  currentView = 'list';
-  editingId = null;
-}
-
-const PresetsPage: PageModule & Record<string, any> = {
-  render,
-  onUnmount,
-  newPreset,
-  editPreset,
-  backToList,
-  savePreset,
-  deletePreset,
-  confirmDelete,
-};
+  `,
+  collectFields: () => {
+    const name = document.getElementById('preset-name').value.trim();
+    if (!name) {
+      App.toast('Name is required', 'error');
+      return null;
+    }
+    return {
+      name,
+      description: document.getElementById('preset-desc').value.trim(),
+      systemPrompt: document.getElementById('preset-system').value.trim(),
+      temperature: parseFloat(document.getElementById('preset-temp').value),
+      topP: parseFloat(document.getElementById('preset-topp').value),
+      maxTokens: parseInt(document.getElementById('preset-tokens').value),
+      frequencyPenalty: parseFloat(document.getElementById('preset-freq').value),
+      presencePenalty: parseFloat(document.getElementById('preset-pres').value),
+    };
+  },
+});
 export default PresetsPage;

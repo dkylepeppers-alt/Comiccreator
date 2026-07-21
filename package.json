@@ -18,6 +18,7 @@
     "coverage": "vitest run --coverage",
     "coverage:ci": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "typecheck:core": "tsc -p tsconfig.core.json",
     "test:e2e": "playwright test",
     "check-syntax": "npm run typecheck && npm run build -- --logLevel error",
     "lint:actions": "bash scripts/check-actions.sh",

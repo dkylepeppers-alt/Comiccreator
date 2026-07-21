@@ -1,4 +1,5 @@
 import { escHtml, type PageModule } from './utils.js';
+import { registerPageEventListeners } from './page-actions.js';
 import DB from './db.js';
 import HomePage from './pages/home.js';
 import CharactersPage from './pages/characters.js';
@@ -432,6 +433,17 @@ document.getElementById('modal-overlay').addEventListener('click', (e) => {
   if (e.target === document.getElementById('modal-overlay')) hideModal();
 });
 
+// Delegated page events: templates use data-action / data-action-change /
+// data-action-input / data-navigate instead of inline onclick handlers.
+// Dispatch semantics live in page-actions.ts.
+registerPageEventListeners({
+  getPage: () => currentPage,
+  getModule: (page) => pages[page],
+  navigate,
+  logWarn,
+  logError,
+});
+
 // Init on DOM ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
@@ -457,13 +469,7 @@ const App = {
 };
 export default App;
 
-// Expose to window for HTML onclick handlers
+// Expose to window for the few remaining inline App.* handlers (index.html
+// error panel, modal Cancel buttons) and the Playwright smoke tests. Page
+// modules are reached via the delegated data-action dispatcher instead.
 window.App = App;
-window.HomePage = HomePage;
-window.CharactersPage = CharactersPage;
-window.WorldsPage = WorldsPage;
-window.CreatePage = CreatePage;
-window.LibraryPage = LibraryPage;
-window.PresetsPage = PresetsPage;
-window.ImagePresetsPage = ImagePresetsPage;
-window.SettingsPage = SettingsPage;

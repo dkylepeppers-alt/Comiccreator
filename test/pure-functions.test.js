@@ -3,99 +3,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-
-// --- Load pure functions by extracting them from source files ---
-
-// escHtml — copied from home.js (the string-based version doesn't need DOM)
-function escHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-// timeAgo — copied from home.js
-function timeAgo(ts) {
-  if (!ts) return '';
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(ts).toLocaleDateString();
-}
-
-// repairTruncatedJson + parseComicResponse — extracted from api.js
-function repairTruncatedJson(str) {
-  let s = str.trimEnd();
-  const stack = [];
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (escape) { escape = false; continue; }
-    if (c === '\\' && inString) { escape = true; continue; }
-    if (c === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (c === '{') stack.push('}');
-    else if (c === '[') stack.push(']');
-    else if (c === '}' || c === ']') stack.pop();
-  }
-
-  if (inString) {
-    if (escape) s = s.slice(0, -1);
-    s += '"';
-  }
-  s = s.replace(/,\s*$/, '');
-  while (stack.length > 0) s += stack.pop();
-  return s;
-}
-
-function parseComicResponse(text) {
-  let jsonStr = text.trim();
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    jsonStr = fenceMatch[1].trim();
-  }
-  const firstBrace = jsonStr.indexOf('{');
-  const lastBrace = jsonStr.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
-  }
-
-  const buildResult = parsed => ({
-    title: parsed.title || 'Untitled Page',
-    panels: (parsed.panels || []).map(p => ({
-      narration: p.narration || '',
-      imagePrompt: p.imagePrompt || p.image_prompt || '',
-      dialogue: (p.dialogue || []).map(d => ({
-        speaker: d.speaker || 'Unknown',
-        text: d.text || '',
-      })),
-    })),
-    choices: (parsed.choices || []).map(c => ({
-      text: c.text || c.description || '',
-      summary: c.summary || '',
-    })),
-  });
-
-  try {
-    return buildResult(JSON.parse(jsonStr));
-  } catch (e) {
-    try {
-      return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
-    } catch (_e2) {
-      return null;
-    }
-  }
-}
+import { escHtml, timeAgo, prepareExportPages } from '../src/js/utils.js';
+import { parseComicResponse } from '../src/js/api-parsing.js';
 
 // --- Tests ---
 
@@ -282,25 +191,6 @@ describe('parseComicResponse', () => {
     expect(result.title).toBe('Anthony');
   });
 });
-
-// prepareExportPages — extracted from exportData() in settings.js
-function prepareExportPages(pages) {
-  return pages.map(p => {
-    const copy = Object.assign({}, p);
-    if (copy.data && Array.isArray(copy.data.panels)) {
-      copy.data = Object.assign({}, copy.data, {
-        panels: copy.data.panels.map(panel => {
-          const panelCopy = Object.assign({}, panel);
-          if ('imageUrl' in panelCopy) {
-            delete panelCopy.imageUrl;
-          }
-          return panelCopy;
-        }),
-      });
-    }
-    return copy;
-  });
-}
 
 describe('exportData page preparation', () => {
   it('should strip imageUrl from each panel in each page', () => {

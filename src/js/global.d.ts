@@ -24,16 +24,6 @@ declare const App: {
   getErrorLog(): any[];
 };
 
-/** Page modules exposed on window by app.ts for HTML onclick handlers */
-declare const HomePage: any;
-declare const CharactersPage: any;
-declare const WorldsPage: any;
-declare const CreatePage: any;
-declare const LibraryPage: any;
-declare const PresetsPage: any;
-declare const ImagePresetsPage: any;
-declare const SettingsPage: any;
-
 /** Extend globalThis to include App for module-scoped references */
 declare namespace globalThis {
   var App: typeof App;
@@ -42,12 +32,4 @@ declare namespace globalThis {
 /** Extend Window to include app globals set by app.ts */
 interface Window {
   App: typeof App;
-  HomePage: any;
-  CharactersPage: any;
-  WorldsPage: any;
-  CreatePage: any;
-  LibraryPage: any;
-  PresetsPage: any;
-  ImagePresetsPage: any;
-  SettingsPage: any;
 }

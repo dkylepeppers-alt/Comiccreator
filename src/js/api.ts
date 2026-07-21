@@ -1,5 +1,20 @@
 import DB from './db.js';
 import { IMAGE_REQUEST_TIMEOUT_MS, MODEL_METADATA_TIMEOUT_MS, runWithTimeout } from './generation-progress.js';
+import {
+  FALLBACK_IMAGE_MODELS,
+  FALLBACK_TEXT_MODELS,
+  KNOWN_IMAGE_SIZES,
+  getModelSizesStatic,
+  normalizeImageModel,
+} from './model-catalog.js';
+import type { ImageModel, TextModel } from './model-catalog.js';
+import { parseComicResponse, parsePlannedPageResponse } from './api-parsing.js';
+import { buildPlannerSystemPrompt, buildSystemPrompt } from './prompt-building.js';
+
+export { normalizeImageModel };
+export type { ImageModel, TextModel } from './model-catalog.js';
+export type { ComicPanel, ComicPageResult } from './api-parsing.js';
+export type { BuildSystemPromptOptions, PlannerManifest } from './prompt-building.js';
 
 /**
  * NanoGPT API Integration
@@ -48,29 +63,6 @@ export interface ChatCompletionOptions {
   signal?: AbortSignal;
 }
 
-export interface TextModel {
-  id: string;
-  name: string;
-  owned_by: string;
-  context_length?: number | null;
-  pricing?: any;
-  supports_vision?: boolean;
-  supports_tools?: boolean;
-}
-
-export interface ImageModel {
-  id: string;
-  name: string;
-  owned_by: string;
-  pricing?: any;
-  supports_edit?: boolean;
-  sizes?: string[] | null;
-  inputModalities?: string[];
-  maxInputImages?: number | null;
-  maxOutputImages?: number | null;
-  supportedParameters?: Record<string, unknown>;
-}
-
 export interface GenerateImagesOptions extends ImageGenOptions {
   count: number;
   /**
@@ -105,29 +97,10 @@ export interface GeneratedImage {
   source: 'url' | 'b64_json';
 }
 
-export interface ComicPanel {
-  narration: string;
-  imagePrompt: string;
-  imageSize?: string;
-  dialogue: { speaker: string; text: string }[];
-}
-
-export interface ComicPageResult {
-  title: string;
-  panels: ComicPanel[];
-  choices: { text: string; summary: string }[];
-}
-
 export interface ModelParams {
   temperature: number;
   topP: number;
   maxTokens: number;
-}
-
-export interface BuildSystemPromptOptions {
-  imageSizes?: string[];
-  includeAppearanceText?: boolean;
-  imageStylePreset?: string;
 }
 
 export interface CaptionContextHints {
@@ -164,35 +137,6 @@ let _lastImageModelSource: 'live' | 'cache-fresh' | 'cache-degraded' | 'fallback
 const IMAGE_MODEL_CACHE_SCHEMA_VERSION = 2;
 const IMAGE_MODEL_CACHE_MIGRATION_RETRY_MS = 5 * 60 * 1000;
 
-// Static fallback sizes for well-known models when the live API doesn't return size info.
-// Keys are model IDs (or ID prefixes), values are arrays of supported WxH strings.
-const KNOWN_IMAGE_SIZES: Record<string, string[]> = {
-  'gpt-image-1': ['1024x1024', '1536x1024', '1024x1536', 'auto'],
-  'gpt-image-1.5': ['1024x1024', '1536x1024', '1024x1536', 'auto'],
-  'gpt-image-1-mini': ['1024x1024', 'auto'],
-  'flux-2-turbo': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-  'flux-2-flash': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-  'flux-2-pro': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-  'flux-2-max': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-  'flux-2-dev': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-  'flux-2-flex': ['1024*1024', '1280*720', '720*1280', '1536*1024', '1024*1536'],
-  'seedream-v4': ['1024x1024', '1536x1024', '1024x1536', '2048x2048'],
-  'seedream-v3': ['1024x1024', '1152x896', '896x1152', '1344x768', '768x1344'],
-  'nano-banana': ['auto'],
-  'nano-banana-pro': ['1k', '2k', '4k'],
-  'qwen-image': ['auto', '1024x1024', '512x512', '768x1024', '1024x768'],
-  'hunyuan-image-3': ['auto', '1024x1024', '768x1024', '1024x768', '1024x1536', '1536x1024', '512x512'],
-  // Legacy entries retained for backward compatibility
-  'dall-e-3': ['1024x1024', '1024x1792', '1792x1024'],
-  'dall-e-2': ['256x256', '512x512', '1024x1024'],
-  'gpt-4o-image': ['1024x1024', '1024x1792', '1792x1024'],
-  'flux-pro': ['1024x1024', '1024x768', '768x1024', '1280x768', '768x1280'],
-  'flux-schnell': ['1024x1024', '1024x768', '768x1024'],
-  'flux-kontext': ['1024x1024', '1024x768', '768x1024'],
-  'stable-diffusion-xl': ['1024x1024', '1024x768', '768x1024'],
-  'stable-diffusion-3': ['1024x1024', '1024x768', '768x1024'],
-};
-
 /**
  * Return the list of sizes supported by a given image model.
  * Source: live API cache populated by fetchImageModels(), with a static
@@ -216,14 +160,8 @@ async function getModelSizes(modelId: string): Promise<string[] | null> {
     /* ignore cache errors */
   }
 
-  // Fall back to static known sizes for well-known model IDs
-  if (KNOWN_IMAGE_SIZES[modelId]) return KNOWN_IMAGE_SIZES[modelId];
-  // Also match by prefix (e.g. "flux-schnell-v2" matches "flux-schnell")
-  for (const [prefix, sizes] of Object.entries(KNOWN_IMAGE_SIZES)) {
-    if (modelId.startsWith(prefix)) return sizes;
-  }
-
-  return null;
+  // Fall back to static known sizes for well-known model IDs (exact or prefix match)
+  return getModelSizesStatic(modelId);
 }
 
 async function getApiKey(): Promise<string> {
@@ -658,436 +596,6 @@ async function generateImage(prompt: string, options: ImageGenOptions = {}): Pro
 }
 
 /**
- * Build system prompt for comic generation.
- * @param {string} genre
- * @param {Array} characters
- * @param {Object} world
- * @param {string|null} customSystemPrompt
- * @param {Object} [options]
- * @param {string[]} [options.imageSizes] - available image sizes for dynamic per-panel selection
- * @param {boolean} [options.includeAppearanceText] - whether to include character appearance text (default: true)
- * @param {string} [options.imageStylePreset] - image style prompt prefix from the selected image preset (e.g. "watercolor painting, soft edges").
- */
-function buildSystemPrompt(
-  genre: string,
-  characters: any[],
-  world: any,
-  customSystemPrompt: string | null,
-  options?: BuildSystemPromptOptions,
-): string {
-  const base = customSystemPrompt || `You are a masterful comic book creator specializing in ${genre} stories.`;
-
-  const imageSizes = options?.imageSizes;
-  const hasDynamicSizes = Array.isArray(imageSizes) && imageSizes.length > 1;
-  const includeAppearance = options?.includeAppearanceText !== false;
-  const imageStylePreset = options?.imageStylePreset || '';
-
-  // When an image style preset is selected, use it as the art style directive;
-  // otherwise fall back to a generic placeholder so the LLM doesn't hardcode one style.
-  const artStyleDirective = imageStylePreset ? imageStylePreset : '[art style keywords matching the story genre]';
-  const artStyleExamples = imageStylePreset
-    ? `art style (use: ${imageStylePreset})`
-    : 'art style (comic book illustration, bold ink lines, cel shading, halftone texture, watercolor, photorealistic — pick the style that fits the story)';
-
-  // Build the per-panel JSON example — include imageSize field when dynamic sizing is enabled
-  // Use the first available size as a placeholder; the IMAGE SIZES section instructs the AI to vary them
-  const panelExample = hasDynamicSizes
-    ? `{
-    "narration": "Scene-setting narration text (optional)",
-    "imagePrompt": "${artStyleDirective}, [shot type], [lighting], [composition] — describe the scene, characters, action",
-    "imageSize": "one of the supported sizes listed below",
-    "dialogue": [
-      { "speaker": "Character Name", "text": "What they say" }
-    ]
-  }`
-    : `{
-    "narration": "Scene-setting narration text (optional)",
-    "imagePrompt": "${artStyleDirective}, [shot type], [lighting], [composition] — describe the scene, characters, action",
-    "dialogue": [
-      { "speaker": "Character Name", "text": "What they say" }
-    ]
-  }`;
-
-  let prompt = `${base}
-
-IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
-
-Your response must be a JSON object with this exact structure:
-{
-"title": "Page title",
-"panels": [
-  ${panelExample}
-],
-"choices": [
-  { "text": "Choice description for the reader", "summary": "Brief consequence summary" }
-]
-}
-
-Generate 3-4 panels per page. Each panel needs:
-- A vivid imagePrompt describing the visual scene using technical art direction language. Specify: shot type (wide establishing shot, medium shot, close-up portrait, over-the-shoulder, Dutch angle), lighting (rim lighting, dramatic side-lighting, chiaroscuro, soft diffused light, hard shadows), ${artStyleExamples}, composition (rule of thirds, foreground/midground/background layers, dynamic diagonal composition), and color mood (desaturated, high contrast, warm palette, etc.).${imageStylePreset ? ` IMPORTANT: Every imagePrompt MUST begin with "${imageStylePreset}" as the art style prefix.` : ''}${includeAppearance ? " Include each character's physical appearance details (clothing, hair, build, distinguishing features) so the image generator maintains visual consistency." : ''}
-- Optional narration for scene-setting
-- Character dialogue that advances the story
-
-CRITICAL: In each panel's "imagePrompt", you MUST explicitly name every character
-who appears in that panel.${
-    includeAppearance
-      ? ` Include their full physical appearance description
-inline. Do NOT just say "the hero" — say "Nova (tall woman with silver hair,
-black armor, glowing blue eyes)". This is essential for visual consistency.`
-      : ` Describe their actions, poses, and the scene composition.
-Reference images will be provided for visual consistency, so you do not need
-to repeat full appearance descriptions — but always use character names.`
-  }
-If a panel has NO characters (e.g., establishing shot), say "No characters present."
-
-Provide 2-3 meaningful choices at the end that affect the story direction.`;
-
-  if (hasDynamicSizes) {
-    prompt += `\n\nIMAGE SIZES:
-For each panel, choose the most appropriate image size from these supported values: ${imageSizes.join(', ')}
-Set the "imageSize" field in each panel object. Pick sizes that best match the composition:
-- Use landscape/wide sizes for panoramic scenes, establishing shots, or action sequences
-- Use portrait/tall sizes for character close-ups, vertical compositions, or tall structures
-- Use square sizes for balanced scenes, dialogue-focused panels, or group shots
-Vary the sizes across panels to create a visually dynamic comic layout.`;
-  }
-
-  if (characters && characters.length > 0) {
-    prompt += '\n\nCHARACTERS:\n';
-    for (const c of characters) {
-      prompt += `- ${c.name}: ${c.description}`;
-      if (c.role) prompt += ` (Role: ${c.role})`;
-      if (c.appearance && includeAppearance) prompt += `\n  APPEARANCE: ${c.appearance}`;
-      if (c.powers) prompt += `\n  Abilities: ${c.powers}`;
-      prompt += '\n';
-    }
-    if (includeAppearance) {
-      prompt += `\nVISUAL CONSISTENCY RULES:
-- EVERY panel's "imagePrompt" must repeat each visible character's full appearance (hair color/style, build, outfit, distinguishing marks). Never abbreviate or omit details between panels.
-- Use the exact character name and appearance text from the CHARACTERS list above so the image generator can match reference images.
-- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
-    } else {
-      prompt += `\nVISUAL CONSISTENCY RULES:
-- In each panel's "imagePrompt", name every visible character and describe their actions, poses, and the scene. Reference images will be provided to the image generator for visual consistency.
-- Keep each character's outfit, proportions, and features identical across all panels unless the story explicitly calls for a change (e.g., transformation, costume swap).`;
-    }
-  }
-
-  if (world) {
-    prompt += `\nWORLD SETTING:\nName: ${world.name}\nDescription: ${world.description}\n`;
-    if (world.details) prompt += `Details: ${world.details}\n`;
-    if (world.atmosphere) prompt += `Atmosphere: ${world.atmosphere}\n`;
-    prompt += `\nWORLD VISUAL RULES:
-- Every imagePrompt must ground the scene in ${world.name}. Include at least one specific environmental detail (architecture style, lighting quality, material textures, color palette) that reflects this world's atmosphere.
-- When characters appear indoors, name the specific interior space (e.g., "a cluttered kitchen in ${world.name}", "the dim office corridor of ${world.name}") rather than a generic room.
-- When characters appear outdoors, name the specific exterior context (e.g., "the rain-slicked streets of ${world.name}", "the rooftop overlooking ${world.name}") to reinforce the world's visual identity.
-- Blend the character's presence with the world — show how they belong to (or contrast with) this environment through lighting, color mood, and framing.`;
-  }
-
-  return prompt;
-}
-
-/**
- * Parse comic page JSON from LLM response
- */
-/**
- * Attempt to repair a truncated JSON string by closing any unclosed strings,
- * removing trailing commas, and appending missing closing brackets/braces.
- * Returns the repaired string (which may still be invalid if truncation was severe).
- */
-function repairTruncatedJson(str: string): string {
-  let s = str.trimEnd();
-  const stack = [];
-  let inString = false;
-  let escape = false;
-  let out = '';
-
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (escape) {
-      escape = false;
-      out += c;
-      continue;
-    }
-    if (c === '\\' && inString) {
-      escape = true;
-      out += c;
-      continue;
-    }
-    if (c === '"') {
-      inString = !inString;
-      out += c;
-      continue;
-    }
-    if (inString) {
-      out += c;
-      continue;
-    }
-    // Drop trailing commas before a closing brace/bracket (a common LLM
-    // output mistake that JSON.parse rejects with "Expected double-quoted
-    // property name" / "Unexpected token ]").
-    if (c === ',') {
-      let j = i + 1;
-      while (j < s.length && /\s/.test(s[j])) j++;
-      if (j < s.length && (s[j] === '}' || s[j] === ']')) continue;
-    }
-    if (c === '{') stack.push('}');
-    else if (c === '[') stack.push(']');
-    else if (c === '}' || c === ']') stack.pop();
-    out += c;
-  }
-  s = out;
-
-  // Close any unclosed string literal.
-  // If the string ended on a dangling backslash (escape still true), the '\' is
-  // incomplete — drop it before appending the closing quote so the quote doesn't
-  // get accidentally escaped (e.g. `{"a":"foo\` → `{"a":"foo"`).
-  if (inString) {
-    if (escape) s = s.slice(0, -1);
-    s += '"';
-  }
-  // Remove trailing comma left by a truncated array or object
-  s = s.replace(/,\s*$/, '');
-  // Close all unclosed structures
-  while (stack.length > 0) s += stack.pop();
-  return s;
-}
-
-function parseComicResponse(text: string): ComicPageResult | null {
-  // Try to extract JSON from the response
-  let jsonStr = text.trim();
-
-  // Remove markdown code fences if present
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    jsonStr = fenceMatch[1].trim();
-  }
-
-  // Try to find JSON object boundaries
-  const firstBrace = jsonStr.indexOf('{');
-  const lastBrace = jsonStr.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
-  }
-
-  const buildResult = (parsed: any): ComicPageResult => ({
-    title: parsed.title || 'Untitled Page',
-    panels: (parsed.panels || []).map((p: any) => {
-      const panel: any = {
-        narration: p.narration || '',
-        imagePrompt: p.imagePrompt || p.image_prompt || '',
-        dialogue: (p.dialogue || []).map((d: any) => ({
-          speaker: d.speaker || 'Unknown',
-          text: d.text || '',
-        })),
-      };
-      if (p.imageSize || p.image_size) panel.imageSize = p.imageSize || p.image_size;
-      return panel;
-    }),
-    choices: (parsed.choices || []).map((c: any) => ({
-      text: c.text || c.description || '',
-      summary: c.summary || '',
-    })),
-  });
-
-  try {
-    return buildResult(JSON.parse(jsonStr));
-  } catch (_e) {
-    // First parse failed — the LLM response may have been truncated.
-    // Attempt to repair the JSON and retry before giving up.
-    try {
-      return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
-    } catch (_e2) {
-      if (typeof (globalThis as any).App !== 'undefined')
-        (globalThis as any).App.logError('parseComicResponse', _e2, text?.substring(0, 200));
-      return null;
-    }
-  }
-}
-
-export interface PlannerManifest {
-  genreName: string;
-  characters: Array<{ id: string; name: string; role?: string; description?: string; powers?: string }>;
-  world?: { name: string; description?: string; details?: string; atmosphere?: string } | null;
-  locationKeys?: string[];
-  customSystemPrompt?: string | null;
-  panelCount?: string;
-}
-
-/**
- * Build the system prompt for the structured story planner (spec §8.1).
- * The story model plans visual facts against an explicit ID manifest; the
- * application compiles the final image prompts deterministically. The model
- * must NOT write appearance or wardrobe prose — continuity owns those.
- */
-function buildPlannerSystemPrompt(manifest: PlannerManifest): string {
-  const base =
-    manifest.customSystemPrompt ||
-    `You are a masterful comic book creator specializing in ${manifest.genreName} stories.`;
-  const panelCount = manifest.panelCount || '3-4';
-
-  const characterLines = manifest.characters
-    .map((c) => {
-      let line = `- id: "${c.id}"  name: ${c.name}`;
-      if (c.role) line += ` (${c.role})`;
-      if (c.description) line += `\n  ${c.description}`;
-      if (c.powers) line += `\n  Abilities: ${c.powers}`;
-      return line;
-    })
-    .join('\n');
-
-  const locationLines =
-    manifest.locationKeys && manifest.locationKeys.length > 0
-      ? manifest.locationKeys.map((k) => `- "${k}"`).join('\n')
-      : '(none — always use null for locationKey)';
-
-  let worldBlock = '';
-  if (manifest.world) {
-    worldBlock = `\nWORLD SETTING:\nName: ${manifest.world.name}\nDescription: ${manifest.world.description || ''}\n`;
-    if (manifest.world.details) worldBlock += `Details: ${manifest.world.details}\n`;
-    if (manifest.world.atmosphere) worldBlock += `Atmosphere: ${manifest.world.atmosphere}\n`;
-  }
-
-  return `${base}
-
-IMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, just raw JSON.
-
-Your response must be a JSON object with this exact structure:
-{
-"title": "Page title",
-"panels": [
-  {
-    "narration": "Scene-setting narration text (optional, may be empty)",
-    "dialogue": [ { "speaker": "Character Name", "text": "What they say" } ],
-    "visual": {
-      "locationKey": "one of the allowed location keys, or null",
-      "environment": "brief scene-specific environmental description",
-      "shot": "shot type (wide establishing shot, medium shot, close-up, over-the-shoulder, Dutch angle...)",
-      "composition": "composition notes (rule of thirds, foreground/background layers, diagonals...)",
-      "lighting": "lighting style (rim lighting, chiaroscuro, soft diffused light, hard shadows...)",
-      "colorMood": "color mood (desaturated, high contrast, warm palette...)",
-      "characters": [
-        { "characterId": "id from the CHARACTER MANIFEST", "action": "what they are doing", "pose": "body position", "expression": "facial expression" }
-      ],
-      "keyProps": ["important objects visible in the panel"],
-      "focalPoint": "what the eye should land on (optional)",
-      "layoutHint": "wide | balanced | tall (optional)"
-    },
-    "visualStateChanges": [
-      {
-        "characterId": "id from the CHARACTER MANIFEST",
-        "timing": "before-panel or after-panel",
-        "reason": "why the story changes this state",
-        "set": {
-          "wardrobeDescription": "complete new outfit description (only when clothing visibly changes; null to revert to the identity-anchor outfit)",
-          "hairState": "new hair arrangement or condition",
-          "carriedItems": ["complete replacement list of carried items"],
-          "injuries": ["complete replacement list of visible injuries"],
-          "temporaryChanges": ["complete replacement list of temporary visual changes (dirt, disguise, transformation)"]
-        }
-      }
-    ]
-  }
-],
-"choices": [ { "text": "Choice description for the reader", "summary": "Brief consequence summary" } ]
-}
-
-Generate ${panelCount} panels per page.
-
-CHARACTER MANIFEST (the ONLY allowed characterId values):
-${characterLines}
-
-ALLOWED LOCATION KEYS (the ONLY allowed locationKey values):
-${locationLines}
-
-STRICT PLANNING RULES:
-- Use ONLY characterId values from the CHARACTER MANIFEST. Never invent IDs and never use character names as IDs.
-- List EVERY visible character in visual.characters, including silent background cast whose identity matters.
-- Do NOT describe any character's physical appearance, face, hair color, build, or clothing in visual fields. Identity and wardrobe are supplied separately by the application.
-- Report a wardrobe, hair, injury, carried-item, disguise, or transformation change ONLY in visualStateChanges, and ONLY when the story visibly changes it. Never redesign clothing for variety.
-- In "set", omit any field that does not change. A present value fully replaces the old value.
-- Use only the allowed locationKey values, or null when no listed location fits.
-- Do not specify art style anywhere; the application's image preset is authoritative.
-- Provide 2-3 meaningful choices at the end that affect the story direction.${worldBlock}`;
-}
-
-/**
- * Parse the structured planned-page JSON from the story model.
- * Shape-normalizes fields with safe defaults; ID/manifest validation is done
- * separately by visual-continuity.validatePlannedPage(). Returns null when
- * the text cannot be parsed even after truncation repair.
- */
-function parsePlannedPageResponse(text: string): any | null {
-  let jsonStr = (text || '').trim();
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) jsonStr = fenceMatch[1].trim();
-  const firstBrace = jsonStr.indexOf('{');
-  const lastBrace = jsonStr.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1) jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
-
-  const normalizeChange = (ch: any) => ({
-    characterId: ch?.characterId || ch?.character_id || '',
-    timing: ch?.timing === 'after-panel' ? 'after-panel' : 'before-panel',
-    reason: ch?.reason || '',
-    set: {
-      ...(ch?.set && 'wardrobeDescription' in ch.set ? { wardrobeDescription: ch.set.wardrobeDescription } : {}),
-      ...(ch?.set && 'hairState' in ch.set ? { hairState: ch.set.hairState } : {}),
-      ...(ch?.set && 'carriedItems' in ch.set ? { carriedItems: ch.set.carriedItems } : {}),
-      ...(ch?.set && 'injuries' in ch.set ? { injuries: ch.set.injuries } : {}),
-      ...(ch?.set && 'temporaryChanges' in ch.set ? { temporaryChanges: ch.set.temporaryChanges } : {}),
-    },
-  });
-
-  const buildResult = (parsed: any) => {
-    if (!parsed || !Array.isArray(parsed.panels)) return null;
-    return {
-      title: parsed.title || 'Untitled Page',
-      panels: parsed.panels.map((p: any) => ({
-        narration: p?.narration || '',
-        dialogue: (Array.isArray(p?.dialogue) ? p.dialogue : []).map((d: any) => ({
-          speaker: d?.speaker || 'Unknown',
-          text: d?.text || '',
-        })),
-        visual: {
-          locationKey: p?.visual?.locationKey || null,
-          environment: p?.visual?.environment || '',
-          shot: p?.visual?.shot || '',
-          composition: p?.visual?.composition || '',
-          lighting: p?.visual?.lighting || '',
-          colorMood: p?.visual?.colorMood || p?.visual?.color_mood || '',
-          characters: (Array.isArray(p?.visual?.characters) ? p.visual.characters : []).map((c: any) => ({
-            characterId: c?.characterId || c?.character_id || '',
-            action: c?.action || '',
-            pose: c?.pose || '',
-            expression: c?.expression || '',
-          })),
-          keyProps: Array.isArray(p?.visual?.keyProps) ? p.visual.keyProps.filter(Boolean) : [],
-          focalPoint: p?.visual?.focalPoint || undefined,
-          layoutHint: ['wide', 'balanced', 'tall'].includes(p?.visual?.layoutHint) ? p.visual.layoutHint : undefined,
-        },
-        visualStateChanges: Array.isArray(p?.visualStateChanges) ? p.visualStateChanges.map(normalizeChange) : [],
-      })),
-      choices: (Array.isArray(parsed.choices) ? parsed.choices : []).map((c: any) => ({
-        text: c?.text || c?.description || '',
-        summary: c?.summary || '',
-      })),
-    };
-  };
-
-  try {
-    return buildResult(JSON.parse(jsonStr));
-  } catch (_e) {
-    try {
-      return buildResult(JSON.parse(repairTruncatedJson(jsonStr)));
-    } catch (_e2) {
-      if (typeof (globalThis as any).App !== 'undefined')
-        (globalThis as any).App.logError('parsePlannedPageResponse', _e2, text?.substring(0, 200));
-      return null;
-    }
-  }
-}
-
-/**
  * Fetch all available text/chat models from NanoGPT.
  * Endpoint does not require authentication.
  * Returns array of model objects with id, name, owned_by, etc.
@@ -1130,54 +638,6 @@ async function fetchTextModels(forceRefresh: boolean = false): Promise<TextModel
     if (cached) return cached;
     return FALLBACK_TEXT_MODELS.map((id) => ({ id, name: id, owned_by: '' }));
   }
-}
-
-/** Pick the first finite positive number from a list of candidate metadata fields. */
-function firstPositiveNumber(...candidates: any[]): number | null {
-  for (const c of candidates) {
-    const n = typeof c === 'string' ? Number(c) : c;
-    if (typeof n === 'number' && Number.isFinite(n) && n > 0) return Math.floor(n);
-  }
-  return null;
-}
-
-/**
- * Normalize one raw NanoGPT image-model entry into the app's ImageModel shape.
- * Accepts known field variants so response-shape differences don't leak
- * through the rest of the app (spec §6.1).
- */
-export function normalizeImageModel(m: any): ImageModel {
-  const supportedParameters = m.supported_parameters || m.supportedParameters || null;
-  const inputModalities =
-    m.input_modalities || m.inputModalities || m.architecture?.input_modalities || m.modalities?.input || null;
-  return {
-    id: m.id || m.model,
-    name: m.name || m.id || m.model,
-    owned_by: m.owned_by || m.provider || '',
-    pricing: m.pricing || null,
-    // NanoGPT API returns image_to_image support under capabilities.image_to_image
-    supports_edit: m.capabilities?.image_to_image ?? m.supports_edit ?? false,
-    // Capture supported sizes — NanoGPT API returns them under supported_parameters.resolutions
-    sizes: m.sizes || m.supported_sizes || m.image_sizes || supportedParameters?.resolutions || null,
-    inputModalities: Array.isArray(inputModalities) ? inputModalities : undefined,
-    maxInputImages: firstPositiveNumber(
-      m.max_input_images,
-      m.maxInputImages,
-      m.max_images,
-      supportedParameters?.max_input_images,
-      supportedParameters?.max_images,
-      m.capabilities?.max_input_images,
-    ),
-    maxOutputImages: firstPositiveNumber(
-      m.max_output_images,
-      m.maxOutputImages,
-      m.max_outputs,
-      supportedParameters?.max_output_images,
-      supportedParameters?.n?.max,
-      m.capabilities?.max_output_images,
-    ),
-    supportedParameters: supportedParameters || undefined,
-  };
 }
 
 /**
@@ -1459,43 +919,6 @@ async function generateEmbedding(text: string, options: EmbeddingOptions = {}): 
     return null;
   }
 }
-
-// Fallback lists used only when API is unreachable and no cache exists
-const FALLBACK_TEXT_MODELS: string[] = [
-  'openai/gpt-5-mini',
-  'openai/gpt-5-nano',
-  'openai/gpt-5',
-  'openai/gpt-5.1',
-  'openai/gpt-5.2',
-  'claude-sonnet-4-5-20250929',
-  'deepseek-chat',
-  'deepseek-reasoner',
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'mistral-large-latest',
-  'mistral-small-latest',
-  'grok-2',
-  'grok-3-mini',
-  'qwen-2.5-72b-instruct',
-  'llama-4-scout',
-  'llama-4-maverick',
-  'command-r-plus',
-];
-
-const FALLBACK_IMAGE_MODELS: string[] = [
-  'gpt-image-1',
-  'gpt-image-1.5',
-  'gpt-image-1-mini',
-  'flux-2-turbo',
-  'flux-2-pro',
-  'flux-2-dev',
-  'seedream-v4',
-  'seedream-v4.5',
-  'nano-banana',
-  'nano-banana-pro',
-  'qwen-image',
-  'hunyuan-image-3',
-];
 
 /**
  * Reference variation definitions for AI-generated reference images.

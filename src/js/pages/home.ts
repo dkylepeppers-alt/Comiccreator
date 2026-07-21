@@ -48,10 +48,10 @@ async function render() {
       <div class="card-glass">
         <h3 class="card-title mb-sm">Quick Start</h3>
         <div style="display:flex;flex-direction:column;gap:10px;">
-          <button class="btn btn-primary btn-block" onclick="App.navigate('create')">✨ Create New Comic</button>
+          <button class="btn btn-primary btn-block" data-navigate="create">✨ Create New Comic</button>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <button class="btn btn-secondary" onclick="App.navigate('characters')">Add Character</button>
-            <button class="btn btn-secondary" onclick="App.navigate('worlds')">Build World</button>
+            <button class="btn btn-secondary" data-navigate="characters">Add Character</button>
+            <button class="btn btn-secondary" data-navigate="worlds">Build World</button>
           </div>
         </div>
       </div>
@@ -63,12 +63,12 @@ async function render() {
         <div class="mt-md">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <h3 class="card-title">Recent Comics</h3>
-            <button class="btn btn-sm btn-secondary" onclick="App.navigate('library')">View All</button>
+            <button class="btn btn-sm btn-secondary" data-navigate="library">View All</button>
           </div>
           ${recentComics
             .map(
               (c) => `
-            <div class="list-item" onclick="App.navigate('library', '${c.id}')">
+            <div class="list-item" data-navigate="library" data-param="${c.id}">
               <div class="list-item-avatar">${getGenreEmoji(c.genre)}</div>
               <div class="list-item-info">
                 <div class="list-item-title">${escHtml(c.title)}</div>
@@ -94,7 +94,7 @@ async function render() {
         <div class="genre-grid">
           ${GENRES.map(
             (g) => `
-            <div class="genre-card" onclick="App.navigate('create', '${g.id}')">
+            <div class="genre-card" data-navigate="create" data-param="${g.id}">
               <span class="genre-emoji">${g.emoji}</span>
               ${g.name}
             </div>
