@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true
+  },
+  "include": ["src/js/generation/continuity/**/*.ts", "src/js/visual-continuity.ts", "src/js/generation-progress.ts"]
+}

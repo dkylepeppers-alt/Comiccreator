@@ -1,11 +1,17 @@
-import type { GenerateImagesOptions, GeneratedImage, ImageApiProgressEvent } from '../../api.js';
 import type { GenerationStage, ImageRequestProgress } from '../../generation-progress.js';
 import { buildContinuityGenerationPlan } from './build-plan.js';
 import { takeCancellationResult } from './cancellation-journal.js';
 import { executeIndependentPlan } from './execute-independent.js';
 import { executeSequentialPlan } from './execute-sequential.js';
 import { applyContinuityResult } from './apply-results.js';
-import type { ContinuityGenerationPlan, ContinuityPlanningInput, ContinuityStrategy } from './types.js';
+import type {
+  ContinuityGeneratedImage,
+  ContinuityGenerationPlan,
+  ContinuityImageProgressEvent,
+  ContinuityImageRequestOptions,
+  ContinuityPlanningInput,
+  ContinuityStrategy,
+} from './types.js';
 
 export interface PersistedContinuityImage {
   readonly value: string;
@@ -57,17 +63,20 @@ export interface ContinuityPageData {
 }
 
 export interface ContinuityExecutionDependencies {
-  readonly generateImages: (prompt: string, options: GenerateImagesOptions) => Promise<GeneratedImage[]>;
+  readonly generateImages: (
+    prompt: string,
+    options: ContinuityImageRequestOptions,
+  ) => Promise<ContinuityGeneratedImage[]>;
   readonly persistImage: (
     value: string,
-    source: GeneratedImage['source'],
+    source: ContinuityGeneratedImage['source'],
     options: { signal?: AbortSignal },
   ) => Promise<PersistedContinuityImage>;
   /** Register route and request snapshots before execution starts. */
   readonly startProgress: (plan: ContinuityGenerationPlan, expectedImageCount: number) => void;
   readonly enterStage: (stage: GenerationStage, message: string) => void;
   readonly updateRequest: (requestId: string, update: Partial<ImageRequestProgress>) => void;
-  readonly reportApiProgress: (event: ImageApiProgressEvent) => void;
+  readonly reportApiProgress: (event: ContinuityImageProgressEvent) => void;
   readonly setStatus: (message: string) => void;
   readonly signal?: AbortSignal;
   readonly toast: (message: string, type?: string) => void;

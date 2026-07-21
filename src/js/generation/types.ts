@@ -3,13 +3,16 @@
  * The engine never touches module-level page state directly — the create page
  * passes a GenerationContext so all mutable dependencies are explicit.
  */
+import type { ImageModel } from '../model-catalog.js';
+import type { CharacterLike, ComicVisualContinuity, WorldLike } from '../visual-continuity.js';
+import type { GenerationProgress } from '../generation-progress.js';
 
 /** Result of preflightImageGeneration(), cached on state for the active attempt. */
 export interface ImageGenerationConfig {
   pageModelId: string;
-  pageModel: any | null;
+  pageModel: ImageModel | null;
   companionModelId: string;
-  companionModel: any | null;
+  companionModel: ImageModel | null;
   companionMode: string;
   imageSize: string;
   sequentialEnabled: boolean;
@@ -33,15 +36,15 @@ export interface CreateState {
   conversationHistory: Array<{ role: string; content: any }>;
   referenceImages: any[];
   characterImagesByName: Record<string, any>;
-  characters: any[];
-  world: any | null;
+  characters: CharacterLike[];
+  world: WorldLike | null;
   plannerMode: boolean;
-  visualContinuity: any | null;
+  visualContinuity: ComicVisualContinuity | null;
   initialVisualOverrides: Record<string, any>;
   isGenerating: boolean;
   generatingContext: 'initial' | 'reroll' | 'continue' | 'reimage';
   draftLoaded: boolean;
-  generationProgress: any | null;
+  generationProgress: GenerationProgress | null;
   imageGenerationConfig: ImageGenerationConfig | null;
 }
 

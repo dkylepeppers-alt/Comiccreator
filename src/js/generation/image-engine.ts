@@ -1,5 +1,3 @@
-// @ts-nocheck — extracted from pages/create.ts, which is typed the same way;
-// incremental typing of the engine internals is planned follow-up work.
 import DB from '../db.js';
 import API from '../api.js';
 import {
@@ -23,6 +21,8 @@ import { PROMPT_VERSION } from '../visual-continuity.js';
 import { sanitizeImagePrompt, cosineSimilarity } from '../utils.js';
 import { runContinuityGeneration } from './continuity/orchestrator.js';
 import type { CreateState, GenerationContext } from './types.js';
+import type { ImageApiProgressEvent, LabeledRef } from '../api.js';
+import type { CharacterVisualState } from '../visual-continuity.js';
 
 /**
  * Image-generation engine for the create page: preflight model/config
@@ -32,6 +32,18 @@ import type { CreateState, GenerationContext } from './types.js';
  * All page-state access goes through the GenerationContext passed by the
  * caller; this module holds no mutable state of its own.
  */
+
+/** Per-panel request options built by the legacy independent-panel pipeline. */
+interface LegacyPanelImageOptions {
+  resolution: string;
+  negativePrompt?: string;
+  imageDataUrl?: string;
+  imageDataUrls?: string[];
+  labeledRefs?: LabeledRef[];
+  signal?: AbortSignal;
+  requestId?: string;
+  onProgress?: (event: ImageApiProgressEvent) => void;
+}
 
 // Keyword-to-tag affinity map used for fallback ref image selection when embeddings are unavailable
 const TAG_KEYWORDS = {
@@ -86,7 +98,7 @@ const TAG_KEYWORDS = {
 };
 
 /** Map image-API progress events onto the attempt's request/stage state. */
-function reportImageApiProgress(ctx: GenerationContext, event) {
+function reportImageApiProgress(ctx: GenerationContext, event: ImageApiProgressEvent) {
   const progress = ctx.state.generationProgress;
   if (!progress || !event.requestId) return;
   const request = progress.requests.find((item) => item.id === event.requestId);
@@ -97,14 +109,14 @@ function reportImageApiProgress(ctx: GenerationContext, event) {
     waiting: 'pending',
     'response-received': 'response-received',
     'response-parsed': 'response-received',
-  };
+  } as const;
   const stageByPhase = {
     'preparing-references': ['preparing-references', 'Preparing reference images…'],
     submitting: ['submitting-images', 'Submitting image requests…'],
     waiting: ['waiting-for-images', 'Waiting for image generation…'],
     'response-received': ['waiting-for-images', 'Image response received…'],
     'response-parsed': ['persisting-images', 'Saving returned images locally…'],
-  };
+  } as const;
   const stage = stageByPhase[event.phase];
   const staged = stage ? enterStage(progress, stage[0], stage[1], event.at) : progress;
   ctx.setProgress(
@@ -426,7 +438,7 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
     await Promise.all(
       charMatches.map(
         ({ name, img }, i) =>
-          new Promise((resolve) => {
+          new Promise<void>((resolve) => {
             const col = i % cols;
             const row = Math.floor(i / cols);
             const x = col * cellSize;
@@ -465,7 +477,7 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
   }
 
   // Build per-panel image options using hybrid cascading strategy
-  async function buildPanelImageOpts(panel) {
+  async function buildPanelImageOpts(panel): Promise<LegacyPanelImageOptions> {
     // Use AI-picked size when dynamic sizing is enabled and the AI provided a valid WxH value
     let resolution = imageResolution;
     if (dynamicSizesEnabled && panel.imageSize) {
@@ -474,7 +486,7 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
         resolution = trimmed.toLowerCase();
       }
     }
-    const opts = { resolution };
+    const opts: LegacyPanelImageOptions = { resolution };
     if (negativePrompt) opts.negativePrompt = negativePrompt;
     const charNamesInPanel = Object.keys(ctx.state.characterImagesByName).filter((name) =>
       nameInPrompt(name, panel.imagePrompt),
@@ -674,7 +686,8 @@ export async function generateContinuityPageImages(
     ? await DB.get(DB.STORES.imagePresets, ctx.state.selectedImagePreset)
     : null;
   const charactersById = Object.fromEntries(ctx.state.characters.map((character) => [character.id, character]));
-  const ledgerStates = (pageData.continuityBefore || ctx.state.visualContinuity)?.characterStates || {};
+  const ledgerStates: Record<string, CharacterVisualState> =
+    (pageData.continuityBefore || ctx.state.visualContinuity)?.characterStates || {};
   const anchorImageIdByCharacter = Object.fromEntries(
     Object.entries(ledgerStates).map(([characterId, characterState]) => [
       characterId,

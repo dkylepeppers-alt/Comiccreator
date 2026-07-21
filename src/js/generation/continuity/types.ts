@@ -9,6 +9,40 @@ import type {
 
 export type ContinuityStrategy = 'sequential-page' | 'independent-panels';
 
+/**
+ * Boundary mirrors of the image-API shapes the continuity pipeline depends on
+ * (see `api.ts`'s `GenerateImagesOptions`/`GeneratedImage`/`ImageApiProgressEvent`).
+ * Declared locally rather than imported so the strict continuity core never
+ * pulls in `api.ts` (a large, loosely-typed file) as a compilation dependency;
+ * `image-engine.ts` structurally satisfies these when wiring the real API.
+ */
+export interface ContinuityImageProgressEvent {
+  readonly requestId?: string;
+  readonly phase: 'preparing-references' | 'submitting' | 'waiting' | 'response-received' | 'response-parsed';
+  readonly at: number;
+  readonly receivedImageCount?: number;
+}
+
+export interface ContinuityGeneratedImage {
+  readonly index: number;
+  readonly value: string;
+  readonly source: 'url' | 'b64_json';
+}
+
+export interface ContinuityImageRequestOptions {
+  readonly count: number;
+  readonly model?: string;
+  readonly resolution?: string;
+  readonly imageDataUrls?: string[];
+  readonly exactReferences?: boolean;
+  readonly refMaxDimension?: number;
+  readonly signal?: AbortSignal;
+  readonly requestId?: string;
+  readonly compressionCache?: Map<string, Promise<string>>;
+  readonly onProgress?: (event: ContinuityImageProgressEvent) => void;
+  readonly negativePrompt?: string;
+}
+
 export type PanelRenderState = Record<string, CharacterVisualState>;
 
 export interface ContinuityPlanningInput {
