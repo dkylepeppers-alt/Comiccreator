@@ -13,6 +13,7 @@ import {
   toSafeDiagnostics,
   toSafeGenerationFailure,
 } from '../generation-progress.js';
+import { startGenerationKeepAlive, stopGenerationKeepAlive } from '../generation-keepalive.js';
 import {
   initializeContinuity,
   reducePageStates,
@@ -71,11 +72,24 @@ function generationContext() {
   return 'new-page';
 }
 
+/** Generation is active: show the global top-bar indicator and (on Android) keep the process alive. */
+function generationStarted() {
+  App.setGenIndicator(true);
+  startGenerationKeepAlive();
+}
+
+/** Generation reached a terminal state: hide the indicator and release the Android keep-alive. */
+function generationEnded() {
+  App.setGenIndicator(false);
+  stopGenerationKeepAlive();
+}
+
 function beginGenerationProgress() {
   if (progressInterval) clearInterval(progressInterval);
   state.generationProgress = startAttempt(generationContext());
   state.imageGenerationConfig = null;
   progressInterval = setInterval(updateProgressDom, 1000);
+  generationStarted();
 }
 
 function setProgress(next) {
@@ -1149,6 +1163,9 @@ async function generatePage(presetData: any): Promise<void> {
       pageData = API.parseComicResponse(fullText);
     }
     if (!pageData) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'failed'));
+      stopProgressTimer();
+      generationEnded();
       App.toast('Failed to parse comic page — the AI response was not valid JSON. Please try again.', 'error');
       state.step = state.pages.length > 0 ? 'reading' : 'setup';
       state.isGenerating = false;
@@ -1189,6 +1206,22 @@ async function generatePage(presetData: any): Promise<void> {
 
     // Save page — generate id first so we can track it for re-roll/undo
     if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'saving-page', 'Saving page…'));
+
+    // Background generation lets the user delete the active comic from the
+    // Library while a page is in flight — discard the result instead of
+    // writing an orphaned page record.
+    const comic = await DB.get(DB.STORES.comics, state.comicId);
+    if (!comic) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      stopProgressTimer();
+      generationEnded();
+      _rerollBackup = null;
+      App.toast('This comic was deleted while generating — the page was discarded.', 'info');
+      resetState();
+      await App.refreshPage();
+      return;
+    }
+
     const pageOutcome = generationOutcomeForPage(pageData, enableImages);
     attachGenerationAttempt(engineCtx, pageData, pageOutcome);
     state.pages.push(pageData);
@@ -1205,17 +1238,22 @@ async function generatePage(presetData: any): Promise<void> {
 
     // Update comic — page snapshot and comic ledger commit atomically so a
     // failed write can never advance continuity without its page record
-    const comic = await DB.get(DB.STORES.comics, state.comicId);
-    if (comic) {
-      comic.pageCount = pageNum;
-      comic.conversationHistory = state.conversationHistory;
-      if (state.plannerMode && pageData.continuityAfter) {
-        comic.visualContinuity = pageData.continuityAfter;
-      }
-      comic.updatedAt = Date.now();
-      await DB.commitPageAndComic(pageRecord, comic);
-    } else {
-      await DB.put(DB.STORES.pages, pageRecord);
+    comic.pageCount = pageNum;
+    comic.conversationHistory = state.conversationHistory;
+    if (state.plannerMode && pageData.continuityAfter) {
+      comic.visualContinuity = pageData.continuityAfter;
+    }
+    comic.updatedAt = Date.now();
+    const committed = await DB.commitPageAndComic(pageRecord, comic);
+    if (!committed) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      stopProgressTimer();
+      generationEnded();
+      _rerollBackup = null;
+      App.toast('This comic was deleted while generating — the page was discarded.', 'info');
+      resetState();
+      await App.refreshPage();
+      return;
     }
     if (state.plannerMode && pageData.continuityAfter) {
       state.visualContinuity = pageData.continuityAfter;
@@ -1235,8 +1273,22 @@ async function generatePage(presetData: any): Promise<void> {
       setProgress(finishAttempt(state.generationProgress, pageOutcome));
     }
     stopProgressTimer();
-    App.toast(`Page ${pageNum} ready!`, 'success');
-    await App.refreshPage();
+    generationEnded();
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create') {
+      App.toast(`Page ${pageNum} ready!`, 'success');
+    } else {
+      // Finished while the user was on another screen — persistent, tap to view
+      App.toast(`Page ${pageNum} ready — tap to view`, 'success', {
+        duration: 0,
+        onClick: () => App.navigate('create'),
+      });
+    }
+    // Only re-render screens that actually need to reflect the new page —
+    // refreshing elsewhere (e.g. Settings) would wipe unrelated in-progress UI state.
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   } catch (err) {
     App.logError('Comic generation', err);
     if (err.name === 'AbortError') {
@@ -1246,22 +1298,35 @@ async function generatePage(presetData: any): Promise<void> {
     if (state.generationProgress)
       setProgress(finishAttempt(state.generationProgress, 'failed', Date.now(), toSafeGenerationFailure(err)));
     stopProgressTimer();
+    generationEnded();
     // Roll back the last user message so retries don't compound failed attempts
     if (state.conversationHistory.length > 0) {
       const last = state.conversationHistory[state.conversationHistory.length - 1];
       if (last && last.role === 'user') state.conversationHistory.pop();
     }
+    const onCreatePage = App.getCurrentPage() === 'create';
+    const failureToastOpts = onCreatePage ? {} : { duration: 0, onClick: () => App.navigate('create') };
+    const tapHint = onCreatePage ? '' : ' Tap to review.';
     // If a re-roll failed, restore the backed-up page (any page position)
     if (state.generatingContext === 'reroll' && _rerollBackup) {
       restoreRerollBackup();
-      App.toast('Re-roll failed — previous page restored. ' + (err.message || 'Please try again.'), 'error');
+      App.toast(
+        'Re-roll failed — previous page restored. ' + (err.message || 'Please try again.') + tapHint,
+        'error',
+        failureToastOpts,
+      );
     } else {
       _rerollBackup = null;
-      App.toast(err.message || 'Generation failed. Please try again.', 'error');
+      App.toast((err.message || 'Generation failed. Please try again.') + tapHint, 'error', failureToastOpts);
     }
     state.step = state.pages.length > 0 ? 'reading' : 'setup';
     state.isGenerating = false;
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the failure —
+    // refreshing elsewhere would wipe unrelated in-progress UI state (e.g.
+    // unsaved Settings fields).
+    if (onCreatePage || App.getCurrentPage() === 'library') {
+      await App.refreshPage();
+    }
   }
 }
 
@@ -1363,6 +1428,7 @@ function cancelGeneration() {
   state.isGenerating = false;
   if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
   stopProgressTimer();
+  generationEnded();
 
   // Restore the backed-up page whenever a re-roll is cancelled (any page position)
   if (state.generatingContext === 'reroll' && _rerollBackup) {
@@ -1573,25 +1639,46 @@ async function rerollImages() {
     }
     abortController = null;
 
+    // The comic may have been deleted from the Library while regenerating in
+    // the background — discard instead of writing an orphaned page record.
+    const parentComic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
+    if (!parentComic) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      stopProgressTimer();
+      generationEnded();
+      App.toast('This comic was deleted while generating — the regenerated images were discarded.', 'info');
+      resetState();
+      await App.refreshPage();
+      return;
+    }
+
     // Persist updated page
     if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'saving-page', 'Saving page…'));
     const reimageOutcome = generationOutcomeForPage(currentPage);
     attachGenerationAttempt(engineCtx, currentPage, reimageOutcome);
     const existingRecord = await DB.get(DB.STORES.pages, currentPageId).catch(() => null);
-    await DB.put(DB.STORES.pages, {
-      id: currentPageId,
-      comicId: state.comicId,
-      pageNum: existingRecord?.pageNum ?? currentPageIdx + 1,
-      data: currentPage,
-      createdAt: existingRecord?.createdAt ?? Date.now(),
-    });
-
-    // Bump parent comic's updatedAt so the library reflects the change
-    if (state.comicId) {
-      const comic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
-      if (comic) {
-        await DB.put(DB.STORES.comics, { ...comic, updatedAt: Date.now() }).catch(() => {});
-      }
+    // Existence was checked above, but the comic can still be deleted before
+    // this write lands — re-checked atomically inside the same transaction,
+    // which also bumps the comic's updatedAt so the library reflects the change.
+    const committed = await DB.putPageIfComicExists(
+      {
+        id: currentPageId,
+        comicId: state.comicId,
+        pageNum: existingRecord?.pageNum ?? currentPageIdx + 1,
+        data: currentPage,
+        createdAt: existingRecord?.createdAt ?? Date.now(),
+      },
+      state.comicId,
+      true,
+    );
+    if (!committed) {
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      stopProgressTimer();
+      generationEnded();
+      App.toast('This comic was deleted while generating — the regenerated images were discarded.', 'info');
+      resetState();
+      await App.refreshPage();
+      return;
     }
 
     state.isGenerating = false;
@@ -1600,8 +1687,21 @@ async function rerollImages() {
       setProgress(finishAttempt(state.generationProgress, reimageOutcome));
     }
     stopProgressTimer();
-    App.toast('Images regenerated!', 'success');
-    await App.refreshPage();
+    generationEnded();
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create') {
+      App.toast('Images regenerated!', 'success');
+    } else {
+      App.toast('Images regenerated — tap to view', 'success', {
+        duration: 0,
+        onClick: () => App.navigate('create'),
+      });
+    }
+    // Only re-render screens that actually need to reflect the new images —
+    // refreshing elsewhere would wipe unrelated in-progress UI state.
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   } catch (err) {
     // Restore prior images on any failure
     currentPage.panels.forEach((p, i) => {
@@ -1615,10 +1715,16 @@ async function rerollImages() {
       setProgress(finishAttempt(state.generationProgress, 'failed', Date.now(), toSafeGenerationFailure(err)));
     }
     stopProgressTimer();
+    generationEnded();
     if (err.name !== 'AbortError') {
       App.toast('Image regeneration failed: ' + (err.message || 'Please try again.'), 'error');
     }
-    await App.refreshPage();
+    // Only re-render screens that actually need to reflect the failure —
+    // refreshing elsewhere would wipe unrelated in-progress UI state.
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   }
 }
 
@@ -1653,6 +1759,7 @@ async function confirmRetryMissingImages() {
   state.generatingContext = 'reimage';
   beginGenerationProgress();
   await App.refreshPage();
+  let discarded = false;
   try {
     await preflightImageGeneration(engineCtx);
     if (state.plannerMode && page.planned && Array.isArray(page.renderStates)) {
@@ -1672,18 +1779,44 @@ async function confirmRetryMissingImages() {
         });
       }
     }
+    // The comic may have been deleted while retrying in the background
+    const parentComic = await DB.get(DB.STORES.comics, state.comicId).catch(() => null);
+    if (!parentComic) {
+      discarded = true;
+      if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      App.toast('This comic was deleted while generating — the recovered images were discarded.', 'info');
+      resetState();
+      return;
+    }
     if (state.generationProgress) setProgress(enterStage(state.generationProgress, 'saving-page', 'Saving page…'));
     const pageId = state.pageIds[pageIndex];
     const record = await DB.get(DB.STORES.pages, pageId).catch(() => null);
     const retryOutcome = generationOutcomeForPage(page);
     attachGenerationAttempt(engineCtx, page, retryOutcome);
-    await DB.put(DB.STORES.pages, {
-      id: pageId,
-      comicId: state.comicId,
-      pageNum: record?.pageNum ?? pageIndex + 1,
-      data: page,
-      createdAt: record?.createdAt ?? Date.now(),
-    });
+    // The comic can be deleted while generation continues in the background.
+    // Re-check atomically while saving so no orphaned page record is written.
+    const committed = await DB.putPageIfComicExists(
+      {
+        id: pageId,
+        comicId: state.comicId,
+        pageNum: record?.pageNum ?? pageIndex + 1,
+        data: page,
+        createdAt: record?.createdAt ?? Date.now(),
+      },
+      state.comicId,
+    );
+    if (!committed) {
+      discarded = true;
+      if (state.generationProgress) {
+        setProgress(finishAttempt(state.generationProgress, 'cancelled'));
+      }
+      App.toast(
+        'This comic was deleted while generating — the recovered images were discarded.',
+        'info',
+      );
+      resetState();
+      return;
+    }
     const stillMissing = panelIndexes.filter((index) => !page.panels[index].imageUrl).length;
     if (state.generationProgress) setProgress(finishAttempt(state.generationProgress, retryOutcome));
     App.toast(
@@ -1700,9 +1833,17 @@ async function confirmRetryMissingImages() {
   } finally {
     abortController = null;
     stopProgressTimer();
-    state.isGenerating = false;
-    state.step = 'reading';
-    await App.refreshPage();
+    generationEnded();
+    if (!discarded) {
+      state.isGenerating = false;
+      state.step = 'reading';
+    }
+    // Only re-render screens that actually need to reflect the retried images —
+    // refreshing elsewhere would wipe unrelated in-progress UI state.
+    const onScreen = App.getCurrentPage();
+    if (onScreen === 'create' || onScreen === 'library') {
+      await App.refreshPage();
+    }
   }
 }
 
@@ -1786,15 +1927,25 @@ function onUnmount(): void {
     clearTimeout(streamTimeout);
     streamTimeout = null;
   }
+  // Generation deliberately continues in the background while the user browses
+  // other screens — do NOT abort here. Only the DOM-update timer stops (there
+  // is nothing to update); onMount() restarts it when the user returns. The
+  // Cancel button on the generating screen is the only way to abort.
   stopProgressTimer();
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
+}
+
+function onMount(): void {
+  // Returning to the Create screen while a generation is running in the
+  // background: resume the 1-second progress-DOM refresh.
+  if (state.isGenerating && state.generationProgress && !progressInterval) {
+    progressInterval = setInterval(updateProgressDom, 1000);
+    updateProgressDom();
   }
 }
 
 const CreatePage: PageModule & Record<string, any> = {
   render,
+  onMount,
   onUnmount,
   selectGenre,
   setCustomGenre,

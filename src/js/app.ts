@@ -167,6 +167,16 @@ async function refreshPage() {
   await navigate(currentPage, currentParam);
 }
 
+function getCurrentPage(): string {
+  return currentPage;
+}
+
+/** Show/hide the top-bar "generation in progress" spinner badge. */
+function setGenIndicator(visible: boolean): void {
+  const el = document.getElementById('gen-indicator');
+  if (el) el.classList.toggle('hidden', !visible);
+}
+
 // Modal
 function showModal(html: string): void {
   document.getElementById('modal-content').innerHTML = html;
@@ -444,6 +454,8 @@ if (document.readyState === 'loading') {
 const App = {
   navigate,
   refreshPage,
+  getCurrentPage,
+  setGenIndicator,
   showModal,
   hideModal,
   toast,

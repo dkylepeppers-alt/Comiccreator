@@ -107,6 +107,26 @@ describe('image model capability normalization', () => {
     expect(models[0]).toMatchObject({ maxInputImages: 10, maxOutputImages: 15 });
     expect(await DB.getSetting('cachedImageModelsSchemaVersion', 0)).toBe(2);
   });
+
+  it('reports degraded cache while schema migration is in fetch backoff', async () => {
+    const cachedModels = [{ id: 'seedream-v4.5-sequential', name: 'old schema model' }];
+    await DB.setSetting('cachedImageModels', cachedModels);
+    await DB.setSetting('cachedImageModelsAt', Date.now());
+    await DB.setSetting('cachedImageModelsSchemaVersion', 1);
+    await DB.setSetting('cachedImageModelsMigrationRetryAt', Date.now() + 60_000);
+
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      return new Response(JSON.stringify({ data: [SEQ_MODEL] }), { status: 200 });
+    };
+
+    const models = await API.fetchImageModels();
+
+    expect(fetchCalled).toBe(false);
+    expect(models).toEqual([expect.objectContaining({ id: 'seedream-v4.5-sequential', name: 'old schema model' })]);
+    expect(API.getImageModelSource()).toBe('cache-degraded');
+  });
 });
 
 describe('generateImages', () => {

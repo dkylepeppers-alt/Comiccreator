@@ -23,6 +23,9 @@
       <button id="error-log-btn" aria-label="Debug Log" onclick="App.toggleErrorPanel()" style="position:relative;background:none;border:none;color:var(--text-primary);font-size:1.2rem;cursor:pointer;padding:4px;">
         &#9888;<span id="error-badge" class="hidden error-badge">0</span>
       </button>
+      <button id="gen-indicator" class="hidden" aria-label="Generation in progress" title="Generating page &mdash; tap to view" onclick="App.navigate('create')">
+        <span class="spinner spinner-topbar"></span>
+      </button>
       <button id="settings-btn" aria-label="Settings">&#9881;</button>
     </header>
 
@@ -43,7 +46,7 @@
         <li><a href="#" data-page="settings" class="nav-link">Settings</a></li>
       </ul>
       <div class="sidebar-footer">
-        <small>v1.6.82 &middot; PWA</small>
+        <small>v1.6.86 &middot; PWA</small>
       </div>
     </nav>
     <div id="sidebar-overlay" class="hidden"></div>
