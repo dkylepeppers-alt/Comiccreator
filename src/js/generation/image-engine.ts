@@ -18,11 +18,13 @@ import {
   selectCompatibleImageSize,
 } from '../image-generation-config.js';
 import { PROMPT_VERSION } from '../visual-continuity.js';
-import { sanitizeImagePrompt, cosineSimilarity } from '../utils.js';
+import { sanitizeImagePrompt } from '../utils.js';
+import { createReferenceRepository } from '../references/repository.js';
+import { resolvePanelReferences } from '../references/resolver.js';
+import type { PanelReferenceRequest, ReferenceManifestItem } from '../references/types.js';
 import { runContinuityGeneration } from './continuity/orchestrator.js';
 import type { CreateState, GenerationContext } from './types.js';
 import type { GenerateImagesOptions, GeneratedImage, ImageApiProgressEvent, LabeledRef } from '../api.js';
-import type { CharacterVisualState } from '../visual-continuity.js';
 import type {
   ContinuityGeneratedImage,
   ContinuityImageProgressEvent,
@@ -50,57 +52,7 @@ interface LegacyPanelImageOptions {
   onProgress?: (event: ImageApiProgressEvent) => void;
 }
 
-// Keyword-to-tag affinity map used for fallback ref image selection when embeddings are unavailable
-const TAG_KEYWORDS = {
-  'front-view': ['front', 'facing', 'standing', 'full body', 'looking at'],
-  'side-view': ['profile', 'side view', 'side-on', 'looking away'],
-  'back-view': ['behind', 'back view', 'from behind', 'walking away', 'rear'],
-  'close-up': ['close-up', 'closeup', 'face', 'portrait', 'headshot', 'expression', 'eyes'],
-  'action-pose': [
-    'doing',
-    'performing',
-    'reaching',
-    'picking up',
-    'working',
-    'walking',
-    'moving',
-    'gesturing',
-    'carrying',
-    'running',
-    'jumping',
-    'sitting',
-    'turning',
-    'action',
-    'activity',
-    'task',
-    'mid-action',
-  ],
-  'alternate-outfit': ['casual', 'civilian', 'disguise', 'formal', 'armor', 'costume change'],
-  expression: ['angry', 'sad', 'happy', 'shocked', 'scared', 'crying', 'laughing', 'smiling'],
-  'character-sheet': [
-    'character sheet',
-    'turnaround',
-    'model sheet',
-    'reference sheet',
-    'multiple angles',
-    'multiple poses',
-    'multi-angle',
-    'multi-pose',
-    'full rotation',
-    '360',
-    'orthographic',
-  ],
-  'character-in-world': [
-    'in the world',
-    'in the city',
-    'in the setting',
-    'environment',
-    'landscape',
-    'outdoors',
-    'indoors',
-    'location',
-  ],
-};
+const referenceRepository = createReferenceRepository();
 
 /** Map image-API progress events onto the attempt's request/stage state. */
 function reportImageApiProgress(ctx: GenerationContext, event: ImageApiProgressEvent) {
@@ -327,28 +279,24 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
     ? await DB.get(DB.STORES.imagePresets, ctx.state.selectedImagePreset)
     : null;
   const imagePromptPrefix = imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', ''));
-  const charRefMode = await DB.getSetting('charRefMode', 'auto');
   const maxRefImages = await DB.getSetting('maxRefImages', 4);
+  const useReferenceImages = await DB.getSetting('useRefImages', true);
   const enrichEnabled = await DB.getSetting('enrichImagePrompts', false);
   const negativePrompt = await DB.getSetting('negativePrompt', '');
-
-  // Normalize world refs (plain strings and labeled objects)
-  const worldRefs = ctx.state.referenceImages
-    .map((item) => (typeof item === 'string' ? { dataUrl: item, label: '', type: 'world' } : item))
-    .filter((r) => r.type === 'world');
-
-  // Cache panel prompt embeddings within this page generation
-  const promptEmbeddingCache = new Map();
+  const worldId = ctx.state.selectedWorld || ctx.state.world?.id || '';
+  const referenceAssets = useReferenceImages && worldId ? await referenceRepository.listByWorld(worldId) : [];
+  const preferredReferenceIds = Object.fromEntries(
+    ctx.state.characters.flatMap((character) =>
+      character.preferredIdentityReferenceId ? [[character.id, character.preferredIdentityReferenceId]] : [],
+    ),
+  );
+  if (ctx.state.world?.preferredStyleReferenceId) {
+    preferredReferenceIds.style = ctx.state.world.preferredStyleReferenceId;
+  }
+  const pinnedReferenceIds = ctx.state.visualContinuity?.pinnedReferenceIds || {};
+  const previousFrame = getPreviousFrameRef(ctx.state);
   // Cache enriched prompts within this page generation to avoid duplicate LLM calls
   const promptEnrichmentCache = new Map();
-
-  async function getPromptEmbedding(promptText) {
-    if (!promptText) return null;
-    if (promptEmbeddingCache.has(promptText)) return promptEmbeddingCache.get(promptText);
-    const emb = await API.generateEmbedding(promptText).catch(() => null);
-    promptEmbeddingCache.set(promptText, emb);
-    return emb;
-  }
 
   // Check if a character name appears in a panel prompt using word-boundary matching
   function nameInPrompt(name, text) {
@@ -356,132 +304,7 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
     return new RegExp(`(?<![a-zA-Z0-9])${escaped}(?![a-zA-Z0-9])`, 'i').test(text);
   }
 
-  // Select the best image from a character's images[] using hybrid cascading strategy
-  async function selectBestImage(charImages, panelPromptText, charName, primaryImageIndex) {
-    const valid = (charImages || []).filter((img) => img && img.dataUrl);
-    if (!valid.length) return null;
-    if (valid.length === 1) return valid[0];
-
-    const panelLower = panelPromptText.toLowerCase();
-    const promptSnippet = panelPromptText.slice(0, 80);
-
-    // 1. Embedding-based selection (unless mode is 'keyword')
-    if (charRefMode !== 'keyword') {
-      const withEmb = valid.filter((img) => img.embedding?.length);
-      if (withEmb.length > 0) {
-        const panelEmb = await getPromptEmbedding(panelPromptText);
-        if (panelEmb) {
-          let best = withEmb[0];
-          let bestScore = cosineSimilarity(panelEmb, withEmb[0].embedding);
-          for (let i = 1; i < withEmb.length; i++) {
-            const score = cosineSimilarity(panelEmb, withEmb[i].embedding);
-            if (score > bestScore) {
-              bestScore = score;
-              best = withEmb[i];
-            }
-          }
-          return best;
-        }
-        // Embedding fetch failed — fall through to keyword
-        ctx.logError(
-          'selectBestImage',
-          new Error('Embedding fallback'),
-          `Embedding unavailable for panel prompt, falling back to keyword matching. Character: ${charName}, prompt: "${promptSnippet}..."`,
-        );
-      } else {
-        // No stored embeddings — fall through to keyword
-        ctx.logError(
-          'selectBestImage',
-          new Error('Embedding fallback'),
-          `No stored embeddings for character "${charName}", falling back to keyword matching. Prompt: "${promptSnippet}..."`,
-        );
-      }
-    }
-
-    // 2. Keyword tag matching (unless mode is 'semantic')
-    if (charRefMode !== 'semantic') {
-      let bestScore = 0,
-        bestImg = null;
-      for (const img of valid) {
-        const keywords = TAG_KEYWORDS[img.tag] || [];
-        const score = keywords.filter((kw) => panelLower.includes(kw)).length;
-        if (score > bestScore) {
-          bestScore = score;
-          bestImg = img;
-        }
-      }
-      if (bestScore > 0 && bestImg) return bestImg;
-      // No keyword match — fall through to primary
-      ctx.logError(
-        'selectBestImage',
-        new Error('Keyword fallback'),
-        `No keyword/tag match for character "${charName}", falling back to primary image. Prompt: "${promptSnippet}..."`,
-      );
-    }
-
-    // 3. Fall back to primary image using configured primaryImageIndex
-    const primaryIdx = typeof primaryImageIndex === 'number' ? primaryImageIndex : 0;
-    const primary = (charImages || [])[primaryIdx];
-    return primary && primary.dataUrl ? primary : valid[0];
-  }
-
-  // Build a composite character sheet canvas when multiple chars share budget
-  async function buildCompositeSheet(charMatches) {
-    const n = charMatches.length;
-    if (n === 0) return null;
-
-    const cellSize = 256;
-    const cols = Math.min(n, 2);
-    const rows = Math.ceil(n / cols);
-    const canvas = document.createElement('canvas');
-    canvas.width = cols * cellSize;
-    canvas.height = rows * cellSize;
-    const ctx2d = canvas.getContext('2d');
-    ctx2d.fillStyle = '#1a1a2e';
-    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
-
-    await Promise.all(
-      charMatches.map(
-        ({ name, img }, i) =>
-          new Promise<void>((resolve) => {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const x = col * cellSize;
-            const y = row * cellSize;
-            const drawLabel = () => {
-              ctx2d.fillStyle = 'rgba(0,0,0,0.75)';
-              ctx2d.fillRect(x, y + cellSize - 22, cellSize, 22);
-              ctx2d.fillStyle = '#fff';
-              ctx2d.font = '12px sans-serif';
-              ctx2d.textAlign = 'center';
-              ctx2d.fillText(name, x + cellSize / 2, y + cellSize - 7);
-            };
-            const image = new Image();
-            image.onload = () => {
-              ctx2d.drawImage(image, x, y, cellSize, cellSize - 22);
-              drawLabel();
-              resolve();
-            };
-            image.onerror = () => {
-              drawLabel();
-              resolve();
-            };
-            image.src = img.dataUrl;
-          }),
-      ),
-    );
-
-    const posLabels = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-    const legendParts = charMatches.map(({ name, img }, i) => {
-      const pos = posLabels[i] || `section ${i + 1}`;
-      const detail = img.description || (img.tag && img.tag !== 'default' ? img.tag : '');
-      return `${pos}: ${name}${detail ? ` (${detail})` : ''}`;
-    });
-    const legend = `Character sheet grid. ${legendParts.join('. ')}. Match each character's appearance exactly as shown in their labeled section.`;
-    return { dataUrl: canvas.toDataURL('image/jpeg', 0.9), legend, isComposite: true };
-  }
-
-  // Build per-panel image options using hybrid cascading strategy
+  // Build per-panel image options through the canonical deterministic resolver.
   async function buildPanelImageOpts(panel): Promise<LegacyPanelImageOptions> {
     // Use AI-picked size when dynamic sizing is enabled and the AI provided a valid WxH value
     let resolution = imageResolution;
@@ -493,56 +316,40 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
     }
     const opts: LegacyPanelImageOptions = { resolution };
     if (negativePrompt) opts.negativePrompt = negativePrompt;
-    const charNamesInPanel = Object.keys(ctx.state.characterImagesByName).filter((name) =>
-      nameInPrompt(name, panel.imagePrompt),
-    );
+    if (!useReferenceImages || !worldId) return opts;
 
-    // Select best image per character in this panel
-    const charMatches = [];
-    for (const name of charNamesInPanel) {
-      const charData = ctx.state.characterImagesByName[name] || {};
-      const img = await selectBestImage(charData.images, panel.imagePrompt, name, charData.primaryImageIndex);
-      if (img) charMatches.push({ name, img });
-    }
+    const fallbackCharacterIds = ctx.state.characters
+      .filter((character) => nameInPrompt(character.name, panel.imagePrompt))
+      .map((character) => character.id);
+    const request: PanelReferenceRequest = panel.referenceRequest || {
+      worldId,
+      characterIds: fallbackCharacterIds,
+      locationId: null,
+      characterStates: {},
+      interaction: null,
+      facets: {},
+      propNames: [],
+    };
+    const resolutionResult = resolvePanelReferences({
+      request: { ...request, worldId },
+      assets: referenceAssets,
+      budget: maxRefImages,
+      preferredReferenceIds,
+      pinnedReferenceIds,
+      manualReferenceIds: panel.manualReferenceIds || [],
+      previousFrame,
+    });
+    if (resolutionResult.error) throw new Error(resolutionResult.error.detail);
 
-    const totalRefs = charMatches.length + worldRefs.length;
-
-    // Use composite sheet when mode is 'composite' or multiple chars exceed budget
-    if (charMatches.length > 1 && (charRefMode === 'composite' || totalRefs > maxRefImages)) {
-      const sheet = await buildCompositeSheet(charMatches);
-      if (sheet) {
-        const panelRefs = [
-          {
-            dataUrl: sheet.dataUrl,
-            label: 'Composite character sheet',
-            tag: '',
-            description: sheet.legend,
-            type: 'character',
-          },
-          ...worldRefs,
-        ];
-        opts.imageDataUrls = panelRefs.map((r) => r.dataUrl);
-        opts.labeledRefs = panelRefs;
-        return opts;
-      }
-    }
-
-    // Build individual labeled refs
-    const labeledCharRefs = charMatches.map(({ name, img }) => ({
-      dataUrl: img.dataUrl,
-      label: name,
-      tag: img.tag || '',
-      description: img.description || '',
-      type: 'character',
-    }));
-    const panelRefs = [...labeledCharRefs, ...worldRefs];
-
-    if (panelRefs.length === 1) {
-      opts.imageDataUrl = panelRefs[0].dataUrl;
-      opts.labeledRefs = panelRefs;
-    } else if (panelRefs.length > 1) {
-      opts.imageDataUrls = panelRefs.map((r) => r.dataUrl);
-      opts.labeledRefs = panelRefs;
+    panel.referenceManifest = resolutionResult.manifest;
+    if (resolutionResult.dataUrls.length > 0) {
+      opts.imageDataUrls = [...resolutionResult.dataUrls];
+      opts.labeledRefs = resolutionResult.manifest.map((item, index) => ({
+        dataUrl: resolutionResult.dataUrls[index],
+        label: item.label,
+        description: item.role,
+        type: item.role,
+      }));
     }
     return opts;
   }
@@ -706,13 +513,22 @@ export async function generateContinuityPageImages(
     ? await DB.get(DB.STORES.imagePresets, ctx.state.selectedImagePreset)
     : null;
   const charactersById = Object.fromEntries(ctx.state.characters.map((character) => [character.id, character]));
-  const ledgerStates: Record<string, CharacterVisualState> =
-    (pageData.continuityBefore || ctx.state.visualContinuity)?.characterStates || {};
-  const anchorImageIdByCharacter = Object.fromEntries(
-    Object.entries(ledgerStates).map(([characterId, characterState]) => [
-      characterId,
-      characterState?.identityAnchorImageId ?? null,
-    ]),
+  const worldId = ctx.state.selectedWorld || ctx.state.world?.id || '';
+  const referenceAssets = worldId ? await referenceRepository.listByWorld(worldId) : [];
+  const preferredReferenceIds = Object.fromEntries(
+    ctx.state.characters.flatMap((character) =>
+      character.preferredIdentityReferenceId ? [[character.id, character.preferredIdentityReferenceId]] : [],
+    ),
+  );
+  if (ctx.state.world?.preferredStyleReferenceId) {
+    preferredReferenceIds.style = ctx.state.world.preferredStyleReferenceId;
+  }
+  const pinnedReferenceIds =
+    pageData.continuityBefore?.pinnedReferenceIds || ctx.state.visualContinuity?.pinnedReferenceIds || {};
+  const manualReferenceIdsByPanel = Object.fromEntries(
+    planned.panels.flatMap((panel, panelIndex) =>
+      panel.manualReferenceIds ? [[panelIndex, panel.manualReferenceIds]] : [],
+    ),
   );
   const signal = ctx.signal();
 
@@ -731,10 +547,14 @@ export async function generateContinuityPageImages(
         charactersById,
         selectedCharacterIds: ctx.state.selectedCharacters,
         world: ctx.state.world,
+        worldId,
+        referenceAssets,
+        preferredReferenceIds,
+        pinnedReferenceIds,
+        manualReferenceIdsByPanel,
         referenceBudget: await DB.getSetting('refBudget', 'auto'),
         useReferenceImages: await DB.getSetting('useRefImages', true),
         previousFrame: getPreviousFrameRef(ctx.state),
-        anchorImageIdByCharacter,
         ...(options.panelIndexes ? { targetPanelIndexes: options.panelIndexes } : {}),
         stylePreset: imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', '')),
         negativePrompt: await DB.getSetting('negativePrompt', ''),

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { escHtml, buildImageEmbeddingText, newId } from './utils.js';
+import { escHtml, newId } from './utils.js';
 import DB from './db.js';
 import API from './api.js';
 
@@ -43,7 +43,7 @@ export const MAX_IMAGES: number = 20;
  * - anchorRemovedEmptyToast: toast when the anchor is removed and no images remain
  */
 export function createGalleryEditor(config) {
-  // In-editor image list: [{ id, dataUrl, tag, description, embedding, ... }]
+  // In-editor image list: [{ id, dataUrl, tag, description, ... }]
   const state = {
     images: [],
     primaryIndex: 0,
@@ -56,7 +56,7 @@ export function createGalleryEditor(config) {
 
   function newImage(fields) {
     return Object.assign(
-      { id: newId(), dataUrl: '', tag: config.defaultTag, description: '', embedding: null, embeddingText: null },
+      { id: newId(), dataUrl: '', tag: config.defaultTag, description: '' },
       config.newImageExtra ? config.newImageExtra() : null,
       fields,
     );
@@ -66,24 +66,6 @@ export function createGalleryEditor(config) {
     const entityName = state.name;
     return state.images
       .map((img, i) => {
-        // Embedding status badge
-        let embBadge = '';
-        if (img.dataUrl) {
-          if (img.embedding && img.embeddingText) {
-            const enriched =
-              typeof buildImageEmbeddingText === 'function' ? buildImageEmbeddingText(img, entityName) : '';
-            if (enriched && img.embeddingText === enriched) {
-              embBadge =
-                '<span class="char-img-emb-badge emb-valid" title="Embedding up to date">&#10003; embedded</span>';
-            } else {
-              embBadge =
-                '<span class="char-img-emb-badge emb-stale" title="Embedding outdated — save to update">&#8635; stale</span>';
-            }
-          } else if (img.description?.trim()) {
-            embBadge =
-              '<span class="char-img-emb-badge emb-missing" title="No embedding yet — save to generate">&mdash; not embedded</span>';
-          }
-        }
         const isAnchor = !!img.id && img.id === state.anchorImageId;
         return `
     <div class="char-img-slot" data-idx="${i}">
@@ -96,7 +78,6 @@ export function createGalleryEditor(config) {
           <select class="char-img-tag" data-idx="${i}" data-action-change="updateTag" data-args="[${i}]" style="flex:1;">
             ${config.imageTags.map((t) => `<option value="${t}" ${img.tag === t ? 'selected' : ''}>${t}</option>`).join('')}
           </select>
-          ${embBadge}
         </div>
         <input type="text" class="char-img-desc" data-idx="${i}" value="${escHtml(img.description || '')}" placeholder="${config.descPlaceholder}" data-action-input="updateDesc" data-args="[${i}]">
         ${config.slotExtraInputs ? config.slotExtraInputs(img, i) : ''}
@@ -183,8 +164,6 @@ export function createGalleryEditor(config) {
     } else {
       state.images[idx] = Object.assign({ id: newId() }, state.images[idx], {
         dataUrl,
-        embedding: null,
-        embeddingText: null,
       });
     }
     refreshGallery();
@@ -206,8 +185,6 @@ export function createGalleryEditor(config) {
       // Only apply if this slot wasn't replaced while we were waiting
       if (state.images[idx] === img && !img.description?.trim() && caption) {
         img.description = caption;
-        img.embedding = null;
-        img.embeddingText = null;
       }
       if (descInput) {
         descInput.disabled = false;
@@ -236,8 +213,6 @@ export function createGalleryEditor(config) {
 
     if (caption) {
       img.description = caption;
-      img.embedding = null;
-      img.embeddingText = null;
       if (descInput) descInput.value = caption;
     } else {
       App.toast('Caption generation failed or is unsupported by this model', 'error');
@@ -280,8 +255,6 @@ export function createGalleryEditor(config) {
 
       if (caption && state.images[i] === img) {
         img.description = caption;
-        img.embedding = null;
-        img.embeddingText = null;
         if (descInput) descInput.value = caption;
       } else {
         failed++;
@@ -406,8 +379,6 @@ export function createGalleryEditor(config) {
       const caption = await API.generateImageCaption(dataUrl, meta).catch(() => null);
       if (caption) {
         newImg.description = caption;
-        newImg.embedding = null;
-        newImg.embeddingText = null;
         refreshGallery();
       }
       App.toast('Reference image generated', 'success');
@@ -450,8 +421,6 @@ export function createGalleryEditor(config) {
 
     if (dataUrl) {
       img.dataUrl = dataUrl;
-      img.embedding = null;
-      img.embeddingText = null;
       img.generationPrompt = prompt;
 
       // Re-caption
@@ -460,8 +429,6 @@ export function createGalleryEditor(config) {
       const caption = await API.generateImageCaption(dataUrl, meta).catch(() => null);
       if (caption) {
         img.description = caption;
-        img.embedding = null;
-        img.embeddingText = null;
       }
       refreshGallery();
       App.toast('Reference image regenerated', 'success');
@@ -475,16 +442,12 @@ export function createGalleryEditor(config) {
   function updateTag(idx: number, select: any): void {
     if (state.images[idx]) {
       state.images[idx].tag = select.value;
-      state.images[idx].embedding = null; // tag is part of enriched embedding text
-      state.images[idx].embeddingText = null;
     }
   }
 
   function updateDesc(idx: number, input: any): void {
     if (state.images[idx]) {
       state.images[idx].description = input.value;
-      state.images[idx].embedding = null; // invalidate stale embedding
-      state.images[idx].embeddingText = null;
     }
   }
 
@@ -616,39 +579,12 @@ export async function confirmDeleteEntity(cfg, id: string): Promise<void> {
   App.refreshPage();
 }
 
-/**
- * Generate (or re-generate) embeddings for images whose enriched text has
- * changed (new description, tag change, name change, or first-time), updating
- * the save button label while requests are in flight.
- */
+/** @deprecated Temporary compatibility shim until the legacy galleries are replaced. */
 export async function embedImagesForSave(
-  validImages: any[],
-  name: string,
-  saveBtnId: string,
-  restoreLabel: string,
+  _validImages: any[],
+  _name: string,
+  _saveBtnId: string,
+  _restoreLabel: string,
 ): Promise<void> {
-  const needsEmbedding = validImages.filter((img) => {
-    if (!img.description?.trim()) return false;
-    const enriched = buildImageEmbeddingText(img, name);
-    return img.embeddingText !== enriched || !img.embedding;
-  });
-  if (needsEmbedding.length === 0) return;
-
-  const saveBtn = document.getElementById(saveBtnId);
-  if (saveBtn) saveBtn.textContent = 'Generating embeddings...';
-  await Promise.all(
-    needsEmbedding.map(async (img) => {
-      const enriched = buildImageEmbeddingText(img, name);
-      try {
-        const emb = await API.generateEmbedding(enriched);
-        if (emb) {
-          img.embedding = emb;
-          img.embeddingText = enriched;
-        }
-      } catch {
-        /* skip on error */
-      }
-    }),
-  );
-  if (saveBtn) saveBtn.textContent = restoreLabel;
+  return Promise.resolve();
 }

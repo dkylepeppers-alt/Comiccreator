@@ -28,6 +28,9 @@ import {
   generationOutcomeForPage,
   preflightImageGeneration,
 } from '../generation/image-engine.js';
+import { createReferenceRepository } from '../references/repository.js';
+
+const referenceRepository = createReferenceRepository();
 
 /**
  * Create Comic Page - The core comic generation experience
@@ -1010,7 +1013,7 @@ async function startGenerating() {
 
   let systemPrompt;
   if (state.plannerMode) {
-    const locationKeys = (world?.images || []).map((img) => img?.locationKey).filter(Boolean);
+    const locations = world ? await referenceRepository.listLocations(world.id) : [];
     systemPrompt = API.buildPlannerSystemPrompt({
       genreName,
       characters: characters.map((c) => ({
@@ -1019,14 +1022,17 @@ async function startGenerating() {
         role: c.role,
         description: c.description,
         powers: c.powers,
-        references: (c.images || [])
-          .filter((image) => image?.referenceKey)
-          .map((image) => ({ key: image.referenceKey, description: image.description || image.tag || '' })),
       })),
       world: world
-        ? { name: world.name, description: world.description, details: world.details, atmosphere: world.atmosphere }
+        ? {
+            id: world.id,
+            name: world.name,
+            description: world.description,
+            details: world.details,
+            atmosphere: world.atmosphere,
+          }
         : null,
-      locationKeys: [...new Set(locationKeys)],
+      locations: locations.map(({ id, name, description }) => ({ id, name, description })),
       customSystemPrompt: presetData?.systemPrompt || null,
     });
     state.visualContinuity = initializeContinuity(characters, buildInitialStateOverrides(characters));
@@ -1134,16 +1140,10 @@ async function generatePage(presetData: any): Promise<void> {
       const planned = API.parsePlannedPageResponse(fullText);
       if (planned) {
         // Exact ID validation replaces character-name regex matching
-        const locationKeys = [...new Set((state.world?.images || []).map((img) => img?.locationKey).filter(Boolean))];
+        const locations = state.world ? await referenceRepository.listLocations(state.world.id) : [];
         const { page: validated, errors } = validatePlannedPage(planned, {
           characterIds: state.characters.map((c) => c.id),
-          locationKeys,
-          referenceKeysByCharacter: Object.fromEntries(
-            state.characters.map((character) => [
-              character.id,
-              (character.images || []).map((image) => image?.referenceKey).filter(Boolean),
-            ]),
-          ),
+          locationIds: locations.map(({ id }) => id),
         });
         pageData = {
           title: validated.title,

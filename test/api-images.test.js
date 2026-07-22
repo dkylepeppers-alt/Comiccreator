@@ -35,6 +35,10 @@ globalThis.fetch = async () => new Response(JSON.stringify({ data: [] }), { stat
 const { default: DB } = await import('../src/js/db.js');
 const { default: API } = await import('../src/js/api.js');
 
+it('exports no embedding API helper', () => {
+  expect(API.generateEmbedding).toBeUndefined();
+});
+
 async function clearAllStores() {
   API._resetCacheForTesting();
   const db = await DB.open();
@@ -237,15 +241,20 @@ describe('generateImages', () => {
 });
 
 describe('structured planner', () => {
-  it('buildPlannerSystemPrompt embeds the ID manifest and location keys', () => {
+  it('buildPlannerSystemPrompt embeds stable world and location IDs', () => {
     const prompt = API.buildPlannerSystemPrompt({
       genreName: 'Neon Noir',
       characters: [{ id: 'char-1', name: 'Mara', role: 'hero', description: 'A mechanic' }],
-      world: { name: 'Rustfield', description: 'A dying factory town' },
-      locationKeys: ['machine-shop', 'main-street'],
+      world: { id: 'world-1', name: 'Rustfield', description: 'A dying factory town' },
+      locations: [
+        { id: 'machine-shop', name: 'Machine Shop' },
+        { id: 'main-street', name: 'Main Street' },
+      ],
     });
     expect(prompt).toContain('id: "char-1"');
-    expect(prompt).toContain('"machine-shop"');
+    expect(prompt).toContain('id: "machine-shop"');
+    expect(prompt).toContain('"locationId"');
+    expect(prompt).not.toContain('locationKey');
     expect(prompt).toContain('visualStateChanges');
     expect(prompt).toContain("Do NOT describe any character's physical appearance");
   });
@@ -259,9 +268,17 @@ describe('structured planner', () => {
             narration: 'Morning.',
             dialogue: [{ speaker: 'Mara', text: 'Hand me the wrench.' }],
             visual: {
-              locationKey: 'machine-shop',
-              shot: 'wide',
-              characters: [{ characterId: 'char-1', action: 'working', pose: 'bent over', expression: 'focused' }],
+              locationId: 'machine-shop',
+              framing: 'wide',
+              characters: [
+                {
+                  characterId: 'char-1',
+                  appearanceState: 'work-clothes',
+                  action: 'working',
+                  pose: 'bent over',
+                  expression: 'focused',
+                },
+              ],
               keyProps: ['wrench'],
             },
             visualStateChanges: [
@@ -286,7 +303,9 @@ describe('structured planner', () => {
   it('parsePlannedPageResponse handles fences and repairs truncation', () => {
     const good = API.parsePlannedPageResponse('```json\n{"title":"T","panels":[],"choices":[]}\n```');
     expect(good).not.toBeNull();
-    const truncated = API.parsePlannedPageResponse('{"title":"T","panels":[{"narration":"hi","visual":{"shot":"wide"');
+    const truncated = API.parsePlannedPageResponse(
+      '{"title":"T","panels":[{"narration":"hi","visual":{"framing":"wide"',
+    );
     expect(truncated === null || Array.isArray(truncated.panels)).toBe(true);
   });
 
@@ -301,7 +320,7 @@ describe('structured planner', () => {
   {
     "narration": "hi",
     "dialogue": [ { "speaker": "A", "text": "yo, and {braces, commas} in strings," }, ],
-    "visual": { "shot": "wide", },
+    "visual": { "framing": "wide", },
   },
 ],
 "choices": [ { "text": "c", "summary": "s" }, ]
@@ -311,7 +330,7 @@ describe('structured planner', () => {
     expect(parsed.title).toBe('T');
     expect(parsed.panels[0].narration).toBe('hi');
     expect(parsed.panels[0].dialogue[0].text).toBe('yo, and {braces, commas} in strings,');
-    expect(parsed.panels[0].visual.shot).toBe('wide');
+    expect(parsed.panels[0].visual.framing).toBe('wide');
     expect(parsed.choices[0].text).toBe('c');
   });
 

@@ -114,12 +114,6 @@ export interface CaptionContextHints {
   worldName?: string;
 }
 
-export interface EmbeddingOptions {
-  model?: string;
-  dimensions?: number;
-  signal?: AbortSignal;
-}
-
 export interface RefVariationOptions {
   model?: string;
   resolution?: string;
@@ -733,19 +727,10 @@ function getImageModelSource(): 'live' | 'cache-fresh' | 'cache-degraded' | 'fal
   return _lastImageModelSource;
 }
 
-// Models that support the `dimensions` parameter for dimension reduction
-const DIMENSION_REDUCTION_MODELS: Set<string> = new Set([
-  'text-embedding-3-small',
-  'text-embedding-3-large',
-  'Qwen/Qwen3-Embedding-0.6B',
-  'Qwen/Qwen3-Embedding-4B',
-  'qwen/qwen3-embedding-8b',
-]);
-
 /**
  * Generate a contextual caption for an uploaded image using a vision-capable model.
- * The caption is optimised for use as an embedding description that matches comic
- * panel prompts.  contextHints narrows the prompt to the specific context:
+ * The caption is optimized for concise reference metadata. contextHints narrows
+ * the prompt to the specific context:
  *   type: 'character'              — single character reference (uses name, role, tag, appearance)
  *       | 'character-in-world'     — character inside a world (uses name, tag, appearance, worldName)
  *       | 'character-interaction'  — multiple characters interacting (uses characterNames, worldName, tag)
@@ -864,58 +849,6 @@ async function generateImageCaption(
         `Caption generation failed for ${type} "${name || 'unknown'}"`,
       );
     }
-    return null;
-  }
-}
-
-/**
- * Generate a text embedding via NanoGPT embeddings API.
- * Reads the embedding model from settings (configurable in Settings page).
- * Only sends `dimensions` for models that support dimension reduction.
- * Returns a plain number array, or null if the call fails.
- */
-async function generateEmbedding(text: string, options: EmbeddingOptions = {}): Promise<number[] | null> {
-  const apiKey = await getApiKey();
-  if (!apiKey) return null;
-
-  const model = options.model || (await DB.getSetting('embeddingModel', 'text-embedding-3-small'));
-  const body: any = {
-    input: text,
-    model,
-    encoding_format: 'float',
-  };
-  // Only include dimensions for models that support dimension reduction
-  if (DIMENSION_REDUCTION_MODELS.has(model)) {
-    body.dimensions = options.dimensions || 256;
-  }
-
-  try {
-    const res = await fetch(`${BASE_URL}/embeddings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      if (typeof (globalThis as any).App !== 'undefined')
-        (globalThis as any).App.logError(
-          'generateEmbedding',
-          new Error(`HTTP ${res.status}`),
-          `Embedding API returned ${res.status} for text: "${text.slice(0, 80)}..."`,
-        );
-      return null;
-    }
-    const data = await res.json();
-    return data?.data?.[0]?.embedding || null;
-  } catch (err) {
-    if (typeof (globalThis as any).App !== 'undefined')
-      (globalThis as any).App.logError(
-        'generateEmbedding',
-        err,
-        `Embedding API call failed for text: "${text.slice(0, 80)}..."`,
-      );
     return null;
   }
 }
@@ -1169,7 +1102,6 @@ const API = {
   generateImage,
   generateImages,
   enrichImagePrompt,
-  generateEmbedding,
   generateImageCaption,
   buildSystemPrompt,
   buildPlannerSystemPrompt,

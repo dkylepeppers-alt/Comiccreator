@@ -102,6 +102,7 @@ export interface PlannedPanel {
     layoutHint?: 'wide' | 'balanced' | 'tall';
   };
   visualStateChanges: PlannedVisualStateChange[];
+  manualReferenceIds?: string[];
 }
 
 export interface PlannedPage {
@@ -130,6 +131,7 @@ export interface CharacterLike {
   images?: ImageRef[];
   primaryImageIndex?: number;
   identityAnchorImageId?: string | null;
+  preferredIdentityReferenceId?: string | null;
   defaultVisualState?: CharacterVisualStateDefaults;
 }
 
@@ -139,6 +141,7 @@ export interface WorldLike {
   images?: ImageRef[];
   primaryImageIndex?: number;
   defaultAnchorImageId?: string | null;
+  preferredStyleReferenceId?: string | null;
 }
 
 export interface ModelCapability {

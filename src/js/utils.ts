@@ -16,8 +16,6 @@ export interface ImageRef {
   tag?: string;
   description?: string;
   dataUrl?: string;
-  embedding?: number[] | null;
-  embeddingText?: string | null;
   locationKey?: string | null;
   referenceKey?: string | null;
   referenceClassifications?: {
@@ -216,44 +214,10 @@ export function sanitizeImagePrompt(rawPrompt: string | null | undefined): strin
   return cleaned;
 }
 
-/**
- * Build an enriched text string for generating an image's semantic embedding.
- * Prepends the image tag and the owning character/world name to the user-supplied
- * description so the resulting vector is more aligned with panel prompts that
- * reference names and visual contexts.
- *
- * Examples:
- *   buildImageEmbeddingText({tag:'action-pose', description:'Fist raised'}, 'Iron Man')
- *     → "action-pose Iron Man: Fist raised"
- *   buildImageEmbeddingText({tag:'default', description:'Red cape'}, 'Superman')
- *     → "Superman: Red cape"
- *   buildImageEmbeddingText({tag:'interior', description:'Dimly lit lab'}, 'Gotham')
- *     → "interior Gotham: Dimly lit lab"
- */
 /** Contract for SPA page modules consumed by the router in app.ts. */
 export interface PageModule {
   render(param?: string | null): string | Promise<string>;
   postRender?(param?: string | null): void;
   onMount?(param?: string | null): Promise<void> | void;
   onUnmount?(): void;
-}
-
-export function buildImageEmbeddingText(img: ImageRef | null | undefined, contextName: string): string {
-  const parts: string[] = [];
-  const tag = img?.tag;
-  if (tag && tag !== 'default' && tag !== 'establishing' && tag !== 'custom') {
-    parts.push(tag);
-  }
-  if (img?.referenceKey) parts.push(img.referenceKey);
-  if (img?.referenceClassifications) {
-    const { viewAngle, framing, activity, context } = img.referenceClassifications;
-    parts.push(...[viewAngle, framing, activity, context].filter((value) => value && value !== 'unspecified'));
-  }
-  const name = (contextName || '').trim();
-  if (name) parts.push(name);
-  const desc = (img?.description || '').trim();
-  if (parts.length > 0 && desc) {
-    return `${parts.join(' ')}: ${desc}`;
-  }
-  return [...parts, desc].filter(Boolean).join(' ') || desc;
 }
