@@ -525,7 +525,7 @@ export function allocateReferences(input: ReferenceAllocationInput): ReferenceAl
             imageId: variant.id,
             referenceKey: request.referenceKey,
           },
-          dataUrl: variant.dataUrl,
+          dataUrl: variant.dataUrl!,
         });
       }
     }
