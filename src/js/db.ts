@@ -12,6 +12,7 @@ export type DefaultVisualStateField = keyof Required<CharacterVisualStateDefault
 
 export interface Character {
   id: string;
+  worldId?: string;
   name: string;
   genre?: string;
   role?: string;
@@ -23,6 +24,8 @@ export interface Character {
   primaryImageIndex: number;
   /** Stable ID of the single authoritative identity-anchor gallery image. */
   identityAnchorImageId?: string | null;
+  /** Canonical identity reference used by schema-v2 panel resolution. */
+  preferredIdentityReferenceId?: string | null;
   /** Reusable default mutable visual state (wardrobe, hair, items…). */
   defaultVisualState?: CharacterVisualStateDefaults;
   /** Per-field provenance prevents local classification from overwriting user edits. */
@@ -42,6 +45,8 @@ export interface World {
   primaryImageIndex: number;
   /** Stable ID of the default location-anchor gallery image. */
   defaultAnchorImageId?: string | null;
+  /** Canonical rendering/style reference used by schema-v2 panel resolution. */
+  preferredStyleReferenceId?: string | null;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -93,12 +98,15 @@ export interface Setting {
 }
 
 const DB_NAME = 'ComicCreatorDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 let db: IDBDatabase | null = null;
 
 const STORES = {
   characters: 'characters',
   worlds: 'worlds',
+  locations: 'locations',
+  referenceAssets: 'referenceAssets',
+  classificationJobs: 'classificationJobs',
   comics: 'comics',
   pages: 'pages',
   presets: 'presets',
@@ -117,6 +125,22 @@ function open(): Promise<IDBDatabase> {
       }
       if (!d.objectStoreNames.contains(STORES.worlds)) {
         d.createObjectStore(STORES.worlds, { keyPath: 'id' });
+      }
+      if (!d.objectStoreNames.contains(STORES.locations)) {
+        const locations = d.createObjectStore(STORES.locations, { keyPath: 'id' });
+        locations.createIndex('worldId', 'worldId');
+      }
+      if (!d.objectStoreNames.contains(STORES.referenceAssets)) {
+        const references = d.createObjectStore(STORES.referenceAssets, { keyPath: 'id' });
+        references.createIndex('worldId', 'worldId');
+        references.createIndex('characterIds', 'characterIds', { multiEntry: true });
+        references.createIndex('locationId', 'locationId');
+        references.createIndex('classificationState', 'classificationState');
+      }
+      if (!d.objectStoreNames.contains(STORES.classificationJobs)) {
+        const jobs = d.createObjectStore(STORES.classificationJobs, { keyPath: 'id' });
+        jobs.createIndex('status', 'status');
+        jobs.createIndex('assetId', 'assetId', { unique: true });
       }
       if (!d.objectStoreNames.contains(STORES.comics)) {
         const cs = d.createObjectStore(STORES.comics, { keyPath: 'id' });

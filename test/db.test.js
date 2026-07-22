@@ -21,6 +21,9 @@ describe('DB module', () => {
     const db = await DB.open();
     expect(db.objectStoreNames.contains(DB.STORES.characters)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.worlds)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.locations)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.referenceAssets)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.classificationJobs)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.comics)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.pages)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.presets)).toBeTruthy();
@@ -34,6 +37,22 @@ describe('DB module', () => {
     const tx2 = db.transaction(DB.STORES.pages, 'readonly');
     expect(tx2.objectStore(DB.STORES.pages).indexNames.contains('comicId')).toBeTruthy();
     tx2.abort();
+
+    const tx3 = db.transaction(DB.STORES.referenceAssets, 'readonly');
+    const references = tx3.objectStore(DB.STORES.referenceAssets);
+    expect(references.indexNames.contains('worldId')).toBeTruthy();
+    expect(references.indexNames.contains('characterIds')).toBeTruthy();
+    expect(references.index('characterIds').multiEntry).toBeTruthy();
+    expect(references.indexNames.contains('locationId')).toBeTruthy();
+    expect(references.indexNames.contains('classificationState')).toBeTruthy();
+    tx3.abort();
+
+    const tx4 = db.transaction(DB.STORES.classificationJobs, 'readonly');
+    const jobs = tx4.objectStore(DB.STORES.classificationJobs);
+    expect(jobs.indexNames.contains('status')).toBeTruthy();
+    expect(jobs.indexNames.contains('assetId')).toBeTruthy();
+    expect(jobs.index('assetId').unique).toBeTruthy();
+    tx4.abort();
   });
 
   it('supports put/get/getAll/del', async () => {
