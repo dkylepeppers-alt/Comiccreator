@@ -88,6 +88,39 @@ describe('local reference classifier', () => {
     });
   });
 
+  it('retains only a bounded safe raw-output excerpt for parse failures', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: 'not valid json' }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+    const echoedPromptClassifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: 'Roster: Castle world description: hidden' }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toMatchObject({
+      kind: 'failure',
+      error: { rawOutputExcerpt: 'not valid json' },
+    });
+    const echoed = await echoedPromptClassifier.classify({ asset, world, characters: [], locations: [] });
+    expect(echoed).toMatchObject({ kind: 'failure' });
+    expect((echoed as any).error).not.toHaveProperty('rawOutputExcerpt');
+  });
+
+  it('uses generic diagnostic details when the native plugin throws sensitive text', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockRejectedValue(new Error('prompt=private roster=secret world description=hidden')),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    const result = await classifier.classify({ asset, world, characters: [], locations: [] });
+    expect(result).toMatchObject({ kind: 'failure', error: { stage: 'inference', code: 'inference-failed' } });
+    expect((result as any).error).not.toHaveProperty('message');
+  });
+
   it('extracts a fenced JSON object surrounded by model prose', async () => {
     const classifier = createLocalReferenceClassifier({
       classify: vi.fn().mockResolvedValue({ text: `Here is the result:\n\`\`\`json\n${validJson}\n\`\`\`` }),

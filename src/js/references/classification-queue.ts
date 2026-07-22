@@ -21,6 +21,7 @@ export interface ClassificationQueue {
   run(): Promise<void>;
   pause(): void;
   resume(): Promise<void>;
+  resumeAfterLocalModelDownload(): Promise<void>;
   retry(assetId: string): Promise<void>;
   retryAllFailed(): Promise<number>;
   acceptAsIs(assetId: string): Promise<void>;
@@ -32,6 +33,10 @@ export interface ClassificationQueueDependencies {
   repository: ReferenceRepository;
   classifier: { classify(asset: ReferenceAsset): Promise<ClassificationOutcome> };
   now: () => number;
+  timer?: {
+    setTimeout(callback: () => void | Promise<void>, delayMs: number): unknown;
+    clearTimeout(handle: unknown): void;
+  };
 }
 
 export function isAutomaticallyEligible(asset: ReferenceAsset): boolean {
@@ -65,11 +70,30 @@ export function createClassificationQueue({
   repository,
   classifier,
   now,
+  timer = {
+    setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+    clearTimeout: globalThis.clearTimeout,
+  },
 }: ClassificationQueueDependencies): ClassificationQueue {
   let paused = false;
   let activeRun: Promise<void> | null = null;
+  let retryTimer: unknown | null = null;
+
+  function scheduleRetry(retryAt: number): void {
+    if (paused) return;
+    if (retryTimer !== null) timer.clearTimeout(retryTimer);
+    retryTimer = timer.setTimeout(
+      () => {
+        retryTimer = null;
+        return run().catch(() => undefined);
+      },
+      Math.max(0, retryAt - now()),
+    );
+  }
 
   async function startIfUnpaused(): Promise<void> {
+    if (paused) return;
+    if (activeRun) await activeRun;
     if (!paused) await run();
   }
 
@@ -98,7 +122,7 @@ export function createClassificationQueue({
       ...job,
       status: 'failed',
       retryAt: undefined,
-      lastError: error.message || error.code,
+      lastError: error.code,
       updatedAt: now(),
     };
     await repository.putAssetAndJob(
@@ -128,9 +152,10 @@ export function createClassificationQueue({
     };
     await repository.putAssetAndJob(
       { ...asset, classificationState: 'pending', updatedAt: now() },
-      { ...job, status: 'pending', retryAt, lastError: undefined, updatedAt: now() },
+      { ...job, status: 'pending', retryAt, waitingReason: outcome.reason, lastError: undefined, updatedAt: now() },
     );
     await repository.recordDiagnostic(diagnostic(asset, error, now()));
+    scheduleRetry(retryAt);
   }
 
   async function processJob(job: ClassificationJob): Promise<void> {
@@ -138,6 +163,7 @@ export function createClassificationQueue({
       ...job,
       status: 'running',
       retryAt: undefined,
+      waitingReason: undefined,
       attemptCount: job.attemptCount + 1,
       lastError: undefined,
       updatedAt: now(),
@@ -148,7 +174,7 @@ export function createClassificationQueue({
       await repository.putJob({
         ...running,
         status: 'failed',
-        lastError: `Reference asset "${job.assetId}" no longer exists`,
+        lastError: 'missing-asset',
         updatedAt: now(),
       });
       return;
@@ -161,14 +187,13 @@ export function createClassificationQueue({
     let outcome: ClassificationOutcome;
     try {
       outcome = await classifier.classify(asset);
-    } catch (error) {
+    } catch {
       outcome = {
         kind: 'failure',
         error: {
           stage: 'inference',
           code: 'inference-failed',
           mode: 'local',
-          message: error instanceof Error ? error.message : undefined,
         },
       };
     }
@@ -219,14 +244,20 @@ export function createClassificationQueue({
       const next = (await repository.listJobs()).find(
         (job) => job.status === 'pending' && (job.retryAt === undefined || job.retryAt <= now()),
       );
-      if (!next) return;
+      if (!next) {
+        const retryAt = (await repository.listJobs())
+          .filter((job) => job.status === 'pending' && job.retryAt !== undefined)
+          .map((job) => job.retryAt!)
+          .sort((left, right) => left - right)[0];
+        if (retryAt !== undefined) scheduleRetry(retryAt);
+        return;
+      }
       await processJob(next);
     }
   }
 
   function run(): Promise<void> {
     if (activeRun) return activeRun;
-    paused = false;
     activeRun = processPendingJobs().finally(() => {
       activeRun = null;
     });
@@ -235,10 +266,22 @@ export function createClassificationQueue({
 
   function pause(): void {
     paused = true;
+    if (retryTimer !== null) timer.clearTimeout(retryTimer);
+    retryTimer = null;
   }
 
   async function resume(): Promise<void> {
     paused = false;
+    await startIfUnpaused();
+  }
+
+  async function resumeAfterLocalModelDownload(): Promise<void> {
+    const waitingForDownload = (await repository.listJobs()).filter(
+      (job) => job.status === 'pending' && job.waitingReason === 'model-downloading',
+    );
+    for (const job of waitingForDownload) {
+      await repository.putJob({ ...job, retryAt: undefined, waitingReason: undefined, updatedAt: now() });
+    }
     await startIfUnpaused();
   }
 
@@ -314,5 +357,16 @@ export function createClassificationQueue({
   }
 
   queueMicrotask(() => void run().catch(() => undefined));
-  return { enqueue, run, pause, resume, retry, retryAllFailed, acceptAsIs, reclassify, getProgress };
+  return {
+    enqueue,
+    run,
+    pause,
+    resume,
+    resumeAfterLocalModelDownload,
+    retry,
+    retryAllFailed,
+    acceptAsIs,
+    reclassify,
+    getProgress,
+  };
 }

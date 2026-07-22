@@ -14,8 +14,19 @@ vi.mock('../src/js/api.js', () => ({
   },
 }));
 
+vi.mock('../src/js/references/local-classifier.js', () => ({
+  localReferenceClassifier: { getAvailability: vi.fn(), download: vi.fn() },
+}));
+
+vi.mock('../src/js/reference-workspace-runtime.js', () => ({
+  referenceClassificationQueue: { getProgress: vi.fn(), resumeAfterLocalModelDownload: vi.fn() },
+  referenceRepository: {},
+}));
+
 import API from '../src/js/api.js';
 import SettingsPage from '../src/js/pages/settings.js';
+import { localReferenceClassifier } from '../src/js/references/local-classifier.js';
+import { referenceClassificationQueue } from '../src/js/reference-workspace-runtime.js';
 
 describe('settings.ts loadModels render-failure recovery', () => {
   beforeEach(() => {
@@ -77,5 +88,15 @@ describe('settings.ts loadModels render-failure recovery', () => {
 
     expect(statusEl.classList.contains('hidden')).toBe(true);
     expect(listEl.innerHTML).toContain('GPT-4o');
+  });
+
+  it('resumes queued classification after local model download completes', async () => {
+    document.body.innerHTML = '<button id="local-llm-download-btn"></button><div id="local-llm-status"></div>';
+    vi.mocked(localReferenceClassifier.download).mockResolvedValue(undefined);
+    vi.mocked(localReferenceClassifier.getAvailability).mockResolvedValue({ status: 'available' });
+
+    await SettingsPage.downloadLocalModel();
+
+    expect(referenceClassificationQueue.resumeAfterLocalModelDownload).toHaveBeenCalledOnce();
   });
 });

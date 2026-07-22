@@ -240,6 +240,7 @@ describe('schema-v2 backups', () => {
     expect(payload.referenceAssets).toEqual(records.referenceAssets);
     expect(payload.locations).toEqual(records.locations);
     expect(JSON.stringify(payload)).not.toMatch(/embedding|referenceKey|locationKey|"tag"|"images"/);
+    expect(dependencies.getAll).not.toHaveBeenCalledWith('classificationDiagnostics');
   });
 
   it('converts an unversioned backup before atomically writing canonical stores', async () => {

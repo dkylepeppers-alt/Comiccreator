@@ -120,11 +120,28 @@ function normalizeAsset(asset: ReferenceAsset): ReferenceAsset {
   };
 }
 
-function redactDiagnostic(diagnostic: ClassificationDiagnostic): ClassificationDiagnostic {
-  const message = diagnostic.error.message
-    ?.replace(/data:[^\s,;]+(?:;base64)?,[^\s]+/gi, '[redacted-data-url]')
-    .replace(/(?:prompt|token|api[-_ ]?key)\s*[:=]\s*[^\s,]+/gi, '$1=[redacted]');
-  return { ...diagnostic, error: { ...diagnostic.error, ...(message ? { message: message.slice(0, 500) } : {}) } };
+const DIAGNOSTIC_MAX_COUNT = 500;
+const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function safeRawOutputExcerpt(value: string | undefined): string | undefined {
+  if (!value || /data:|\b(?:prompt|roster|world|characters|locations)\b/i.test(value)) return undefined;
+  return value.slice(0, 16 * 1024);
+}
+
+function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): ClassificationDiagnostic {
+  const { stage, code, mode, retryDelayMs, validationReason, queueState, rawOutputExcerpt } = diagnostic.error;
+  return {
+    ...diagnostic,
+    error: {
+      stage,
+      code,
+      ...(mode ? { mode } : {}),
+      ...(retryDelayMs === undefined ? {} : { retryDelayMs }),
+      ...(validationReason ? { validationReason } : {}),
+      ...(queueState ? { queueState } : {}),
+      ...(safeRawOutputExcerpt(rawOutputExcerpt) ? { rawOutputExcerpt: safeRawOutputExcerpt(rawOutputExcerpt) } : {}),
+    },
+  };
 }
 
 async function clearPreferredReference(
@@ -234,15 +251,15 @@ export function createReferenceRepository(
 
     recordDiagnostic: (item) =>
       dependencies.transaction(['classificationDiagnostics'], 'readwrite', async (transaction) => {
-        await transaction.put('classificationDiagnostics', redactDiagnostic(item));
-        const existing = (
-          await transaction.getAllByIndex<ClassificationDiagnostic>(
-            'classificationDiagnostics',
-            'assetId',
-            item.assetId,
-          )
-        ).sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
-        for (const stale of existing.slice(0, Math.max(0, existing.length - 50))) {
+        await transaction.put('classificationDiagnostics', sanitizeDiagnostic(item));
+        const cutoff = Date.now() - DIAGNOSTIC_MAX_AGE_MS;
+        const existing = await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics');
+        const expired = existing.filter((diagnostic) => diagnostic.createdAt < cutoff);
+        const retained = existing
+          .filter((diagnostic) => diagnostic.createdAt >= cutoff)
+          .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+        const overflow = retained.slice(0, Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT));
+        for (const stale of [...expired, ...overflow]) {
           await transaction.delete('classificationDiagnostics', stale.id);
         }
       }),

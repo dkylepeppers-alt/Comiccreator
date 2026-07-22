@@ -269,6 +269,15 @@ export function validateReferenceClassificationDraft(
     ...draft,
     characterIds: matchedCharacterIds,
     locationId: hasMatchedLocation ? draft.locationId : null,
+    facets:
+      draft.facets.screenPositions === undefined
+        ? draft.facets
+        : {
+            ...draft.facets,
+            screenPositions: Object.fromEntries(
+              Object.entries(draft.facets.screenPositions).filter(([id]) => matchedCharacterIds.includes(id)),
+            ),
+          },
     proposedCharacterNames: [...new Set([...(draft.proposedCharacterNames || []), ...unmatchedCharacterNames])],
     proposedLocationName: draft.proposedLocationName || unmatchedLocationName,
   };

@@ -438,6 +438,7 @@ async function downloadLocalModel(): Promise<void> {
   if (button) button.disabled = true;
   try {
     await localReferenceClassifier.download();
+    await referenceClassificationQueue.resumeAfterLocalModelDownload();
     App.toast('Local model download started', 'info');
   } catch (error) {
     App.logError('downloadLocalModel()', error);

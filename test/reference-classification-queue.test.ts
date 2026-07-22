@@ -8,6 +8,25 @@ import type {
 } from '../src/js/references/repository.js';
 import type { ClassificationJob, ReferenceAsset } from '../src/js/references/types.js';
 
+function timerHarness() {
+  let nextId = 0;
+  const callbacks = new Map<number, () => void | Promise<void>>();
+  return {
+    setTimeout: vi.fn((callback: () => void | Promise<void>) => {
+      nextId += 1;
+      callbacks.set(nextId, callback);
+      return nextId;
+    }),
+    clearTimeout: vi.fn((id: number) => callbacks.delete(id)),
+    async fireNext() {
+      const [id, callback] = callbacks.entries().next().value || [];
+      if (id === undefined || !callback) throw new Error('No timer scheduled');
+      callbacks.delete(id);
+      await callback();
+    },
+  };
+}
+
 function memoryDependencies(): ReferenceRepositoryDependencies {
   const stores = new Map<ReferenceStoreName, Map<string, Record<string, unknown>>>();
   const store = (name: ReferenceStoreName) => {
@@ -193,6 +212,64 @@ describe('reference classification queue', () => {
     await queue.retry('r1');
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(classifier.classify).toHaveBeenCalledTimes(2);
+  });
+
+  it('wakes queued waiting work when its retry timer expires', async () => {
+    const timer = timerHarness();
+    classifier.classify
+      .mockResolvedValueOnce({ kind: 'waiting', reason: 'quota-busy', retryDelayMs: 500 })
+      .mockResolvedValueOnce({ kind: 'classified', classification });
+    const queue = createClassificationQueue({ repository: repo, classifier, now, timer } as any);
+
+    await queue.enqueue('r1');
+    expect(timer.setTimeout).toHaveBeenCalledWith(expect.any(Function), 500);
+
+    now.mockReturnValue(600);
+    await timer.fireNext();
+    expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'complete', attemptCount: 2 });
+  });
+
+  it('immediately resumes model-download work when the download completes', async () => {
+    classifier.classify
+      .mockResolvedValueOnce({ kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000 })
+      .mockResolvedValueOnce({ kind: 'classified', classification });
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.enqueue('r1');
+    await queue.resumeAfterLocalModelDownload();
+
+    expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'complete', attemptCount: 2 });
+  });
+
+  it('does not unpause when enqueue or run is called after pause', async () => {
+    await repo.putAsset(asset({ id: 'r2' }));
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+    queue.pause();
+
+    await queue.enqueue('r1');
+    await queue.run();
+    await queue.enqueue('r2');
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(await queue.getProgress()).toMatchObject({ paused: true, pending: 2 });
+    await queue.resume();
+    expect(classifier.classify).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists a safe parse excerpt through the diagnostic repository', async () => {
+    now.mockReturnValue(Date.now());
+    classifier.classify.mockResolvedValueOnce({
+      kind: 'failure',
+      error: { stage: 'parse', code: 'invalid-json', rawOutputExcerpt: 'unexpected trailing comma' },
+    });
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.enqueue('r1');
+    await queue.run();
+
+    expect(await repo.listDiagnostics('r1')).toEqual([
+      expect.objectContaining({ error: expect.objectContaining({ rawOutputExcerpt: 'unexpected trailing comma' }) }),
+    ]);
   });
 
   it('restores interrupted running jobs and returns the current failed retry-all count', async () => {

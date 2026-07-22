@@ -110,6 +110,8 @@ export interface ClassificationErrorDetails {
   retryDelayMs?: number;
   validationReason?: string;
   queueState?: ClassificationJobStatus;
+  /** A safe, bounded model-output excerpt retained only for parse diagnostics. */
+  rawOutputExcerpt?: string;
 }
 
 export type ClassificationOutcome =
@@ -148,6 +150,7 @@ export interface ClassificationJob {
   attemptCount: number;
   lastError?: string;
   retryAt?: number;
+  waitingReason?: ClassificationWaitingReason;
   createdAt: number;
   updatedAt: number;
 }

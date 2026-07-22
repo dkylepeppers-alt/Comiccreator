@@ -202,4 +202,21 @@ describe('reference classification schema', () => {
       validationReason: 'low-confidence',
     });
   });
+
+  it('drops unmatched screen-position keys while preserving only an entity proposal', () => {
+    const draft = parseReferenceClassificationDraft({
+      subjectType: 'interaction',
+      use: 'relationship',
+      characterIds: ['mara', 'ghost'],
+      locationId: null,
+      facets: { screenPositions: { mara: 'left', ghost: 'right' } },
+      description: 'Mara faces an unknown person.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+    });
+
+    const result = validateReferenceClassificationDraft(draft!, roster);
+    expect(result.classification.characterIds).toEqual(['mara']);
+    expect(result.classification.proposedCharacterNames).toEqual(['ghost']);
+    expect(result.classification.facets.screenPositions).toEqual({ mara: 'left' });
+  });
 });

@@ -93,6 +93,12 @@ function extractJsonObject(text: string): unknown | null {
   return null;
 }
 
+function safeRawOutputExcerpt(text: string): string | undefined {
+  const excerpt = text.trim().slice(0, 16 * 1024);
+  if (!excerpt || /data:|\b(?:prompt|roster|world|characters|locations)\b/i.test(excerpt)) return undefined;
+  return excerpt;
+}
+
 function waiting(status: LocalClassifierStatus): ClassificationOutcome {
   return status === 'downloadable' || status === 'downloading'
     ? { kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000 }
@@ -122,14 +128,13 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
       let status: LocalClassifierStatus;
       try {
         status = (await plugin.getAvailability()).status;
-      } catch (error) {
+      } catch {
         return {
           kind: 'failure',
           error: {
             stage: 'plugin',
             code: 'plugin-unavailable',
             mode: 'local',
-            message: error instanceof Error ? error.message : undefined,
           },
         };
       }
@@ -143,7 +148,18 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
           return { kind: 'failure', error: { stage: 'decode', code: 'decode-failed', mode: 'local' } };
         }
         const raw = extractJsonObject(response.text);
-        if (!raw) return { kind: 'failure', error: { stage: 'parse', code: 'invalid-json', mode: 'local' } };
+        if (!raw) {
+          const rawOutputExcerpt = safeRawOutputExcerpt(response.text);
+          return {
+            kind: 'failure',
+            error: {
+              stage: 'parse',
+              code: 'invalid-json',
+              mode: 'local',
+              ...(rawOutputExcerpt ? { rawOutputExcerpt } : {}),
+            },
+          };
+        }
         const draft = parseReferenceClassificationDraft(raw);
         if (!draft) return { kind: 'failure', error: { stage: 'validation', code: 'invalid-schema', mode: 'local' } };
         const validated = validateReferenceClassificationDraft(draft, rosterFrom(input));
@@ -162,7 +178,6 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
             stage: 'inference',
             code: 'inference-failed',
             mode: 'local',
-            message: error instanceof Error ? error.message : undefined,
           },
         };
       }

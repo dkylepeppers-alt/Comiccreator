@@ -142,36 +142,75 @@ describe('reference repository', () => {
     expect((await repo.listJobs()).map((item) => item.id)).toEqual(['j1']);
   });
 
-  it('stores redacted diagnostics with bounded retention', async () => {
-    for (let index = 0; index < 51; index += 1) {
+  it('stores allowlisted diagnostic fields with global retention and expiry', async () => {
+    const current = Date.now();
+    for (let index = 0; index < 501; index += 1) {
       await repo.recordDiagnostic({
         id: `d${index}`,
-        assetId: 'r1',
+        assetId: `r${index}`,
         worldId: 'w1',
-        createdAt: index,
+        createdAt: current + index,
         error: {
           stage: 'parse',
           code: 'invalid-json',
           mode: 'local',
           message: 'prompt=data:image/png;base64,secret-token',
+          rawOutputExcerpt: 'Roster: secret world description',
         },
-      });
+      } as any);
     }
+    await repo.recordDiagnostic({
+      id: 'expired',
+      assetId: 'old',
+      worldId: 'w1',
+      createdAt: current - 7 * 24 * 60 * 60 * 1000 - 1,
+      error: { stage: 'parse', code: 'invalid-json' },
+    });
 
-    const diagnostics = await repo.listDiagnostics('r1');
-    expect(diagnostics).toHaveLength(50);
-    expect(diagnostics[0]?.error.message).not.toContain('secret-token');
+    const diagnostics = await repo.listDiagnostics();
+    expect(diagnostics).toHaveLength(500);
+    expect(diagnostics.map((item) => item.id)).not.toContain('expired');
+    expect(diagnostics[0]?.error.message).toBeUndefined();
+    expect((diagnostics[0]?.error as any).rawOutputExcerpt).toBeUndefined();
   });
 
   it('retains the newest diagnostics by timestamp rather than diagnostic ID', async () => {
     const error = { stage: 'parse' as const, code: 'invalid-json' as const };
+    const current = Date.now();
     for (let index = 1; index <= 49; index += 1) {
-      await repo.recordDiagnostic({ id: `middle-${index}`, assetId: 'r1', worldId: 'w1', createdAt: index, error });
+      await repo.recordDiagnostic({
+        id: `middle-${index}`,
+        assetId: 'r1',
+        worldId: 'w1',
+        createdAt: current + index,
+        error,
+      });
     }
-    await repo.recordDiagnostic({ id: 'z-oldest', assetId: 'r1', worldId: 'w1', createdAt: 0, error });
-    await repo.recordDiagnostic({ id: 'a-newest', assetId: 'r1', worldId: 'w1', createdAt: 100, error });
+    await repo.recordDiagnostic({ id: 'z-oldest', assetId: 'r1', worldId: 'w1', createdAt: current, error });
+    await repo.recordDiagnostic({ id: 'a-newest', assetId: 'r1', worldId: 'w1', createdAt: current + 100, error });
+    for (let index = 1; index <= 450; index += 1) {
+      await repo.recordDiagnostic({
+        id: `other-${index}`,
+        assetId: `other-${index}`,
+        worldId: 'w1',
+        createdAt: current + 200 + index,
+        error,
+      });
+    }
 
     expect((await repo.listDiagnostics('r1')).map((item) => item.id)).toEqual(expect.arrayContaining(['a-newest']));
     expect((await repo.listDiagnostics('r1')).map((item) => item.id)).not.toContain('z-oldest');
+  });
+
+  it('retains a bounded non-sensitive parse excerpt', async () => {
+    await repo.recordDiagnostic({
+      id: 'safe-parse',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: { stage: 'parse', code: 'invalid-json', rawOutputExcerpt: 'x'.repeat(20 * 1024) },
+    });
+
+    expect((await repo.listDiagnostics('r1'))[0]?.error.rawOutputExcerpt).toHaveLength(16 * 1024);
   });
 });
