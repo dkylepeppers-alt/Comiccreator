@@ -7,10 +7,7 @@ import {
   applyVisualStateChange,
   reducePageStates,
   resolveIdentityAnchorImage,
-  resolveLocationAnchor,
   collectPageCast,
-  collectLocationKeys,
-  allocateReferences,
   effectiveReferenceBudget,
   resolveImageGenerationPlan,
   validatePlannedPage,
@@ -25,7 +22,7 @@ const mara = {
   appearance: 'tall, wiry, cropped black hair',
   images: [
     { id: 'img-a', dataUrl: 'data:image/png;base64,AAA', tag: 'default' },
-    { id: 'img-b', dataUrl: 'data:image/png;base64,BBB', tag: 'alternate-outfit', referenceKey: 'battle-armor' },
+    { id: 'img-b', dataUrl: 'data:image/png;base64,BBB', tag: 'alternate-outfit' },
   ],
   primaryImageIndex: 1,
   identityAnchorImageId: 'img-a',
@@ -44,29 +41,16 @@ const ellis = {
   identityAnchorImageId: 'img-e1',
 };
 
-const world = {
-  id: 'world-1',
-  name: 'Rustfield',
-  images: [
-    { id: 'w-1', dataUrl: 'data:image/png;base64,W1', locationKey: 'machine-shop' },
-    { id: 'w-2', dataUrl: 'data:image/png;base64,W2', locationKey: 'main-street' },
-    { id: 'w-3', dataUrl: 'data:image/png;base64,W3', locationKey: null },
-  ],
-  primaryImageIndex: 2,
-  defaultAnchorImageId: 'w-3',
-};
-
 function panel(overrides = {}) {
   return {
     narration: '',
     dialogue: [],
     visual: {
-      locationKey: null,
+      locationId: null,
       environment: '',
-      shot: 'medium shot',
-      composition: '',
+      framing: 'medium',
+      cameraElevation: 'eye-level',
       lighting: '',
-      colorMood: '',
       characters: [],
       keyProps: [],
       ...overrides.visual,
@@ -205,14 +189,14 @@ describe('reducePageStates', () => {
     expect(continuityAfter.characterStates['char-ghost']).toBeUndefined();
   });
 
-  it('tracks the last used location key', () => {
+  it('tracks the last used stable location ID', () => {
     const cont = initializeContinuity([mara]);
     const page = {
       title: 't',
       choices: [],
-      panels: [panel({ visual: { locationKey: 'machine-shop' } }), panel({ visual: { locationKey: 'main-street' } })],
+      panels: [panel({ visual: { locationId: 'machine-shop' } }), panel({ visual: { locationId: 'main-street' } })],
     };
-    expect(reducePageStates(cont, page, 1).continuityAfter.currentLocationKey).toBe('main-street');
+    expect(reducePageStates(cont, page, 1).continuityAfter.currentLocationId).toBe('main-street');
   });
 });
 
@@ -237,159 +221,6 @@ describe('anchor resolution', () => {
     expect(res.image.id).toBe('img-b');
     const none = { ...mara, images: [] };
     expect(resolveIdentityAnchorImage(none)).toEqual({ image: null, source: 'none' });
-  });
-
-  it('resolves location anchors by exact key, then default anchor', () => {
-    const exact = resolveLocationAnchor(world, 'machine-shop');
-    expect(exact.image.id).toBe('w-1');
-    expect(exact.usedFallback).toBe(false);
-    const fallback = resolveLocationAnchor(world, 'north-rooftop');
-    expect(fallback.image.id).toBe('w-3');
-    expect(fallback.usedFallback).toBe(true);
-  });
-});
-
-describe('reference allocation', () => {
-  const byId = { 'char-mara': mara, 'char-ellis': ellis };
-
-  it('orders identity anchors by selected-character order, then locations, one-based', () => {
-    const alloc = allocateReferences({
-      characterIds: ['char-mara', 'char-ellis'],
-      charactersById: byId,
-      locationKeys: ['machine-shop'],
-      world,
-      budget: 10,
-    });
-    expect(alloc.error).toBeUndefined();
-    expect(alloc.manifest.map((m) => [m.index, m.role, m.label])).toEqual([
-      [1, 'identity', 'Mara'],
-      [2, 'identity', 'Ellis'],
-      [3, 'location', 'machine-shop'],
-    ]);
-    expect(alloc.dataUrls.length).toBe(3);
-    expect(alloc.manifest[0].imageId).toBe('img-a');
-  });
-
-  it('never uses embeddings — selection is by explicit ID only', () => {
-    // A high-similarity embedding on the alternate outfit must not win
-    const tempting = {
-      ...mara,
-      images: [
-        { ...mara.images[0], embedding: null },
-        { ...mara.images[1], embedding: [1, 1, 1] },
-      ],
-    };
-    const alloc = allocateReferences({
-      characterIds: ['char-mara'],
-      charactersById: { 'char-mara': tempting },
-      locationKeys: [],
-      world: null,
-      budget: 10,
-    });
-    expect(alloc.manifest[0].imageId).toBe('img-a');
-  });
-
-  it('adds the previous frame only when budget remains', () => {
-    const prev = { dataUrl: 'data:image/png;base64,PREV', sourcePageId: 'p1', sourcePanelIndex: 3 };
-    const roomy = allocateReferences({
-      characterIds: ['char-mara'],
-      charactersById: byId,
-      locationKeys: [],
-      world: null,
-      budget: 2,
-      previousFrame: prev,
-    });
-    expect(roomy.manifest.map((m) => m.role)).toEqual(['identity', 'previous-frame']);
-    const tight = allocateReferences({
-      characterIds: ['char-mara', 'char-ellis'],
-      charactersById: byId,
-      locationKeys: [],
-      world: null,
-      budget: 2,
-      previousFrame: prev,
-    });
-    expect(tight.manifest.map((m) => m.role)).toEqual(['identity', 'identity']);
-  });
-
-  it('returns an explicit capacity error instead of silently dropping anchors', () => {
-    const alloc = allocateReferences({
-      characterIds: ['char-mara', 'char-ellis'],
-      charactersById: byId,
-      locationKeys: ['machine-shop'],
-      world,
-      budget: 2,
-    });
-    expect(alloc.error).toBeDefined();
-    expect(alloc.error.required).toBe(3);
-    expect(alloc.manifest).toEqual([]);
-  });
-
-  it("prefers the comic ledger's recorded anchor over the character's current anchor", () => {
-    // User changed the character's anchor to img-b after the comic started;
-    // the ledger still records img-a as this comic's explicit choice
-    const changed = { ...mara, identityAnchorImageId: 'img-b' };
-    const alloc = allocateReferences({
-      characterIds: ['char-mara'],
-      charactersById: { 'char-mara': changed },
-      locationKeys: [],
-      world: null,
-      budget: 5,
-      anchorImageIdByCharacter: { 'char-mara': 'img-a' },
-    });
-    expect(alloc.manifest[0].imageId).toBe('img-a');
-  });
-
-  it('falls back to the current anchor when the recorded ledger anchor was deleted', () => {
-    const alloc = allocateReferences({
-      characterIds: ['char-mara'],
-      charactersById: byId,
-      locationKeys: [],
-      world: null,
-      budget: 5,
-      anchorImageIdByCharacter: { 'char-mara': 'deleted-image-id' },
-    });
-    expect(alloc.manifest[0].imageId).toBe('img-a');
-    expect(alloc.warnings.some((w) => w.includes('recorded identity anchor no longer exists'))).toBe(true);
-  });
-
-  it('marks location fallback references in the manifest', () => {
-    const alloc = allocateReferences({
-      characterIds: [],
-      charactersById: {},
-      locationKeys: ['north-rooftop'],
-      world,
-      budget: 5,
-    });
-    expect(alloc.manifest[0].role).toBe('location');
-    expect(alloc.manifest[0].fallback).toBe(true);
-  });
-
-  it('marks characters with no valid image as unanchored, not as errors', () => {
-    const bare = { id: 'char-bare', name: 'Bare', images: [] };
-    const alloc = allocateReferences({
-      characterIds: ['char-bare'],
-      charactersById: { 'char-bare': bare },
-      locationKeys: [],
-      world: null,
-      budget: 5,
-    });
-    expect(alloc.error).toBeUndefined();
-    expect(alloc.unanchoredCharacterIds).toEqual(['char-bare']);
-    expect(alloc.manifest).toEqual([]);
-  });
-
-  it('allocates a requested character variant after its identity anchor', () => {
-    const alloc = allocateReferences({
-      characterIds: ['char-mara'],
-      characterReferences: [{ characterId: 'char-mara', referenceKey: 'battle-armor' }],
-      charactersById: byId,
-      locationKeys: [],
-      budget: 5,
-    });
-    expect(alloc.manifest.map((item) => [item.role, item.imageId])).toEqual([
-      ['identity', 'img-a'],
-      ['variant', 'img-b'],
-    ]);
   });
 });
 
@@ -478,7 +309,7 @@ describe('validatePlannedPage', () => {
       panels: [
         panel({
           visual: {
-            locationKey: 'nowhere',
+            locationId: 'nowhere',
             characters: [
               { characterId: 'char-mara', action: '', pose: '', expression: '' },
               { characterId: 'Mara', action: '', pose: '', expression: '' }, // name, not an ID
@@ -490,15 +321,15 @@ describe('validatePlannedPage', () => {
     };
     const { page: sanitized, errors } = validatePlannedPage(page, {
       characterIds: ['char-mara'],
-      locationKeys: ['machine-shop'],
+      locationIds: ['machine-shop'],
     });
     expect(sanitized.panels[0].visual.characters.map((c) => c.characterId)).toEqual(['char-mara']);
-    expect(sanitized.panels[0].visual.locationKey).toBeNull();
+    expect(sanitized.panels[0].visual.locationId).toBeNull();
     expect(sanitized.panels[0].visualStateChanges).toEqual([]);
     expect(errors.length).toBe(3);
   });
 
-  it('keeps known reference keys and clears unknown ones', () => {
+  it('keeps structured appearance and filters unknown interaction participants', () => {
     const page = {
       title: 't',
       choices: [],
@@ -506,39 +337,64 @@ describe('validatePlannedPage', () => {
         panel({
           visual: {
             characters: [
-              { characterId: 'char-mara', referenceKey: 'battle-armor', action: '', pose: '', expression: '' },
-              { characterId: 'char-mara', referenceKey: 'invented-look', action: '', pose: '', expression: '' },
+              { characterId: 'char-mara', appearanceState: 'battle-armor', action: '', pose: '', expression: '' },
             ],
+            interaction: { participantIds: ['char-mara', 'char-ghost'], type: 'conversation' },
           },
         }),
       ],
     };
     const { page: sanitized, errors } = validatePlannedPage(page, {
       characterIds: ['char-mara'],
-      locationKeys: [],
-      referenceKeysByCharacter: { 'char-mara': ['battle-armor'] },
+      locationIds: [],
     });
-    expect(sanitized.panels[0].visual.characters.map((c) => c.referenceKey)).toEqual(['battle-armor', null]);
-    expect(errors[0]).toContain('unknown reference key');
+    expect(sanitized.panels[0].visual.characters[0].appearanceState).toBe('battle-armor');
+    expect(sanitized.panels[0].visual.interaction).toBeNull();
+    expect(errors[0]).toContain('unknown interaction participant');
   });
 });
 
 describe('prompt compilation', () => {
   const byId = { 'char-mara': mara, 'char-ellis': ellis };
   const manifest = [
-    { index: 1, role: 'identity', label: 'Mara', characterId: 'char-mara', imageId: 'img-a' },
-    { index: 2, role: 'location', label: 'machine-shop', worldId: 'world-1', imageId: 'w-1' },
+    { index: 1, role: 'identity', label: 'char-mara', characterIds: ['char-mara'], imageId: 'img-a' },
+    { index: 2, role: 'appearance', label: 'char-mara:battle-armor', characterIds: ['char-mara'], imageId: 'img-b' },
+    {
+      index: 3,
+      role: 'location',
+      label: 'machine-shop',
+      locationId: 'machine-shop',
+      worldId: 'world-1',
+      imageId: 'w-1',
+    },
+    {
+      index: 4,
+      role: 'interaction',
+      label: 'char-ellis+char-mara:conversation',
+      characterIds: ['char-mara', 'char-ellis'],
+      imageId: 'i-1',
+    },
   ];
   const renderState = {
     'char-mara': createCharacterVisualState(mara),
   };
   const p = panel({
     visual: {
-      locationKey: 'machine-shop',
+      locationId: 'machine-shop',
       environment: 'oil-stained workbenches',
-      shot: 'wide shot',
+      framing: 'wide',
+      cameraElevation: 'eye-level',
       lighting: 'dusty shafts of light',
-      characters: [{ characterId: 'char-mara', action: 'tightening a bolt', pose: 'crouched', expression: 'focused' }],
+      characters: [
+        {
+          characterId: 'char-mara',
+          appearanceState: 'battle-armor',
+          action: 'tightening a bolt',
+          pose: 'crouched',
+          expression: 'focused',
+        },
+      ],
+      interaction: { participantIds: ['char-mara', 'char-ellis'], type: 'conversation' },
       keyProps: ['red toolbox'],
     },
   });
@@ -547,7 +403,9 @@ describe('prompt compilation', () => {
     const desc = compilePanelDescription({ panel: p, renderState, manifest, charactersById: byId });
     expect(desc).toContain('Mara (Reference image 1).');
     expect(desc).toContain('Wardrobe: faded olive coveralls, sleeves rolled to the elbows.');
-    expect(desc).toContain('Location: machine-shop (Reference image 2).');
+    expect(desc).toContain('Location: machine-shop (Reference image 3).');
+    expect(desc).toContain('Appearance state: battle-armor (Reference image 2).');
+    expect(desc).toContain('Interaction: conversation between Mara and Ellis (Reference image 4).');
     expect(desc).toContain('Carrying: red shop rag.');
     expect(desc).toContain('Key props: red toolbox.');
   });
@@ -575,7 +433,9 @@ describe('prompt compilation', () => {
     expect(prompt).toContain('Generate exactly 2 images as one continuous comic-page sequence.');
     expect(prompt).toContain('Return them in the same order as IMAGE 1 through IMAGE 2.');
     expect(prompt).toContain('REFERENCE MAP');
-    expect(prompt).toContain('Reference image 1: identity anchor for Mara.');
+    expect(prompt).toContain('Reference image 1: identity anchor for char-mara.');
+    expect(prompt).toContain('Reference image 2: appearance reference for char-mara:battle-armor.');
+    expect(prompt).toContain('Reference image 4: interaction reference');
     expect(prompt).toContain('do not copy reference clothing when they differ');
     expect(prompt).toContain('SHARED CONTINUITY');
     expect(prompt).toContain('bold ink comic style');
@@ -586,20 +446,6 @@ describe('prompt compilation', () => {
     expect(occurrences).toBe(2);
   });
 
-  it('annotates fallback location references honestly in the reference map', () => {
-    const fallbackManifest = [
-      { index: 1, role: 'location', label: 'north-rooftop', worldId: 'world-1', imageId: 'w-3', fallback: true },
-    ];
-    const prompt = compileIndependentPanelPrompt({
-      panel: p,
-      renderState,
-      manifest: fallbackManifest,
-      charactersById: byId,
-    });
-    expect(prompt).toContain('standing in for "north-rooftop"');
-    expect(prompt).not.toContain('location anchor for north-rooftop.');
-  });
-
   it('independent prompt shares the same legend and state semantics', () => {
     const prompt = compileIndependentPanelPrompt({
       panel: p,
@@ -608,13 +454,13 @@ describe('prompt compilation', () => {
       charactersById: byId,
       stylePreset: 'bold ink comic style',
     });
-    expect(prompt).toContain('Reference image 1: identity anchor for Mara.');
+    expect(prompt).toContain('Reference image 1: identity anchor for char-mara.');
     expect(prompt).toContain('Wardrobe: faded olive coveralls, sleeves rolled to the elbows.');
     expect(prompt).not.toContain('IMAGE 1');
   });
 });
 
-describe('cast/location collection', () => {
+describe('cast collection', () => {
   it('collects unique cast in selected-character order', () => {
     const page = {
       title: 't',
@@ -632,15 +478,6 @@ describe('cast/location collection', () => {
       ],
     };
     expect(collectPageCast(page, ['char-mara', 'char-ellis'])).toEqual(['char-mara', 'char-ellis']);
-  });
-
-  it('collects location keys in first-use order', () => {
-    const panels = [
-      panel({ visual: { locationKey: 'main-street' } }),
-      panel({ visual: { locationKey: 'machine-shop' } }),
-      panel({ visual: { locationKey: 'main-street' } }),
-    ];
-    expect(collectLocationKeys(panels)).toEqual(['main-street', 'machine-shop']);
   });
 });
 

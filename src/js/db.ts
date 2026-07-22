@@ -2,16 +2,13 @@
  * IndexedDB Storage Layer
  * Handles all local persistence for characters, worlds, comics, presets, and settings.
  */
-import type { ImageRef } from './utils.js';
-import { ensureImageIds, normalizeLocationKey } from './utils.js';
 import type { CharacterVisualStateDefaults, ComicVisualContinuity } from './visual-continuity.js';
-import { migrateCharacterReferenceMetadata } from './reference-metadata.js';
-import type { CharacterReferenceImage } from './reference-metadata.js';
 
 export type DefaultVisualStateField = keyof Required<CharacterVisualStateDefaults>;
 
 export interface Character {
   id: string;
+  worldId?: string;
   name: string;
   genre?: string;
   role?: string;
@@ -19,10 +16,12 @@ export interface Character {
   appearance?: string;
   powers?: string;
   imageData?: string;
-  images: CharacterReferenceImage[];
-  primaryImageIndex: number;
+  images?: unknown[];
+  primaryImageIndex?: number;
   /** Stable ID of the single authoritative identity-anchor gallery image. */
   identityAnchorImageId?: string | null;
+  /** Canonical identity reference used by schema-v2 panel resolution. */
+  preferredIdentityReferenceId?: string | null;
   /** Reusable default mutable visual state (wardrobe, hair, items…). */
   defaultVisualState?: CharacterVisualStateDefaults;
   /** Per-field provenance prevents local classification from overwriting user edits. */
@@ -38,10 +37,12 @@ export interface World {
   details?: string;
   atmosphere?: string;
   era?: string;
-  images: ImageRef[];
-  primaryImageIndex: number;
+  images?: unknown[];
+  primaryImageIndex?: number;
   /** Stable ID of the default location-anchor gallery image. */
   defaultAnchorImageId?: string | null;
+  /** Canonical rendering/style reference used by schema-v2 panel resolution. */
+  preferredStyleReferenceId?: string | null;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -52,6 +53,8 @@ export interface Comic {
   genre?: string;
   characterIds?: string[];
   worldId?: string;
+  /** Legacy comics are immutable snapshots; only schema version 2 is writable. */
+  referenceSchemaVersion?: 1 | 2;
   /** Persistent per-comic visual continuity ledger. */
   visualContinuity?: ComicVisualContinuity | null;
   createdAt?: number;
@@ -93,12 +96,15 @@ export interface Setting {
 }
 
 const DB_NAME = 'ComicCreatorDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 let db: IDBDatabase | null = null;
 
 const STORES = {
   characters: 'characters',
   worlds: 'worlds',
+  locations: 'locations',
+  referenceAssets: 'referenceAssets',
+  classificationJobs: 'classificationJobs',
   comics: 'comics',
   pages: 'pages',
   presets: 'presets',
@@ -118,6 +124,22 @@ function open(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains(STORES.worlds)) {
         d.createObjectStore(STORES.worlds, { keyPath: 'id' });
       }
+      if (!d.objectStoreNames.contains(STORES.locations)) {
+        const locations = d.createObjectStore(STORES.locations, { keyPath: 'id' });
+        locations.createIndex('worldId', 'worldId');
+      }
+      if (!d.objectStoreNames.contains(STORES.referenceAssets)) {
+        const references = d.createObjectStore(STORES.referenceAssets, { keyPath: 'id' });
+        references.createIndex('worldId', 'worldId');
+        references.createIndex('characterIds', 'characterIds', { multiEntry: true });
+        references.createIndex('locationId', 'locationId');
+        references.createIndex('classificationState', 'classificationState');
+      }
+      if (!d.objectStoreNames.contains(STORES.classificationJobs)) {
+        const jobs = d.createObjectStore(STORES.classificationJobs, { keyPath: 'id' });
+        jobs.createIndex('status', 'status');
+        jobs.createIndex('assetId', 'assetId', { unique: true });
+      }
       if (!d.objectStoreNames.contains(STORES.comics)) {
         const cs = d.createObjectStore(STORES.comics, { keyPath: 'id' });
         cs.createIndex('createdAt', 'createdAt');
@@ -135,13 +157,15 @@ function open(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains(STORES.settings)) {
         d.createObjectStore(STORES.settings, { keyPath: 'key' });
       }
-      // v4: assign stable image IDs and explicit anchors to existing records.
-      // Must run inside the versionchange transaction so IDs persist exactly once.
-      if (e.oldVersion > 0 && e.oldVersion < 4) {
+      // v5: comics created before the unified reference system are immutable snapshots.
+      if (e.oldVersion > 0 && e.oldVersion < 5) {
         const upgradeTx = (e.target as IDBOpenDBRequest).transaction;
         if (upgradeTx) {
-          rewriteStoreRecords(upgradeTx, STORES.characters, normalizeCharacterRecord);
-          rewriteStoreRecords(upgradeTx, STORES.worlds, normalizeWorldRecord);
+          rewriteStoreRecords(upgradeTx, STORES.comics, (comic) => ({
+            record:
+              comic?.referenceSchemaVersion == null ? Object.assign({}, comic, { referenceSchemaVersion: 1 }) : comic,
+            changed: comic?.referenceSchemaVersion == null,
+          }));
         }
       }
     };
@@ -178,6 +202,20 @@ async function get(storeName: string, id: string | null | undefined): Promise<an
 async function put(storeName: string, data: any): Promise<IDBValidKey> {
   await open();
   return promisify(tx(storeName, 'readwrite').put(data));
+}
+
+/** Commit a fully validated import as one all-or-nothing multi-store transaction. */
+async function putBatch(writes: readonly (readonly [storeName: string, record: unknown])[]): Promise<void> {
+  if (writes.length === 0) return;
+  await open();
+  return new Promise((resolve, reject) => {
+    const storeNames = [...new Set(writes.map(([storeName]) => storeName))];
+    const transaction = db!.transaction(storeNames, 'readwrite');
+    for (const [storeName, record] of writes) transaction.objectStore(storeName).put(record);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Backup import transaction aborted'));
+  });
 }
 
 async function del(storeName: string, id: string | null | undefined): Promise<void> {
@@ -251,78 +289,6 @@ function rewriteStoreRecords(
   }
 }
 
-/** Pick the anchor image ID for a gallery: primaryImageIndex → first valid → null. */
-function pickAnchorImageId(images: ImageRef[], primaryImageIndex: number | undefined): string | null {
-  const valid = (images || []).filter((img) => img && img.dataUrl);
-  if (valid.length === 0) return null;
-  const primary = typeof primaryImageIndex === 'number' ? (images || [])[primaryImageIndex] : null;
-  if (primary && primary.dataUrl && primary.id) return primary.id;
-  return valid[0].id || null;
-}
-
-/**
- * Fully normalize a character record: legacy imageData migration, stable
- * image IDs, and an explicit identity anchor. Pure — does not persist.
- * Returns { record, changed } so callers know whether to write it back.
- */
-function normalizeCharacterRecord(char: any): { record: any; changed: boolean } {
-  if (!char) return { record: char, changed: false };
-  const migrated = migrateCharacter(char);
-  let changed = migrated !== char;
-  const { images: imagesWithIds, changed: idsChanged } = ensureImageIds(migrated.images);
-  const { images, changed: metadataChanged } = migrateCharacterReferenceMetadata(imagesWithIds);
-  changed = changed || idsChanged || metadataChanged;
-
-  let record = idsChanged || changed ? Object.assign({}, migrated, { images }) : migrated;
-
-  const anchorValid =
-    record.identityAnchorImageId && images.some((img: any) => img?.id === record.identityAnchorImageId && img.dataUrl);
-  if (!anchorValid) {
-    const anchorId = pickAnchorImageId(images, record.primaryImageIndex);
-    if (record.identityAnchorImageId !== anchorId) {
-      record = Object.assign({}, record, { identityAnchorImageId: anchorId });
-      changed = true;
-    }
-  }
-  return { record, changed };
-}
-
-/**
- * Fully normalize a world record: legacy string[] migration, stable image
- * IDs, normalized location keys, and an explicit default anchor.
- */
-function normalizeWorldRecord(world: any): { record: any; changed: boolean } {
-  if (!world) return { record: world, changed: false };
-  const migrated = migrateWorld(world);
-  let changed = migrated !== world;
-  let { images, changed: idsChanged } = ensureImageIds(migrated.images);
-  changed = changed || idsChanged;
-
-  // Normalize any user-entered location keys to canonical slug form
-  let keysChanged = false;
-  images = images.map((img: any) => {
-    if (!img || img.locationKey == null) return img;
-    const norm = normalizeLocationKey(img.locationKey) || null;
-    if (norm === img.locationKey) return img;
-    keysChanged = true;
-    return Object.assign({}, img, { locationKey: norm });
-  });
-  changed = changed || keysChanged;
-
-  let record = changed ? Object.assign({}, migrated, { images }) : migrated;
-
-  const anchorValid =
-    record.defaultAnchorImageId && images.some((img: any) => img?.id === record.defaultAnchorImageId && img.dataUrl);
-  if (!anchorValid) {
-    const anchorId = pickAnchorImageId(images, record.primaryImageIndex);
-    if (record.defaultAnchorImageId !== anchorId) {
-      record = Object.assign({}, record, { defaultAnchorImageId: anchorId });
-      changed = true;
-    }
-  }
-  return { record, changed };
-}
-
 /**
  * Delete a comic and all of its pages in one multi-store transaction.
  * IndexedDB serializes readwrite transactions that share an object store, so
@@ -368,16 +334,22 @@ async function commitPageAndComic(pageRecord: ComicPage, comicRecord: Comic): Pr
     const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
     const comicsStore = transaction.objectStore(STORES.comics);
     let comicExists = false;
+    let writeError: Error | null = null;
     const existingReq = comicsStore.get(comicRecord.id);
     existingReq.onsuccess = () => {
       if (!existingReq.result) return;
+      if (existingReq.result.referenceSchemaVersion !== 2) {
+        writeError = new Error('This comic is read-only');
+        transaction.abort();
+        return;
+      }
       comicExists = true;
       transaction.objectStore(STORES.pages).put(pageRecord);
       comicsStore.put(comicRecord);
     };
     transaction.oncomplete = () => resolve(comicExists);
     transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+    transaction.onabort = () => reject(writeError || transaction.error || new Error('Transaction aborted'));
   });
 }
 
@@ -395,50 +367,24 @@ async function putPageIfComicExists(pageRecord: ComicPage, comicId: string, touc
     const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
     const comicsStore = transaction.objectStore(STORES.comics);
     let comicExists = false;
+    let writeError: Error | null = null;
     const existingReq = comicsStore.get(comicId);
     existingReq.onsuccess = () => {
       const comic = existingReq.result;
       if (!comic) return;
+      if (comic.referenceSchemaVersion !== 2) {
+        writeError = new Error('This comic is read-only');
+        transaction.abort();
+        return;
+      }
       comicExists = true;
       transaction.objectStore(STORES.pages).put(pageRecord);
       if (touchComic) comicsStore.put(Object.assign({}, comic, { updatedAt: Date.now() }));
     };
     transaction.oncomplete = () => resolve(comicExists);
     transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+    transaction.onabort = () => reject(writeError || transaction.error || new Error('Transaction aborted'));
   });
-}
-
-/**
- * Migrate a character record from the legacy single-imageData format to
- * the new images[] format.  Safe to call on already-migrated records.
- * Does NOT persist the change — callers should call DB.put() if they wish
- * to store the migration result.
- */
-function migrateCharacter(char: any): any {
-  if (!char) return char;
-  if (Array.isArray(char.images) && char.images.length > 0) return char;
-  const images = char.imageData ? [{ dataUrl: char.imageData, tag: 'default', description: '', embedding: null }] : [];
-  return Object.assign({}, char, { images, primaryImageIndex: 0 });
-}
-
-/**
- * Migrate a world record from the legacy images: string[] format to
- * the new images: [{dataUrl, tag, description}] format.
- * Safe to call on already-migrated records.
- * Does NOT persist the change — callers should call DB.put() if they wish
- * to store the migration result.
- */
-function migrateWorld(world: any): any {
-  if (!world) return world;
-  const images = (world.images || [])
-    .filter((img: any) => img)
-    .map((img: any) =>
-      typeof img === 'string'
-        ? { dataUrl: img, tag: 'establishing', description: '', embedding: null }
-        : Object.assign({ embedding: null }, img),
-    );
-  return Object.assign({}, world, { images, primaryImageIndex: world.primaryImageIndex ?? 0 });
 }
 
 // Seed default presets on first run (idempotent — stable IDs prevent duplicates)
@@ -554,16 +500,13 @@ const DB = {
   getAll,
   get,
   put,
+  putBatch,
   del,
   getByIndex,
   uuid,
   getSetting,
   setSetting,
   fileToDataURL,
-  migrateCharacter,
-  migrateWorld,
-  normalizeCharacterRecord,
-  normalizeWorldRecord,
   deleteComicAndPages,
   commitPageAndComic,
   putPageIfComicExists,

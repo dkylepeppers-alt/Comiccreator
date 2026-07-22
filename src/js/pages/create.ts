@@ -28,6 +28,10 @@ import {
   generationOutcomeForPage,
   preflightImageGeneration,
 } from '../generation/image-engine.js';
+import { createReferenceRepository } from '../references/repository.js';
+import { assertComicWritable, isComicReadOnly } from '../references/comic-access.js';
+
+const referenceRepository = createReferenceRepository();
 
 /**
  * Create Comic Page - The core comic generation experience
@@ -46,8 +50,6 @@ let state: any = {
   pages: [],
   pageIds: [], // DB ids parallel to pages[], used for re-roll / undo
   conversationHistory: [],
-  referenceImages: [], // world ref images [{dataUrl, label, type}]
-  characterImagesByName: {}, // name → images[] from multi-image gallery
   characters: [],
   world: null, // full world record (normalized) for anchored generation
   plannerMode: false, // true when this comic uses the structured planner + continuity pipeline
@@ -58,7 +60,13 @@ let state: any = {
   draftLoaded: false,
   generationProgress: null,
   imageGenerationConfig: null,
+  readOnly: false,
 };
+
+async function assertActiveComicWritable(): Promise<void> {
+  if (!state.comicId) return;
+  assertComicWritable(await DB.get(DB.STORES.comics, state.comicId));
+}
 
 // Track timeouts and abort controllers for cleanup
 let streamTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -180,9 +188,12 @@ async function render(param?: string | null): Promise<string> {
 }
 
 async function renderSetup() {
-  const characters = await DB.getAll(DB.STORES.characters);
+  const allCharacters = await DB.getAll(DB.STORES.characters);
+  const characters = state.selectedWorld
+    ? allCharacters.filter((character) => (character.worldId || character.linkedWorldId) === state.selectedWorld)
+    : [];
   const worlds = await DB.getAll(DB.STORES.worlds);
-  const plannerEnabled = await DB.getSetting('useStructuredPlanner', true);
+  const plannerEnabled = true;
   const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
   const imagePresets = dedupeByNameLatest(await DB.getAll(DB.STORES.imagePresets));
   const hasDraft =
@@ -229,12 +240,14 @@ async function renderSetup() {
       <div class="card">
         <h3 class="card-title mb-sm">2. Select Characters</h3>
         ${
-          characters.length === 0
-            ? `
-          <p class="text-sm text-muted mb-sm">No characters created yet.</p>
-          <button class="btn btn-sm btn-secondary" data-navigate="characters" data-param="new">Create Character</button>
+          !state.selectedWorld
+            ? '<p class="text-sm text-muted">Choose a world first. Character choices come from that world.</p>'
+            : characters.length === 0
+              ? `
+          <p class="text-sm text-muted mb-sm">No characters belong to this world yet.</p>
+          <button class="btn btn-sm btn-secondary" data-navigate="characters" data-param="new:${escHtml(state.selectedWorld)}">Create Character</button>
         `
-            : `
+              : `
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${characters
               .map(
@@ -253,7 +266,7 @@ async function renderSetup() {
 
       <!-- Step 3: World -->
       <div class="card">
-        <h3 class="card-title mb-sm">3. Select World (optional)</h3>
+        <h3 class="card-title mb-sm">3. Select World</h3>
         ${
           worlds.length === 0
             ? `
@@ -262,7 +275,6 @@ async function renderSetup() {
         `
             : `
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            <div class="chip ${!state.selectedWorld ? 'active' : ''}" data-action="selectWorld" data-args="[null]">None</div>
             ${worlds
               .map(
                 (w) => `
@@ -459,13 +471,18 @@ function renderReading() {
 
   return `
     <div class="slide-up">
+      ${state.readOnly ? '<div class="card read-only-notice"><strong>Read-only legacy comic</strong><p>This snapshot can be viewed, exported, or deleted from the Library. Create a new comic to continue generating.</p></div>' : ''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <h2 class="section-title" style="margin:0;">${escHtml(state.title || 'Untitled Comic')}</h2>
         <div style="display:flex;align-items:center;gap:6px;">
           <span class="text-sm text-muted">Page ${pages.length}</span>
-          <button class="btn btn-sm btn-secondary" data-action="rerollPage" ${state.isGenerating ? 'disabled' : ''} title="Regenerate this page with different content">&#x1F3B2; Re-roll</button>
+          ${
+            state.readOnly
+              ? ''
+              : `<button class="btn btn-sm btn-secondary" data-action="rerollPage" ${state.isGenerating ? 'disabled' : ''} title="Regenerate this page with different content">&#x1F3B2; Re-roll</button>
           <button class="btn btn-sm btn-secondary" data-action="rerollImages" ${state.isGenerating ? 'disabled' : ''} title="Regenerate images only — keep the story text">&#x1F5BC; Re-images</button>
-          ${canUndo ? `<button class="btn btn-sm btn-secondary" data-action="undoChoice" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}
+          ${canUndo ? `<button class="btn btn-sm btn-secondary" data-action="undoChoice" ${state.isGenerating ? 'disabled' : ''} title="Go back to previous choice">&#x21A9; Undo</button>` : ''}`
+          }
         </div>
       </div>
 
@@ -478,7 +495,7 @@ function renderReading() {
 
       <!-- Choices -->
       ${
-        currentPage && currentPage.choices && currentPage.choices.length > 0
+        !state.readOnly && currentPage && currentPage.choices && currentPage.choices.length > 0
           ? `
         <div class="card">
           <h3 class="card-title mb-sm">What happens next?</h3>
@@ -498,10 +515,13 @@ function renderReading() {
           : ''
       }
 
-      ${state.plannerMode && state.visualContinuity ? renderContinuityPanel(currentPage) : ''}
+      ${!state.readOnly && state.plannerMode && state.visualContinuity ? renderContinuityPanel(currentPage) : ''}
 
       <!-- Custom continuation -->
-      <div class="card">
+      ${
+        state.readOnly
+          ? ''
+          : `<div class="card">
         <div class="form-group">
           <label class="form-label">Custom Direction (optional)</label>
           <textarea id="custom-direction" rows="2" placeholder="Write your own direction for the next page..."></textarea>
@@ -512,7 +532,8 @@ function renderReading() {
           </button>
           <button class="btn btn-secondary" data-action="finishComic">Finish Comic</button>
         </div>
-      </div>
+      </div>`
+      }
 
       <!-- Page History -->
       ${
@@ -659,6 +680,7 @@ function renderContinuityPanel(currentPage: any): string {
 
 /** Persist user edits from the continuity panel into the comic's ledger. */
 async function saveContinuityEdits() {
+  await assertActiveComicWritable();
   if (!state.visualContinuity) return;
   const fields = document.querySelectorAll('.continuity-field');
   const editsByChar = {};
@@ -721,59 +743,26 @@ async function renderResume(comicId: string): Promise<string> {
   state.isGenerating = false;
   state.plannerMode = comic.plannerMode === true;
   state.visualContinuity = comic.visualContinuity || null;
+  state.readOnly = isComicReadOnly(comic);
 
-  // Restore character data and reference images for continued generation
+  // Restore character and world data for continued generation.
   state.characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
-    if (c) state.characters.push(DB.normalizeCharacterRecord(c).record);
+    if (c) state.characters.push(c);
   }
   state.world = null;
   if (state.selectedWorld) {
     const worldRec = await DB.get(DB.STORES.worlds, state.selectedWorld);
-    if (worldRec) state.world = DB.normalizeWorldRecord(worldRec).record;
+    if (worldRec) state.world = worldRec;
   }
   // Anchored comics that predate the ledger get one initialized from current
   // character defaults; the user can review/edit it before the next page.
-  if (state.plannerMode && !state.visualContinuity) {
+  if (!state.readOnly && state.plannerMode && !state.visualContinuity) {
     state.visualContinuity = initializeContinuity(state.characters);
     comic.visualContinuity = state.visualContinuity;
     await DB.put(DB.STORES.comics, comic);
   }
-
-  const useRefImages = await DB.getSetting('useRefImages', true);
-  const refImages = [];
-  const charImagesByName = {};
-  if (useRefImages) {
-    for (const c of state.characters) {
-      const migrated = DB.migrateCharacter(c);
-      const images = migrated.images || [];
-      if (images.length > 0) {
-        charImagesByName[c.name] = { images, primaryImageIndex: migrated.primaryImageIndex ?? 0 };
-        // Also add primary image to legacy refImages for backward compat
-        const primary = images[migrated.primaryImageIndex ?? 0] || images[0];
-        if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
-      }
-    }
-    if (state.selectedWorld) {
-      const world = await DB.get(DB.STORES.worlds, state.selectedWorld);
-      if (world) {
-        const migratedWorld = DB.migrateWorld(world);
-        for (const img of migratedWorld.images || []) {
-          if (img?.dataUrl)
-            refImages.push({
-              dataUrl: img.dataUrl,
-              label: world.name,
-              tag: img.tag || '',
-              description: img.description || '',
-              type: 'world',
-            });
-        }
-      }
-    }
-  }
-  state.referenceImages = refImages;
-  state.characterImagesByName = charImagesByName;
 
   return renderReading();
 }
@@ -884,8 +873,15 @@ function toggleCharacter(id: string): void {
   App.refreshPage();
 }
 
-function selectWorld(id: string): void {
+async function selectWorld(id: string): Promise<void> {
   state.selectedWorld = id;
+  const characters = await DB.getAll(DB.STORES.characters);
+  const allowedIds = new Set(
+    characters
+      .filter((character) => (character.worldId || character.linkedWorldId) === id)
+      .map((character) => character.id),
+  );
+  state.selectedCharacters = state.selectedCharacters.filter((characterId) => allowedIds.has(characterId));
   scheduleDraftSave();
   App.refreshPage();
 }
@@ -921,59 +917,20 @@ async function startGenerating() {
   // The draft is only cleared when the user explicitly clicks "New Comic".
   await saveDraft();
 
-  // Build context — normalize records so every image has a stable ID and an
-  // explicit anchor before generation. Persist newly assigned IDs immediately
-  // so anchors stay stable across sessions (covers imported/legacy records).
+  // Build context from canonical character and world records.
   const characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
     if (!c) continue;
-    const { record, changed } = DB.normalizeCharacterRecord(c);
-    if (changed) await DB.put(DB.STORES.characters, record);
-    characters.push(record);
+    characters.push(c);
   }
   state.characters = characters;
   let world = null;
   if (state.selectedWorld) {
     const worldRec = await DB.get(DB.STORES.worlds, state.selectedWorld);
-    if (worldRec) {
-      const { record, changed } = DB.normalizeWorldRecord(worldRec);
-      if (changed) await DB.put(DB.STORES.worlds, record);
-      world = record;
-    }
+    if (worldRec) world = worldRec;
   }
   state.world = world;
-
-  // Collect reference images for image-to-image generation
-  const useRefImages = await DB.getSetting('useRefImages', true);
-  const refImages = [];
-  const charImagesByName = {};
-  if (useRefImages) {
-    for (const c of characters) {
-      const migrated = DB.migrateCharacter(c);
-      const images = migrated.images || [];
-      if (images.length > 0) {
-        charImagesByName[c.name] = { images, primaryImageIndex: migrated.primaryImageIndex ?? 0 };
-        const primary = images[migrated.primaryImageIndex ?? 0] || images[0];
-        if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
-      }
-    }
-    if (world) {
-      const migratedWorld = DB.migrateWorld(world);
-      for (const img of migratedWorld.images || []) {
-        if (img?.dataUrl)
-          refImages.push({
-            dataUrl: img.dataUrl,
-            label: world.name,
-            tag: img.tag || '',
-            description: img.description || '',
-            type: 'world',
-          });
-      }
-    }
-  }
-  state.referenceImages = refImages;
-  state.characterImagesByName = charImagesByName;
 
   let presetData = null;
   if (state.selectedPreset) {
@@ -1006,11 +963,11 @@ async function startGenerating() {
 
   // Structured planner + anchored continuity pipeline (default). The legacy
   // free-prose imagePrompt pipeline remains as a compatibility path.
-  state.plannerMode = await DB.getSetting('useStructuredPlanner', true);
+  state.plannerMode = true;
 
   let systemPrompt;
   if (state.plannerMode) {
-    const locationKeys = (world?.images || []).map((img) => img?.locationKey).filter(Boolean);
+    const locations = world ? await referenceRepository.listLocations(world.id) : [];
     systemPrompt = API.buildPlannerSystemPrompt({
       genreName,
       characters: characters.map((c) => ({
@@ -1019,14 +976,17 @@ async function startGenerating() {
         role: c.role,
         description: c.description,
         powers: c.powers,
-        references: (c.images || [])
-          .filter((image) => image?.referenceKey)
-          .map((image) => ({ key: image.referenceKey, description: image.description || image.tag || '' })),
       })),
       world: world
-        ? { name: world.name, description: world.description, details: world.details, atmosphere: world.atmosphere }
+        ? {
+            id: world.id,
+            name: world.name,
+            description: world.description,
+            details: world.details,
+            atmosphere: world.atmosphere,
+          }
         : null,
-      locationKeys: [...new Set(locationKeys)],
+      locations: locations.map(({ id, name, description }) => ({ id, name, description })),
       customSystemPrompt: presetData?.systemPrompt || null,
     });
     state.visualContinuity = initializeContinuity(characters, buildInitialStateOverrides(characters));
@@ -1065,6 +1025,7 @@ async function startGenerating() {
     conversationHistory: state.conversationHistory,
     plannerMode: state.plannerMode,
     visualContinuity: state.visualContinuity,
+    referenceSchemaVersion: 2,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -1095,6 +1056,7 @@ function trimConversationHistory(maxExchanges: number): void {
 
 async function generatePage(presetData: any): Promise<void> {
   try {
+    await assertActiveComicWritable();
     const contextExchanges = await DB.getSetting('contextExchanges', 6);
     trimConversationHistory(contextExchanges);
 
@@ -1134,16 +1096,10 @@ async function generatePage(presetData: any): Promise<void> {
       const planned = API.parsePlannedPageResponse(fullText);
       if (planned) {
         // Exact ID validation replaces character-name regex matching
-        const locationKeys = [...new Set((state.world?.images || []).map((img) => img?.locationKey).filter(Boolean))];
+        const locations = state.world ? await referenceRepository.listLocations(state.world.id) : [];
         const { page: validated, errors } = validatePlannedPage(planned, {
           characterIds: state.characters.map((c) => c.id),
-          locationKeys,
-          referenceKeysByCharacter: Object.fromEntries(
-            state.characters.map((character) => [
-              character.id,
-              (character.images || []).map((image) => image?.referenceKey).filter(Boolean),
-            ]),
-          ),
+          locationIds: locations.map(({ id }) => id),
         });
         pageData = {
           title: validated.title,
@@ -1340,6 +1296,7 @@ async function generatePage(presetData: any): Promise<void> {
 }
 
 async function makeChoice(idx: number): Promise<void> {
+  await assertActiveComicWritable();
   if (state.isGenerating) return;
   const currentPage = state.pages[state.pages.length - 1];
   if (!currentPage || !currentPage.choices || !currentPage.choices[idx]) return;
@@ -1359,6 +1316,7 @@ async function makeChoice(idx: number): Promise<void> {
 }
 
 async function continueStory() {
+  await assertActiveComicWritable();
   if (state.isGenerating) return;
   const customDir = document.getElementById('custom-direction')?.value?.trim();
   const userMsg = customDir
@@ -1377,6 +1335,7 @@ async function continueStory() {
 }
 
 async function finishComic() {
+  await assertActiveComicWritable();
   const comic = await DB.get(DB.STORES.comics, state.comicId);
   if (comic) {
     comic.finished = true;
@@ -1460,6 +1419,7 @@ function cancelGeneration() {
  * A backup of the page is kept so that cancelling the re-roll restores it.
  */
 async function rerollPage() {
+  await assertActiveComicWritable();
   if (state.isGenerating || state.pages.length === 0) return;
 
   const lastPageIdx = state.pages.length - 1;
@@ -1523,6 +1483,7 @@ async function rerollPage() {
  * Removes both the assistant response AND the preceding user-choice message.
  */
 async function undoChoice() {
+  await assertActiveComicWritable();
   if (state.isGenerating || state.pages.length <= 1) return;
 
   // Pop assistant response then user choice (two messages) for the page being undone.
@@ -1578,6 +1539,7 @@ async function undoChoice() {
  * Respects the enableImages setting; backs up and restores prior image URLs on failure/cancel.
  */
 async function rerollImages() {
+  await assertActiveComicWritable();
   if (state.isGenerating || state.pages.length === 0) return;
 
   const enableImages = await DB.getSetting('enableImages', true);
@@ -1754,6 +1716,7 @@ function retryMissingImages() {
 }
 
 async function confirmRetryMissingImages() {
+  await assertActiveComicWritable();
   App.hideModal();
   if (state.isGenerating || state.pages.length === 0) return;
   const pageIndex = state.pages.length - 1;
@@ -1906,8 +1869,6 @@ function resetState() {
     pages: [],
     pageIds: [],
     conversationHistory: [],
-    referenceImages: [],
-    characterImagesByName: {},
     characters: [],
     world: null,
     plannerMode: false,
@@ -1918,6 +1879,7 @@ function resetState() {
     draftLoaded: false,
     generationProgress: null,
     imageGenerationConfig: null,
+    readOnly: false,
   };
 }
 

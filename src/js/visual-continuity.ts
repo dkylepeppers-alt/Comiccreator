@@ -1,4 +1,6 @@
 import type { ImageRef } from './utils.js';
+import type { ReferenceManifestItem } from './references/types.js';
+export type { ReferenceManifestItem } from './references/types.js';
 
 /**
  * Visual Continuity Domain
@@ -46,7 +48,8 @@ export interface CharacterVisualState {
 export interface ComicVisualContinuity {
   schemaVersion: 1;
   characterStates: Record<string, CharacterVisualState>;
-  currentLocationKey?: string | null;
+  currentLocationId?: string | null;
+  pinnedReferenceIds?: Record<string, string>;
   updatedAt: number;
 }
 
@@ -65,7 +68,8 @@ export interface PlannedVisualStateChange {
 
 export interface PlannedPanelCharacter {
   characterId: string;
-  referenceKey?: string | null;
+  appearanceState?: string | null;
+  variantId?: string | null;
   action: string;
   pose: string;
   expression: string;
@@ -75,38 +79,34 @@ export interface PlannedPanel {
   narration: string;
   dialogue: { speaker: string; text: string }[];
   visual: {
-    locationKey: string | null;
+    locationId: string | null;
+    placeId?: string | null;
     environment: string;
-    shot: string;
-    composition: string;
+    framing?: string;
+    cameraElevation?: string;
+    /** @deprecated Legacy planner compatibility; ignored by prompt compilation. */
+    shot?: string;
+    /** @deprecated Legacy planner compatibility; ignored by prompt compilation. */
+    composition?: string;
     lighting: string;
-    colorMood: string;
+    /** @deprecated Legacy planner compatibility; ignored by prompt compilation. */
+    colorMood?: string;
     characters: PlannedPanelCharacter[];
+    interaction?: { participantIds: string[]; type: string } | null;
     keyProps: string[];
+    /** @deprecated Legacy planner compatibility; ignored by prompt compilation. */
     focalPoint?: string;
+    /** @deprecated Legacy planner compatibility; ignored by prompt compilation. */
     layoutHint?: 'wide' | 'balanced' | 'tall';
   };
   visualStateChanges: PlannedVisualStateChange[];
+  manualReferenceIds?: string[];
 }
 
 export interface PlannedPage {
   title: string;
   panels: PlannedPanel[];
   choices: { text: string; summary: string }[];
-}
-
-export interface ReferenceManifestItem {
-  index: number; // One-based prompt reference number
-  role: 'identity' | 'variant' | 'location' | 'previous-frame' | 'prop' | 'style';
-  label: string;
-  characterId?: string;
-  worldId?: string;
-  imageId?: string;
-  referenceKey?: string;
-  sourcePageId?: string;
-  sourcePanelIndex?: number;
-  /** True when this reference is a fallback (e.g. default world anchor standing in for a missing location key). */
-  fallback?: boolean;
 }
 
 export interface PageGenerationMetadata {
@@ -129,6 +129,7 @@ export interface CharacterLike {
   images?: ImageRef[];
   primaryImageIndex?: number;
   identityAnchorImageId?: string | null;
+  preferredIdentityReferenceId?: string | null;
   defaultVisualState?: CharacterVisualStateDefaults;
 }
 
@@ -138,6 +139,7 @@ export interface WorldLike {
   images?: ImageRef[];
   primaryImageIndex?: number;
   defaultAnchorImageId?: string | null;
+  preferredStyleReferenceId?: string | null;
 }
 
 export interface ModelCapability {
@@ -194,7 +196,7 @@ export function initializeContinuity(
   return {
     schemaVersion: 1,
     characterStates,
-    currentLocationKey: null,
+    currentLocationId: null,
     updatedAt: Date.now(),
   };
 }
@@ -284,7 +286,7 @@ export function reducePageStates(
   const errors: string[] = [];
   let working = cloneStates(continuity.characterStates || {});
   const panelRenderStates: Array<Record<string, CharacterVisualState>> = [];
-  let lastLocationKey: string | null = continuity.currentLocationKey ?? null;
+  let lastLocationId: string | null = continuity.currentLocationId ?? null;
 
   (plannedPage.panels || []).forEach((panel, panelIndex) => {
     const changes = Array.isArray(panel.visualStateChanges) ? panel.visualStateChanges : [];
@@ -306,7 +308,7 @@ export function reducePageStates(
     panelRenderStates.push(cloneStates(working));
     applyChanges('after-panel');
 
-    if (panel.visual?.locationKey) lastLocationKey = panel.visual.locationKey;
+    if (panel.visual?.locationId) lastLocationId = panel.visual.locationId;
   });
 
   return {
@@ -314,7 +316,8 @@ export function reducePageStates(
     continuityAfter: {
       schemaVersion: 1,
       characterStates: working,
-      currentLocationKey: lastLocationKey,
+      currentLocationId: lastLocationId,
+      ...(continuity.pinnedReferenceIds ? { pinnedReferenceIds: { ...continuity.pinnedReferenceIds } } : {}),
       updatedAt: Date.now(),
     },
     errors,
@@ -355,26 +358,25 @@ export interface LocationAnchorResolution {
 }
 
 /**
- * Resolve a location anchor: exact `locationKey` match first, then the
+ * Resolve a location anchor: exact `placeId` match first, then the
  * world's default anchor, then primary index, then first valid image.
  */
-export function resolveLocationAnchor(world: WorldLike | null, locationKey: string | null): LocationAnchorResolution {
+export function resolveLocationAnchor(world: WorldLike | null, placeId: string | null): LocationAnchorResolution {
   if (!world) return { image: null, matchedKey: null, usedFallback: false };
   const images = (world.images || []).filter((img) => img && img.dataUrl);
   if (images.length === 0) return { image: null, matchedKey: null, usedFallback: false };
 
-  if (locationKey) {
-    const exact = images.find((img) => img.locationKey === locationKey);
-    if (exact) return { image: exact, matchedKey: locationKey, usedFallback: false };
+  if (placeId) {
+    const exact = images.find((img) => img.placeId === placeId);
+    if (exact) return { image: exact, matchedKey: placeId, usedFallback: false };
   }
   if (world.defaultAnchorImageId) {
     const def = images.find((img) => img.id === world.defaultAnchorImageId);
-    if (def) return { image: def, matchedKey: def.locationKey || null, usedFallback: !!locationKey };
+    if (def) return { image: def, matchedKey: def.placeId || null, usedFallback: !!placeId };
   }
   const primary = typeof world.primaryImageIndex === 'number' ? (world.images || [])[world.primaryImageIndex] : null;
-  if (primary && primary.dataUrl)
-    return { image: primary, matchedKey: primary.locationKey || null, usedFallback: true };
-  return { image: images[0], matchedKey: images[0].locationKey || null, usedFallback: true };
+  if (primary && primary.dataUrl) return { image: primary, matchedKey: primary.placeId || null, usedFallback: true };
+  return { image: images[0], matchedKey: images[0].placeId || null, usedFallback: true };
 }
 
 // ── Cast and location collection ─────────────────────────────────────
@@ -406,7 +408,7 @@ export function collectLocationKeys(panels: PlannedPanel[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const panel of panels || []) {
-    const key = panel.visual?.locationKey;
+    const key = panel.visual?.placeId;
     if (key && !seen.has(key)) {
       seen.add(key);
       out.push(key);
@@ -427,10 +429,10 @@ export interface ReferenceAllocationInput {
   /** Cast IDs in stable (comic selected-character) order. */
   characterIds: string[];
   /** Per-request character variants. When omitted, characterIds provide identity anchors only. */
-  characterReferences?: Array<{ characterId: string; referenceKey?: string | null }>;
+  characterReferences?: Array<{ characterId: string; variantId?: string | null }>;
   charactersById: Record<string, CharacterLike>;
   /** Location keys in panel first-use order. */
-  locationKeys: string[];
+  placeIds: string[];
   world?: WorldLike | null;
   /** Effective budget — already min(user budget, model max). */
   budget: number;
@@ -443,8 +445,21 @@ export interface ReferenceAllocationInput {
   anchorImageIdByCharacter?: Record<string, string | null | undefined>;
 }
 
+interface LegacyReferenceManifestItem {
+  index: number;
+  role: 'identity' | 'variant' | 'location' | 'previous-frame';
+  label: string;
+  characterId?: string;
+  worldId?: string;
+  imageId?: string;
+  variantId?: string;
+  sourcePageId?: string;
+  sourcePanelIndex?: number;
+  fallback?: boolean;
+}
+
 export interface ReferenceAllocation {
-  manifest: ReferenceManifestItem[];
+  manifest: LegacyReferenceManifestItem[];
   dataUrls: string[];
   /** Characters that could not be anchored (no valid image at all). */
   unanchoredCharacterIds: string[];
@@ -461,9 +476,9 @@ export interface ReferenceAllocation {
 export function allocateReferences(input: ReferenceAllocationInput): ReferenceAllocation {
   const warnings: string[] = [];
   const unanchoredCharacterIds: string[] = [];
-  const mandatory: Array<{ item: Omit<ReferenceManifestItem, 'index'>; dataUrl: string }> = [];
+  const mandatory: Array<{ item: Omit<LegacyReferenceManifestItem, 'index'>; dataUrl: string }> = [];
 
-  const characterReferences: Array<{ characterId: string; referenceKey?: string | null }> =
+  const characterReferences: Array<{ characterId: string; variantId?: string | null }> =
     input.characterReferences || (input.characterIds || []).map((characterId) => ({ characterId }));
   for (const request of characterReferences) {
     const charId = request.characterId;
@@ -508,30 +523,28 @@ export function allocateReferences(input: ReferenceAllocationInput): ReferenceAl
         dataUrl: resolved.image.dataUrl,
       });
     }
-    if (request.referenceKey) {
-      const variant = (character.images || []).find(
-        (image) => image?.referenceKey === request.referenceKey && image.dataUrl,
-      );
+    if (request.variantId) {
+      const variant = (character.images || []).find((image) => image?.variantId === request.variantId && image.dataUrl);
       if (!variant) {
         warnings.push(
-          `Character "${character.name}" has no reference "${request.referenceKey}" — using identity anchor only`,
+          `Character "${character.name}" has no reference "${request.variantId}" — using identity anchor only`,
         );
       } else if (!mandatory.some((entry) => entry.item.imageId === variant.id)) {
         mandatory.push({
           item: {
             role: 'variant',
-            label: `${character.name}: ${request.referenceKey}`,
+            label: `${character.name}: ${request.variantId}`,
             characterId: charId,
             imageId: variant.id,
-            referenceKey: request.referenceKey,
+            variantId: request.variantId,
           },
-          dataUrl: variant.dataUrl,
+          dataUrl: variant.dataUrl!,
         });
       }
     }
   }
 
-  for (const key of input.locationKeys || []) {
+  for (const key of input.placeIds || []) {
     const resolved = resolveLocationAnchor(input.world || null, key);
     if (!resolved.image?.dataUrl) continue;
     if (resolved.usedFallback) {
@@ -564,7 +577,7 @@ export function allocateReferences(input: ReferenceAllocationInput): ReferenceAl
         detail:
           `This request needs ${mandatory.length} mandatory reference image(s) ` +
           `(${input.characterIds.length} character identit${input.characterIds.length === 1 ? 'y' : 'ies'}, ` +
-          `${input.locationKeys.length} location(s)) but only ${input.budget} fit.`,
+          `${input.placeIds.length} location(s)) but only ${input.budget} fit.`,
       },
     };
   }
@@ -695,8 +708,11 @@ export function resolveImageGenerationPlan(input: GenerationPlanInput): Generati
 
 export interface PlannedPageValidationInput {
   characterIds: string[];
-  locationKeys: string[];
-  referenceKeysByCharacter?: Record<string, string[]>;
+  locationIds?: string[];
+  /** @deprecated Legacy create-page compatibility. */
+  placeIds?: string[];
+  /** @deprecated Legacy create-page compatibility; ignored. */
+  variantIdsByCharacter?: Record<string, string[]>;
 }
 
 export interface PlannedPageValidation {
@@ -706,37 +722,36 @@ export interface PlannedPageValidation {
 
 /**
  * Validate and sanitize a planned page against the ID manifest supplied to
- * the story model. Unknown character IDs and location keys are removed and
+ * the story model. Unknown character and location IDs are removed and
  * recorded — never fuzzily remapped by name similarity.
  */
 export function validatePlannedPage(planned: PlannedPage, manifest: PlannedPageValidationInput): PlannedPageValidation {
   const errors: string[] = [];
   const knownChars = new Set(manifest.characterIds || []);
-  const knownLocations = new Set(manifest.locationKeys || []);
+  const knownLocations = new Set(manifest.locationIds || manifest.placeIds || []);
 
   const panels = (planned.panels || []).map((panel, i) => {
     const visual = panel.visual || ({} as PlannedPanel['visual']);
 
-    const characters = (visual.characters || [])
-      .filter((c) => {
-        if (c?.characterId && knownChars.has(c.characterId)) return true;
-        errors.push(`Panel ${i + 1}: unknown character ID "${c?.characterId ?? '(missing)'}" removed from cast`);
-        return false;
-      })
-      .map((character) => {
-        if (!character.referenceKey) return character;
-        const knownKeys = new Set(manifest.referenceKeysByCharacter?.[character.characterId] || []);
-        if (knownKeys.has(character.referenceKey)) return character;
-        errors.push(
-          `Panel ${i + 1}: unknown reference key "${character.referenceKey}" for character "${character.characterId}" — using identity anchor`,
-        );
-        return { ...character, referenceKey: null };
-      });
+    const characters = (visual.characters || []).filter((c) => {
+      if (c?.characterId && knownChars.has(c.characterId)) return true;
+      errors.push(`Panel ${i + 1}: unknown character ID "${c?.characterId ?? '(missing)'}" removed from cast`);
+      return false;
+    });
 
-    let locationKey = visual.locationKey ?? null;
-    if (locationKey && !knownLocations.has(locationKey)) {
-      errors.push(`Panel ${i + 1}: unknown location key "${locationKey}" — falling back to default world anchor`);
-      locationKey = null;
+    let locationId = visual.locationId ?? null;
+    if (locationId && !knownLocations.has(locationId)) {
+      errors.push(`Panel ${i + 1}: unknown location ID "${locationId}" removed`);
+      locationId = null;
+    }
+
+    let interaction = visual.interaction || null;
+    if (interaction) {
+      const unknownParticipant = interaction.participantIds.find((id) => !knownChars.has(id));
+      if (unknownParticipant) {
+        errors.push(`Panel ${i + 1}: unknown interaction participant "${unknownParticipant}" — interaction removed`);
+        interaction = null;
+      }
     }
 
     const visualStateChanges = (panel.visualStateChanges || []).filter((change) => {
@@ -746,7 +761,7 @@ export function validatePlannedPage(planned: PlannedPage, manifest: PlannedPageV
     });
 
     return Object.assign({}, panel, {
-      visual: Object.assign({}, visual, { characters, locationKey }),
+      visual: Object.assign({}, visual, { characters, locationId, interaction }),
       visualStateChanges,
     });
   });
@@ -774,13 +789,12 @@ function buildReferenceMap(manifest: ReferenceManifestItem[]): string {
     switch (item.role) {
       case 'identity':
         return `Reference image ${item.index}: identity anchor for ${item.label}. ${IDENTITY_LEGEND}`;
-      case 'variant':
-        return `Reference image ${item.index}: selected visual variant ${item.referenceKey} for ${item.label}. Match outfit, pose context, and visible state while preserving identity from that character's identity anchor.`;
+      case 'appearance':
+        return `Reference image ${item.index}: appearance reference for ${item.label}. Match the visible state while preserving identity from that character's identity anchor.`;
       case 'location':
-        // A fallback anchor must not claim to depict the exact planned location
-        return item.fallback
-          ? `Reference image ${item.index}: general location reference for this world, standing in for "${item.label}" (no exact anchor exists). ${LOCATION_LEGEND}`
-          : `Reference image ${item.index}: location anchor for ${item.label}. ${LOCATION_LEGEND}`;
+        return `Reference image ${item.index}: location anchor for ${item.label}. ${LOCATION_LEGEND}`;
+      case 'interaction':
+        return `Reference image ${item.index}: interaction reference for ${item.label}. Match the relationship and spatial arrangement without replacing character identity anchors.`;
       case 'previous-frame':
         return `Reference image ${item.index}: final panel of the previous page. ${PREVIOUS_FRAME_LEGEND}`;
       case 'prop':
@@ -806,18 +820,24 @@ export interface CompilePanelInput {
 export function compilePanelDescription(input: CompilePanelInput): string {
   const { panel, renderState, manifest, charactersById } = input;
   const visual = panel.visual || ({} as PlannedPanel['visual']);
-  const refByCharacter = new Map(manifest.filter((m) => m.role === 'identity').map((m) => [m.characterId, m]));
-  const variantByCharacterAndKey = new Map(
-    manifest.filter((m) => m.role === 'variant').map((m) => [`${m.characterId}:${m.referenceKey}`, m]),
+  const refByCharacter = new Map(
+    manifest
+      .filter((item) => item.role === 'identity' && item.characterIds?.length === 1)
+      .map((item) => [item.characterIds![0], item]),
   );
-  const refByLocation = new Map(manifest.filter((m) => m.role === 'location').map((m) => [m.label, m]));
+  const appearanceByCharacterAndState = new Map(
+    manifest.filter((item) => item.role === 'appearance').map((item) => [item.label, item]),
+  );
+  const refByLocation = new Map(
+    manifest.filter((item) => item.role === 'location' && item.locationId).map((item) => [item.locationId!, item]),
+  );
 
   const lines: string[] = [];
 
-  if (visual.locationKey) {
-    const locRef = refByLocation.get(visual.locationKey);
+  if (visual.locationId) {
+    const locRef = refByLocation.get(visual.locationId);
     const refNote = locRef ? ` (Reference image ${locRef.index})` : '';
-    lines.push(`Location: ${visual.locationKey}${refNote}.${visual.environment ? ` ${visual.environment}` : ''}`);
+    lines.push(`Location: ${visual.locationId}${refNote}.${visual.environment ? ` ${visual.environment}` : ''}`);
   } else if (visual.environment) {
     lines.push(`Location: ${visual.environment}`);
   }
@@ -826,7 +846,9 @@ export function compilePanelDescription(input: CompilePanelInput): string {
     const character = charactersById[cast.characterId];
     const name = character?.name || cast.characterId;
     const ref = refByCharacter.get(cast.characterId);
-    const variant = cast.referenceKey ? variantByCharacterAndKey.get(`${cast.characterId}:${cast.referenceKey}`) : null;
+    const appearance = cast.appearanceState
+      ? appearanceByCharacterAndState.get(`${cast.characterId}:${cast.appearanceState}`)
+      : null;
     const state = renderState[cast.characterId];
 
     const parts: string[] = [];
@@ -836,7 +858,11 @@ export function compilePanelDescription(input: CompilePanelInput): string {
       parts.push(`${name} (no reference image; identity unanchored).`);
       if (character?.appearance) parts.push(`Appearance: ${normalizeStateText(character.appearance)}.`);
     }
-    if (variant) parts.push(`Selected variant: ${cast.referenceKey} (Reference image ${variant.index}).`);
+    if (cast.appearanceState) {
+      parts.push(
+        `Appearance state: ${normalizeStateText(cast.appearanceState)}${appearance ? ` (Reference image ${appearance.index})` : ''}.`,
+      );
+    }
     if (state) {
       if (state.wardrobeDescription) {
         parts.push(`Wardrobe: ${state.wardrobeDescription}.`);
@@ -854,15 +880,27 @@ export function compilePanelDescription(input: CompilePanelInput): string {
     lines.push(parts.join(' '));
   }
 
+  if (visual.interaction) {
+    const participants = [...new Set(visual.interaction.participantIds)];
+    const participantSet = [...participants].sort().join('+');
+    const interaction = manifest.find(
+      (item) =>
+        item.role === 'interaction' &&
+        [...(item.characterIds || [])].sort().join('+') === participantSet &&
+        item.label === `${participantSet}:${visual.interaction?.type}`,
+    );
+    const names = participants.map((id) => charactersById[id]?.name || id);
+    const refNote = interaction ? ` (Reference image ${interaction.index})` : '';
+    lines.push(`Interaction: ${normalizeStateText(visual.interaction.type)} between ${names.join(' and ')}${refNote}.`);
+  }
+
   const cine: string[] = [];
-  if (visual.shot) cine.push(`Camera: ${normalizeStateText(visual.shot)}`);
-  if (visual.composition) cine.push(`Composition: ${normalizeStateText(visual.composition)}`);
+  if (visual.framing) cine.push(`Framing: ${normalizeStateText(visual.framing)}`);
+  if (visual.cameraElevation) cine.push(`Camera elevation: ${normalizeStateText(visual.cameraElevation)}`);
   if (visual.lighting) cine.push(`Lighting: ${normalizeStateText(visual.lighting)}`);
-  if (visual.colorMood) cine.push(`Color mood: ${normalizeStateText(visual.colorMood)}`);
   if (cine.length) lines.push(`${cine.join('. ')}.`);
   if (visual.keyProps?.length)
     lines.push(`Key props: ${visual.keyProps.map((p) => normalizeStateText(p)).join(', ')}.`);
-  if (visual.focalPoint) lines.push(`Focal point: ${normalizeStateText(visual.focalPoint)}.`);
 
   return lines.filter(Boolean).join('\n');
 }

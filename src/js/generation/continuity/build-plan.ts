@@ -1,7 +1,4 @@
 import {
-  allocateReferences,
-  collectLocationKeys,
-  collectPageCast,
   collectPanelCast,
   compileIndependentPanelPrompt,
   compilePanelDescription,
@@ -9,7 +6,9 @@ import {
   effectiveReferenceBudget,
   resolveImageGenerationPlan,
 } from '../../visual-continuity.js';
-import type { PlannedPage, ReferenceAllocation, ReferenceManifestItem } from '../../visual-continuity.js';
+import { resolvePanelReferences } from '../../references/resolver.js';
+import type { ReferenceResolution } from '../../references/resolver.js';
+import type { PanelReferenceRequest, ReferenceManifestItem } from '../../references/types.js';
 import type {
   BlockedContinuityPanel,
   ContinuityAllocationFailure,
@@ -46,8 +45,8 @@ function narrowModelCapability(value: unknown): NarrowedModelCapability | null {
   };
 }
 
-function emptyAllocation(): ReferenceAllocation {
-  return { manifest: [], dataUrls: [], unanchoredCharacterIds: [], warnings: [] };
+function emptyAllocation(): ReferenceResolution {
+  return { manifest: [], dataUrls: [], missing: [], warnings: [] };
 }
 
 function orderedPanelCast(input: ContinuityPlanningInput, panelIndex: number): string[] {
@@ -57,21 +56,107 @@ function orderedPanelCast(input: ContinuityPlanningInput, panelIndex: number): s
   return [...ordered, ...extras];
 }
 
-function orderedCharacterReferences(input: ContinuityPlanningInput, panelIndexes: number[]) {
-  const cast = new Set(panelIndexes.flatMap((panelIndex) => collectPanelCast(input.panels[panelIndex])));
-  const orderedIds = [
-    ...input.selectedCharacterIds.filter((id) => cast.has(id)),
-    ...[...cast].filter((id) => !input.selectedCharacterIds.includes(id)).sort(),
-  ];
-  return orderedIds.flatMap((characterId) => {
-    const keys = new Set<string>();
-    for (const panelIndex of panelIndexes) {
-      for (const character of input.panels[panelIndex].visual?.characters || []) {
-        if (character.characterId === characterId && character.referenceKey) keys.add(character.referenceKey);
-      }
-    }
-    return [{ characterId }, ...[...keys].map((referenceKey) => ({ characterId, referenceKey }))];
+function panelReferenceRequest(input: ContinuityPlanningInput, panelIndex: number): PanelReferenceRequest {
+  const visual = input.panels[panelIndex].visual;
+  return {
+    worldId: input.worldId || input.world?.id || '',
+    characterIds: orderedPanelCast(input, panelIndex),
+    locationId: visual.locationId,
+    characterStates: Object.fromEntries(
+      visual.characters.flatMap((character) =>
+        character.appearanceState ? [[character.characterId, character.appearanceState]] : [],
+      ),
+    ),
+    interaction: visual.interaction || null,
+    facets: {
+      ...(visual.framing ? { framing: visual.framing as PanelReferenceRequest['facets']['framing'] } : {}),
+      ...(visual.cameraElevation
+        ? { cameraElevation: visual.cameraElevation as PanelReferenceRequest['facets']['cameraElevation'] }
+        : {}),
+      ...(visual.lighting ? { lighting: visual.lighting } : {}),
+    },
+    propNames: [...visual.keyProps],
+  };
+}
+
+function resolveForPanel(input: ContinuityPlanningInput, panelIndex: number, budget: number): ReferenceResolution {
+  return resolvePanelReferences({
+    request: panelReferenceRequest(input, panelIndex),
+    assets: [...(input.referenceAssets || [])],
+    budget,
+    preferredReferenceIds: { ...(input.preferredReferenceIds || {}) },
+    pinnedReferenceIds: { ...(input.pinnedReferenceIds || {}) },
+    manualReferenceIds: [...(input.manualReferenceIdsByPanel?.[panelIndex] || [])],
+    previousFrame: input.previousFrame,
   });
+}
+
+function resolveForPage(input: ContinuityPlanningInput, budget: number): ReferenceResolution {
+  const resolutions = input.panels.map((_, panelIndex) =>
+    resolvePanelReferences({
+      request: panelReferenceRequest(input, panelIndex),
+      assets: [...(input.referenceAssets || [])],
+      budget: Number.MAX_SAFE_INTEGER,
+      preferredReferenceIds: { ...(input.preferredReferenceIds || {}) },
+      pinnedReferenceIds: { ...(input.pinnedReferenceIds || {}) },
+      manualReferenceIds: [...(input.manualReferenceIdsByPanel?.[panelIndex] || [])],
+    }),
+  );
+  const entries: Array<{ item: ReferenceManifestItem; dataUrl: string; order: number }> = [];
+  const seen = new Set<string>();
+  let order = 0;
+  for (const resolution of resolutions) {
+    resolution.manifest.forEach((item, index) => {
+      const key = item.imageId || `${item.role}:${item.label}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push({ item, dataUrl: resolution.dataUrls[index], order: order++ });
+    });
+  }
+  const roleOrder: ReferenceManifestItem['role'][] = [
+    'identity',
+    'appearance',
+    'location',
+    'interaction',
+    'prop',
+    'style',
+    'previous-frame',
+  ];
+  entries.sort(
+    (left, right) => roleOrder.indexOf(left.item.role) - roleOrder.indexOf(right.item.role) || left.order - right.order,
+  );
+  if (entries.length > budget) {
+    return {
+      manifest: [],
+      dataUrls: [],
+      missing: resolutions.flatMap(({ missing }) => missing),
+      warnings: resolutions.flatMap(({ warnings }) => warnings),
+      error: {
+        type: 'capacity',
+        required: entries.length,
+        budget,
+        detail: `This page needs ${entries.length} mandatory reference image(s), but only ${budget} fit.`,
+      },
+    };
+  }
+  const manifest = entries.map(({ item }, index) => ({ ...item, index: index + 1 }));
+  const dataUrls = entries.map(({ dataUrl }) => dataUrl);
+  if (input.previousFrame?.dataUrl && manifest.length < budget) {
+    manifest.push({
+      index: manifest.length + 1,
+      role: 'previous-frame',
+      label: 'previous page final panel',
+      sourcePageId: input.previousFrame.sourcePageId,
+      sourcePanelIndex: input.previousFrame.sourcePanelIndex,
+    });
+    dataUrls.push(input.previousFrame.dataUrl);
+  }
+  return {
+    manifest,
+    dataUrls,
+    missing: resolutions.flatMap(({ missing }) => missing),
+    warnings: resolutions.flatMap(({ warnings }) => warnings),
+  };
 }
 
 function supportsSize(capability: NarrowedModelCapability | null, imageSize: string): boolean {
@@ -106,41 +191,13 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
   const pageBudget = effectiveReferenceBudget(input.referenceBudget, pageModel?.maxInputImages);
   const panelBudget = effectiveReferenceBudget(input.referenceBudget, panelModel?.maxInputImages);
   const warnings = [...(input.warnings || [])];
-  const plannedPage: PlannedPage = { title: '', choices: [], panels: [...input.panels] };
   const targetPanels = input.targetPanelIndexes === undefined ? null : new Set<number>(input.targetPanelIndexes);
 
-  const pageAllocation = input.useReferenceImages
-    ? allocateReferences({
-        characterIds: collectPageCast(plannedPage, [...input.selectedCharacterIds]),
-        characterReferences: orderedCharacterReferences(
-          input,
-          input.panels.map((_, index) => index),
-        ),
-        charactersById: input.charactersById,
-        locationKeys: collectLocationKeys([...input.panels]),
-        world: input.world,
-        budget: pageBudget,
-        previousFrame: input.previousFrame,
-        anchorImageIdByCharacter: input.anchorImageIdByCharacter,
-      })
-    : emptyAllocation();
+  const pageAllocation = input.useReferenceImages ? resolveForPage(input, pageBudget) : emptyAllocation();
   warnings.push(...pageAllocation.warnings);
 
   const panelAllocations = input.panels.map((_, panelIndex) =>
-    input.useReferenceImages
-      ? allocateReferences({
-          characterIds: orderedPanelCast(input, panelIndex),
-          characterReferences: orderedCharacterReferences(input, [panelIndex]),
-          charactersById: input.charactersById,
-          locationKeys: input.panels[panelIndex].visual?.locationKey
-            ? [input.panels[panelIndex].visual.locationKey]
-            : [],
-          world: input.world,
-          budget: panelBudget,
-          previousFrame: input.previousFrame,
-          anchorImageIdByCharacter: input.anchorImageIdByCharacter,
-        })
-      : emptyAllocation(),
+    input.useReferenceImages ? resolveForPanel(input, panelIndex, panelBudget) : emptyAllocation(),
   );
   const allocationFailures = freezeAllocationFailures(
     panelAllocations.flatMap((allocation, panelIndex) =>

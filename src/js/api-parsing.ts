@@ -164,6 +164,18 @@ export function parsePlannedPageResponse(text: string): any | null {
 
   const buildResult = (parsed: any) => {
     if (!parsed || !Array.isArray(parsed.panels)) return null;
+    const framingValues = new Set([
+      'extreme-close-up',
+      'close-up',
+      'medium-close-up',
+      'medium',
+      'three-quarter',
+      'full-body',
+      'wide',
+      'establishing',
+      'detail',
+    ]);
+    const elevationValues = new Set(['eye-level', 'high', 'low', 'overhead', 'aerial', 'ground-level']);
     return {
       title: parsed.title || 'Untitled Page',
       panels: parsed.panels.map((p: any) => ({
@@ -173,22 +185,30 @@ export function parsePlannedPageResponse(text: string): any | null {
           text: d?.text || '',
         })),
         visual: {
-          locationKey: p?.visual?.locationKey || null,
+          locationId: p?.visual?.locationId || p?.visual?.location_id || null,
           environment: p?.visual?.environment || '',
-          shot: p?.visual?.shot || '',
-          composition: p?.visual?.composition || '',
+          framing: framingValues.has(p?.visual?.framing) ? p.visual.framing : undefined,
+          cameraElevation: elevationValues.has(p?.visual?.cameraElevation || p?.visual?.camera_elevation)
+            ? p.visual.cameraElevation || p.visual.camera_elevation
+            : undefined,
           lighting: p?.visual?.lighting || '',
-          colorMood: p?.visual?.colorMood || p?.visual?.color_mood || '',
           characters: (Array.isArray(p?.visual?.characters) ? p.visual.characters : []).map((c: any) => ({
             characterId: c?.characterId || c?.character_id || '',
-            referenceKey: c?.referenceKey || c?.reference_key || null,
+            appearanceState: c?.appearanceState || c?.appearance_state || null,
             action: c?.action || '',
             pose: c?.pose || '',
             expression: c?.expression || '',
           })),
+          interaction:
+            p?.visual?.interaction && Array.isArray(p.visual.interaction.participantIds)
+              ? {
+                  participantIds: p.visual.interaction.participantIds.filter(
+                    (participantId: unknown) => typeof participantId === 'string' && participantId,
+                  ),
+                  type: p.visual.interaction.type || '',
+                }
+              : null,
           keyProps: Array.isArray(p?.visual?.keyProps) ? p.visual.keyProps.filter(Boolean) : [],
-          focalPoint: p?.visual?.focalPoint || undefined,
-          layoutHint: ['wide', 'balanced', 'tall'].includes(p?.visual?.layoutHint) ? p.visual.layoutHint : undefined,
         },
         visualStateChanges: Array.isArray(p?.visualStateChanges) ? p.visualStateChanges.map(normalizeChange) : [],
       })),

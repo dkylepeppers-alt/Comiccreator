@@ -8,6 +8,16 @@ import { parseComicResponse } from '../src/js/api-parsing.js';
 
 // --- Tests ---
 
+describe('unified panel reference selection', () => {
+  it('routes independent generation through the canonical resolver with no legacy selector modes', () => {
+    const source = readFileSync(new URL('../src/js/generation/image-engine.ts', import.meta.url), 'utf8');
+    expect(source).toContain('resolvePanelReferences');
+    expect(source).not.toContain('selectBestImage');
+    expect(source).not.toContain('charRefMode');
+    expect(source).not.toContain('TAG_KEYWORDS');
+  });
+});
+
 describe('escHtml', () => {
   it('should return empty string for null/undefined', () => {
     expect(escHtml(null)).toBe('');
@@ -154,8 +164,7 @@ describe('parseComicResponse', () => {
 
   it('should recover from truncation after a complete panel object (trailing comma)', () => {
     // Simulates LLM output cut off after a completed panel but before the array closes
-    const truncated =
-      '{"title":"Page 1","panels":[{"narration":"Scene one.","imagePrompt":"A city","dialogue":[]},';
+    const truncated = '{"title":"Page 1","panels":[{"narration":"Scene one.","imagePrompt":"A city","dialogue":[]},';
     const result = parseComicResponse(truncated);
     expect(result).toBeTruthy();
     expect(result.title).toBe('Page 1');
@@ -165,8 +174,7 @@ describe('parseComicResponse', () => {
 
   it('should recover from truncation mid-string inside a panel', () => {
     // Simulates the exact error from the issue: cut off mid narration string
-    const truncated =
-      '{"title":"Anthony gets Fester","panels":[{"narration":"As Fester waddles off to the bathroom';
+    const truncated = '{"title":"Anthony gets Fester","panels":[{"narration":"As Fester waddles off to the bathroom';
     const result = parseComicResponse(truncated);
     expect(result).toBeTruthy();
     expect(result.title).toBe('Anthony gets Fester');
@@ -212,10 +220,7 @@ describe('exportData page preparation', () => {
         comicId: 'c1',
         pageNum: 2,
         data: {
-          panels: [
-            { narration: 'Panel A', imageUrl: 'data:image/png;base64,def456' },
-            { narration: 'Panel B' },
-          ],
+          panels: [{ narration: 'Panel A', imageUrl: 'data:image/png;base64,def456' }, { narration: 'Panel B' }],
         },
         createdAt: '2024-01-02T00:00:00.000Z',
       },
@@ -236,9 +241,7 @@ describe('exportData page preparation', () => {
         pageNum: 1,
         title: 'Page 1',
         data: {
-          panels: [
-            { narration: 'Test narration', imageUrl: 'data:image/png;base64,abc' },
-          ],
+          panels: [{ narration: 'Test narration', imageUrl: 'data:image/png;base64,abc' }],
           extraMeta: 'meta',
         },
         createdAt: '2024-01-01T12:00:00.000Z',
@@ -277,9 +280,7 @@ describe('exportData page preparation', () => {
       comicId: 'c1',
       pageNum: 1,
       data: {
-        panels: [
-          { narration: 'Panel 1', imageUrl: 'data:image/png;base64,big' },
-        ],
+        panels: [{ narration: 'Panel 1', imageUrl: 'data:image/png;base64,big' }],
       },
       createdAt: '2024-01-04T00:00:00.000Z',
     };
@@ -294,7 +295,7 @@ describe('exportData page preparation', () => {
     const settingsCode = readFileSync(settingsPath, 'utf-8');
     const stringifyCalls = settingsCode.match(/JSON\.stringify\([^)]*\)/g) || [];
     expect(stringifyCalls.length > 0).toBeTruthy();
-    const prettyPrintedCalls = stringifyCalls.filter(call =>
+    const prettyPrintedCalls = stringifyCalls.filter((call) =>
       /JSON\.stringify\([^)]*,\s*null\s*,\s*\d+\s*\)/.test(call),
     );
     expect(prettyPrintedCalls.length).toBe(0);

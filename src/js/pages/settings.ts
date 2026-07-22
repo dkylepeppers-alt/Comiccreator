@@ -7,9 +7,11 @@ import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
 import { migrateCompanionSettings } from '../image-generation-config.js';
 import { saveBackupFile } from '../export-actions.js';
-import { parseBackup, importBackup } from '../settings/backup-import.js';
+import { buildBackup, parseBackup, importBackup } from '../settings/backup-import.js';
 import { loadModelCatalog } from '../settings/model-loader.js';
-import { downloadLocalLlm, getLocalLlmAvailability } from '../local-llm-classifier.js';
+import { localReferenceClassifier } from '../references/local-classifier.js';
+import { planLegacyMigration, runLegacyMigration } from '../references/legacy-migration.js';
+import { referenceClassificationQueue, referenceRepository } from '../reference-workspace-runtime.js';
 
 /**
  * Settings Page
@@ -40,9 +42,7 @@ async function render() {
   const contextExchanges = await DB.getSetting('contextExchanges', 6);
   const enableImages = await DB.getSetting('enableImages', true);
   const useRefImages = await DB.getSetting('useRefImages', true);
-  const charRefMode = await DB.getSetting('charRefMode', 'auto');
   const captionModel = await DB.getSetting('captionModel', '');
-  const embeddingModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
   const showExplicitContent = await DB.getSetting('showExplicitContent', false);
   const includeAppearanceText = await DB.getSetting('includeAppearanceText', true);
   const dynamicImageSizes = await DB.getSetting('dynamicImageSizes', false);
@@ -50,13 +50,29 @@ async function render() {
   const enrichImagePrompts = await DB.getSetting('enrichImagePrompts', false);
   const negativePrompt = await DB.getSetting('negativePrompt', '');
   const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
-  const useStructuredPlanner = await DB.getSetting('useStructuredPlanner', true);
   const enableSequentialPages = await DB.getSetting('enableSequentialPages', false);
-  const refBudget = await DB.getSetting('refBudget', 'auto');
   const singleImageModel = await DB.getSetting('singleImageModel', '');
   const storedCompanionMode = await DB.getSetting('singleImageCompanionMode', null);
   const companion = migrateCompanionSettings(storedCompanionMode, singleImageModel);
   const imageRequestTimeoutMs = await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS);
+  const [legacyWorlds, legacyCharacters, legacyComics, classificationProgress, migrationProgress] = await Promise.all([
+    DB.getAll(DB.STORES.worlds),
+    DB.getAll(DB.STORES.characters),
+    DB.getAll(DB.STORES.comics),
+    referenceClassificationQueue.getProgress(),
+    DB.getSetting('referenceMigrationProgress', null),
+  ]);
+  const migrationPlan = planLegacyMigration({
+    worlds: legacyWorlds,
+    characters: legacyCharacters,
+    comics: legacyComics,
+  });
+  const directAssignments = new Map(
+    legacyCharacters.filter((character) => character.worldId).map((character) => [character.id, character.worldId]),
+  );
+  const unresolvedAssignments = migrationPlan.unresolved.filter(
+    ({ characterId }) => !directAssignments.has(characterId),
+  );
 
   return `
     <div class="slide-up">
@@ -144,17 +160,6 @@ async function render() {
         </div>
 
         <div class="form-group">
-          <label class="form-label">Character Ref Selection</label>
-          <select id="set-charrefmode">
-            <option value="auto" ${charRefMode === 'auto' ? 'selected' : ''}>Auto (use embeddings when available, fall back to keyword)</option>
-            <option value="semantic" ${charRefMode === 'semantic' ? 'selected' : ''}>Semantic (always use text embeddings)</option>
-            <option value="keyword" ${charRefMode === 'keyword' ? 'selected' : ''}>Keyword (tag-based matching only)</option>
-            <option value="composite" ${charRefMode === 'composite' ? 'selected' : ''}>Composite (always build character sheet)</option>
-          </select>
-          <div class="form-hint">How to select the best reference image for each panel from a character's image gallery</div>
-        </div>
-
-        <div class="form-group">
           <label class="form-label">Auto-Caption Model</label>
           <input type="hidden" id="set-captionmodel" value="${escHtml(captionModel)}">
           <div class="model-picker" id="caption-model-picker">
@@ -174,18 +179,6 @@ async function render() {
             <span id="caption-model-count">--</span> vision models available &middot;
             <button class="btn-link" data-action="clearCaptionModel">Clear (use text model)</button>
           </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Embedding Model</label>
-          <select id="set-embmodel">
-            <option value="text-embedding-3-small" ${embeddingModel === 'text-embedding-3-small' ? 'selected' : ''}>text-embedding-3-small &mdash; $0.02/1M (OpenAI, default)</option>
-            <option value="qwen/qwen3-embedding-8b" ${embeddingModel === 'qwen/qwen3-embedding-8b' ? 'selected' : ''}>qwen3-embedding-8b &mdash; $0.01/1M (8B params, best value)</option>
-            <option value="Qwen/Qwen3-Embedding-0.6B" ${embeddingModel === 'Qwen/Qwen3-Embedding-0.6B' ? 'selected' : ''}>qwen3-embedding-0.6B &mdash; $0.01/1M (lightweight)</option>
-            <option value="text-embedding-3-large" ${embeddingModel === 'text-embedding-3-large' ? 'selected' : ''}>text-embedding-3-large &mdash; $0.13/1M (highest quality)</option>
-            <option value="BAAI/bge-m3" ${embeddingModel === 'BAAI/bge-m3' ? 'selected' : ''}>bge-m3 &mdash; $0.01/1M (multilingual)</option>
-          </select>
-          <div class="form-hint">Model used for matching character images to panel prompts. Changing this invalidates existing character embeddings.</div>
         </div>
 
         <div class="form-group">
@@ -216,29 +209,10 @@ async function render() {
 
         <div class="form-group">
           <label class="form-label" style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" id="set-structuredplanner" ${useStructuredPlanner ? 'checked' : ''} style="width:auto;">
-            Structured Planner + Anchored Continuity (new comics)
-          </label>
-          <div class="form-hint">The story model plans structured visual facts against exact character IDs, and the app compiles image prompts from identity anchors and a persistent wardrobe ledger. Disable to use the legacy free-prose prompt pipeline. Appearance-text repetition and gallery ref-selection modes above only apply to the legacy pipeline.</div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="display:flex;align-items:center;gap:8px;">
             <input type="checkbox" id="set-sequentialpages" ${enableSequentialPages ? 'checked' : ''} style="width:auto;">
             Sequential Page Generation (Seedream Sequential)
           </label>
           <div class="form-hint">When the image model is <code>seedream-v4.5-sequential</code>, generate all panels of a page in ONE ordered request. Sequential pages share one image size; mixed sizes route to per-panel requests. Leave off until the live output-order contract test has been verified for your account.</div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Reference Image Budget</label>
-          <select id="set-refbudget">
-            <option value="auto" ${refBudget === 'auto' ? 'selected' : ''}>Auto — all required anchors + useful extras up to the model limit</option>
-            ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-              .map((n) => `<option value="${n}" ${String(refBudget) === String(n) ? 'selected' : ''}>${n}</option>`)
-              .join('')}
-          </select>
-          <div class="form-hint">Ceiling for reference images per request, capped at the model's live maximum. Auto includes every required identity/location anchor, never padding to the maximum.</div>
         </div>
 
         <div class="form-group">
@@ -343,10 +317,33 @@ async function render() {
 
       <div class="card mt-md">
         <h3 class="card-title mb-sm">On-device Reference Classification</h3>
-        <p class="text-sm text-muted mb-sm">Use Apple Intelligence or Gemini Nano to auto-tag character references from their descriptions. Reference text stays on the device, and Android downloads are always explicit.</p>
+        <p class="text-sm text-muted mb-sm">Gemini Nano classifies reference images on supported Android devices. Images remain on the device, and model downloads are always explicit.</p>
+        <p class="text-sm mb-sm">${classificationProgress.complete + classificationProgress.failed} / ${classificationProgress.total} processed · ${classificationProgress.pending} queued · ${classificationProgress.failed} need review</p>
         <div id="local-llm-status" class="text-sm text-muted mb-sm">Checking availability…</div>
         <button class="btn btn-secondary btn-block" id="local-llm-download-btn" data-action="downloadLocalModel">Download Local Model</button>
       </div>
+
+      ${
+        migrationPlan.worldImageCount + migrationPlan.characterImageCount > 0
+          ? `<div class="card mt-md" data-migration-progress>
+        <h3 class="card-title mb-sm">Legacy Reference Migration</h3>
+        <p class="text-sm text-muted mb-sm">${migrationProgress?.completed || 0} / ${migrationPlan.worldImageCount + migrationPlan.characterImageCount} images converted. Progress is saved after every image.</p>
+        ${unresolvedAssignments
+          .map(
+            ({
+              characterId,
+              candidateWorldIds,
+            }) => `<label class="form-group"><span class="form-label">Parent world for ${escHtml(legacyCharacters.find((character) => character.id === characterId)?.name || characterId)}</span>
+              <select data-migration-character="${escHtml(characterId)}">
+                <option value="">Choose a world…</option>
+                ${candidateWorldIds.map((worldId) => `<option value="${escHtml(worldId)}">${escHtml(legacyWorlds.find((world) => world.id === worldId)?.name || worldId)}</option>`).join('')}
+              </select></label>`,
+          )
+          .join('')}
+        <button class="btn btn-primary btn-block" data-action="runLegacyReferenceMigration">${migrationProgress?.status === 'running' ? 'Resume Migration' : 'Convert Legacy References'}</button>
+      </div>`
+          : ''
+      }
 
       <!-- App Updates -->
       <div class="card mt-md">
@@ -421,31 +418,63 @@ async function onMount() {
 }
 
 async function refreshLocalLlmStatus(): Promise<void> {
-  const status = await getLocalLlmAvailability();
+  const { status } = await localReferenceClassifier.getAvailability();
   const statusEl = document.getElementById('local-llm-status');
   const button = document.getElementById('local-llm-download-btn');
   if (!statusEl || !button) return;
   const labels = {
-    unsupported: 'Available only in a supported native iOS or Android app.',
     unavailable: 'This device does not support the local model.',
-    notready: 'The local model is not ready yet.',
     downloadable: 'Model download is available. Nothing is downloaded until you choose it.',
+    downloading: 'The local model is downloading.',
     available: 'Ready. New and manually reclassified references can be tagged locally.',
   };
   statusEl.textContent = labels[status] || status;
-  button.classList.toggle('hidden', status === 'unsupported' || status === 'unavailable' || status === 'available');
-  button.disabled = status === 'notready';
+  button.classList.toggle('hidden', status === 'unavailable' || status === 'available');
+  button.disabled = status === 'downloading';
 }
 
 async function downloadLocalModel(): Promise<void> {
   const button = document.getElementById('local-llm-download-btn');
   if (button) button.disabled = true;
-  const started = await downloadLocalLlm();
-  App.toast(
-    started ? 'Local model download started' : 'Could not start the local model download',
-    started ? 'info' : 'error',
-  );
+  try {
+    await localReferenceClassifier.download();
+    App.toast('Local model download started', 'info');
+  } catch (error) {
+    App.logError('downloadLocalModel()', error);
+    App.toast('Could not start the local model download', 'error');
+  }
   await refreshLocalLlmStatus();
+}
+
+async function runLegacyReferenceMigration(): Promise<void> {
+  const [worlds, characters, comics] = await Promise.all([
+    DB.getAll(DB.STORES.worlds),
+    DB.getAll(DB.STORES.characters),
+    DB.getAll(DB.STORES.comics),
+  ]);
+  const plan = planLegacyMigration({ worlds, characters, comics });
+  const assignments = Object.fromEntries(
+    characters.filter((character) => character.worldId).map((character) => [character.id, character.worldId]),
+  );
+  document.querySelectorAll('[data-migration-character]').forEach((select) => {
+    if (select.value) assignments[select.dataset.migrationCharacter] = select.value;
+  });
+  await runLegacyMigration(plan, assignments, {
+    listWorlds: async () => DB.getAll(DB.STORES.worlds),
+    listCharacters: async () => DB.getAll(DB.STORES.characters),
+    listComics: async () => DB.getAll(DB.STORES.comics),
+    getAsset: (id) => referenceRepository.getAsset(id),
+    putAssetAndJob: (asset, job) => referenceRepository.putAssetAndJob(asset, job),
+    putWorld: (world) => DB.put(DB.STORES.worlds, world).then(() => undefined),
+    putCharacter: (character) => DB.put(DB.STORES.characters, character).then(() => undefined),
+    putComic: (comic) => DB.put(DB.STORES.comics, comic).then(() => undefined),
+    saveProgress: (progress) => DB.setSetting('referenceMigrationProgress', progress).then(() => undefined),
+    newId: DB.uuid,
+    now: () => Date.now(),
+  });
+  void referenceClassificationQueue.run();
+  App.toast('Legacy references converted', 'success');
+  App.refreshPage();
 }
 
 /**
@@ -940,43 +969,12 @@ async function save() {
   await DB.setSetting('enableImages', document.getElementById('set-enableimgs').checked);
   await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
   await DB.setSetting('includeAppearanceText', document.getElementById('set-includeappearance').checked);
-  await DB.setSetting('charRefMode', document.getElementById('set-charrefmode').value);
   await DB.setSetting('captionModel', document.getElementById('set-captionmodel').value);
-
-  // Embedding model — invalidate stored character embeddings when the model changes
-  const newEmbModel = document.getElementById('set-embmodel').value;
-  const oldEmbModel = await DB.getSetting('embeddingModel', 'text-embedding-3-small');
-  await DB.setSetting('embeddingModel', newEmbModel);
-  if (newEmbModel !== oldEmbModel) {
-    const chars = await DB.getAll(DB.STORES.characters);
-    let invalidated = 0;
-    for (const c of chars) {
-      if (!Array.isArray(c.images)) continue;
-      let changed = false;
-      for (const img of c.images) {
-        if (img.embedding) {
-          img.embedding = null;
-          changed = true;
-          invalidated++;
-        }
-      }
-      if (changed) await DB.put(DB.STORES.characters, c);
-    }
-    if (invalidated > 0) {
-      App.toast(
-        `Embedding model changed — cleared ${invalidated} embedding(s). Re-save characters to regenerate.`,
-        'info',
-      );
-    }
-  }
 
   await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
   await DB.setSetting('dynamicImageSizes', document.getElementById('set-dynamicsizes').checked);
   await DB.setSetting('enrichImagePrompts', document.getElementById('set-enrichprompts').checked);
-  await DB.setSetting('useStructuredPlanner', document.getElementById('set-structuredplanner').checked);
   await DB.setSetting('enableSequentialPages', document.getElementById('set-sequentialpages').checked);
-  const refBudgetVal = document.getElementById('set-refbudget').value;
-  await DB.setSetting('refBudget', refBudgetVal === 'auto' ? 'auto' : parseInt(refBudgetVal, 10));
   await DB.setSetting('singleImageCompanionMode', document.getElementById('set-companionmode').value);
   await DB.setSetting('singleImageModel', document.getElementById('set-singleimgmodel').value.trim());
   await DB.setSetting('imageRequestTimeoutMs', Number(document.getElementById('set-imagetimeout').value));
@@ -1003,19 +1001,14 @@ async function save() {
 }
 
 async function exportData() {
-  const rawPages = await DB.getAll(DB.STORES.pages);
-  // Strip imageUrl from panels — AI-generated images are large and can be regenerated
-  const strippedPages = prepareExportPages(rawPages);
-  const data = {
-    characters: await DB.getAll(DB.STORES.characters),
-    worlds: await DB.getAll(DB.STORES.worlds),
-    comics: await DB.getAll(DB.STORES.comics),
-    pages: strippedPages,
-    presets: await DB.getAll(DB.STORES.presets),
-    imagePresets: await DB.getAll(DB.STORES.imagePresets),
-    exportedAt: new Date().toISOString(),
-  };
-
+  const data = await buildBackup({
+    stores: DB.STORES,
+    getAll: async (storeName) => {
+      const records = await DB.getAll(storeName);
+      return storeName === DB.STORES.pages ? prepareExportPages(records) : records;
+    },
+    put: DB.put,
+  });
   await saveBackupFile(data);
 }
 
@@ -1029,8 +1022,7 @@ async function importData(input: any): Promise<void> {
     await importBackup(payload, {
       stores: DB.STORES,
       put: DB.put,
-      normalizeCharacter: DB.normalizeCharacterRecord,
-      normalizeWorld: DB.normalizeWorldRecord,
+      putBatch: DB.putBatch,
     });
 
     App.toast('Data imported!', 'success');
@@ -1056,6 +1048,9 @@ async function confirmClear() {
   const stores = [
     DB.STORES.characters,
     DB.STORES.worlds,
+    DB.STORES.locations,
+    DB.STORES.referenceAssets,
+    DB.STORES.classificationJobs,
     DB.STORES.comics,
     DB.STORES.pages,
     DB.STORES.presets,
@@ -1093,5 +1088,6 @@ const SettingsPage: PageModule & Record<string, any> = {
   reloadForUpdate,
   clearAppCache,
   downloadLocalModel,
+  runLegacyReferenceMigration,
 };
 export default SettingsPage;

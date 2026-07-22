@@ -77,11 +77,9 @@ inline HTML `onclick` handlers in template strings can reach them — `src/js/gl
 
 **DB layer (`db.ts`)**: a single `IDBDatabase` behind a module-level `open()` promise; all reads/writes go through
 `get`/`put`/`del`/`getAll`/`getByIndex` against named `STORES`. Schema upgrades happen in `onupgradeneeded`; the
-current version (4) rewrites existing character/world records in-place during the versionchange transaction to
-assign stable per-image UUIDs and explicit identity/location anchors (`normalizeCharacterRecord` /
-`normalizeWorldRecord`) — this must stay synchronous IDB-cursor code, not promise-based, because it runs inside the
-upgrade transaction. `commitPageAndComic()` writes a comic page and its parent comic record in one atomic
-multi-store transaction so continuity state can never diverge from the page it describes.
+current version (5) marks pre-unified-reference comics as read-only inside the versionchange transaction.
+`commitPageAndComic()` writes a comic page and its parent comic record in one atomic multi-store transaction so
+continuity state can never diverge from the page it describes.
 
 **Visual continuity (`visual-continuity.ts`)**: pure, DB/network-free domain logic (fully unit-testable) governing
 how character/location identity stays consistent across generated panels — an anchor image, a per-comic

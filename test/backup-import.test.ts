@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseBackup, importBackup, type BackupImportDependencies } from '../src/js/settings/backup-import.js';
+import {
+  buildBackup,
+  parseBackup,
+  importBackup,
+  type BackupImportDependencies,
+} from '../src/js/settings/backup-import.js';
 
 const STORES = {
   characters: 'characters',
   worlds: 'worlds',
+  locations: 'locations',
+  referenceAssets: 'referenceAssets',
+  classificationJobs: 'classificationJobs',
   comics: 'comics',
   pages: 'pages',
   presets: 'presets',
@@ -14,8 +22,7 @@ function makeDependencies(overrides: Partial<BackupImportDependencies> = {}): Ba
   return {
     stores: STORES,
     put: vi.fn().mockResolvedValue(undefined),
-    normalizeCharacter: vi.fn((record: unknown) => ({ record })),
-    normalizeWorld: vi.fn((record: unknown) => ({ record })),
+    getAll: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -85,13 +92,20 @@ describe('parseBackup', () => {
     ).toThrow('Invalid worlds data');
   });
 
-  it('ignores unknown top-level properties like exportedAt', () => {
+  it('retains version metadata and ignores unknown top-level properties', () => {
     const payload = parseBackup(
-      JSON.stringify({ characters: [{ id: 'c1' }], exportedAt: '2026-01-01T00:00:00.000Z', schemaVersion: 99 }),
+      JSON.stringify({
+        schemaVersion: 2,
+        worlds: [{ id: 'w1', name: 'Atlas' }],
+        characters: [{ id: 'c1', worldId: 'w1', name: 'Mara' }],
+        exportedAt: '2026-01-01T00:00:00.000Z',
+        unknown: true,
+      }),
     );
-    expect(payload.characters).toEqual([{ id: 'c1' }]);
-    expect((payload as Record<string, unknown>).exportedAt).toBeUndefined();
-    expect((payload as Record<string, unknown>).schemaVersion).toBeUndefined();
+    expect(payload.characters).toEqual([{ id: 'c1', worldId: 'w1', name: 'Mara' }]);
+    expect(payload.exportedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(payload.schemaVersion).toBe(2);
+    expect((payload as Record<string, unknown>).unknown).toBeUndefined();
   });
 
   it('propagates a SyntaxError for malformed JSON', () => {
@@ -109,23 +123,14 @@ describe('parseBackup', () => {
 });
 
 describe('importBackup', () => {
-  it('normalizes character and world records via the supplied dependencies before writing', async () => {
-    const dependencies = makeDependencies({
-      normalizeCharacter: vi.fn((record: unknown) => ({
-        record: { ...(record as Record<string, unknown>), normalized: 'char' },
-      })),
-      normalizeWorld: vi.fn((record: unknown) => ({
-        record: { ...(record as Record<string, unknown>), normalized: 'world' },
-      })),
-    });
+  it('writes canonical character and world records unmodified', async () => {
+    const dependencies = makeDependencies();
     const payload = parseBackup(JSON.stringify({ characters: [{ id: 'c1' }], worlds: [{ id: 'w1' }] }));
 
     await importBackup(payload, dependencies);
 
-    expect(dependencies.normalizeCharacter).toHaveBeenCalledWith({ id: 'c1' });
-    expect(dependencies.normalizeWorld).toHaveBeenCalledWith({ id: 'w1' });
-    expect(dependencies.put).toHaveBeenCalledWith('characters', { id: 'c1', normalized: 'char' });
-    expect(dependencies.put).toHaveBeenCalledWith('worlds', { id: 'w1', normalized: 'world' });
+    expect(dependencies.put).toHaveBeenCalledWith('characters', { id: 'c1', worldId: 'w1' });
+    expect(dependencies.put).toHaveBeenCalledWith('worlds', { id: 'w1' });
   });
 
   it('writes comics, pages, presets, and imagePresets unmodified (no normalizer)', async () => {
@@ -141,7 +146,7 @@ describe('importBackup', () => {
 
     await importBackup(payload, dependencies);
 
-    expect(dependencies.put).toHaveBeenCalledWith('comics', { id: 'co1' });
+    expect(dependencies.put).toHaveBeenCalledWith('comics', { id: 'co1', referenceSchemaVersion: 1 });
     expect(dependencies.put).toHaveBeenCalledWith('pages', { id: 'p1' });
     expect(dependencies.put).toHaveBeenCalledWith('presets', { id: 'pr1' });
     expect(dependencies.put).toHaveBeenCalledWith('imagePresets', { id: 'ip1' });
@@ -168,9 +173,9 @@ describe('importBackup', () => {
     await importBackup(payload, dependencies);
 
     expect(calls.map(([storeName]) => storeName)).toEqual([
-      'characters',
-      'characters',
       'worlds',
+      'characters',
+      'characters',
       'comics',
       'pages',
       'pages',
@@ -179,9 +184,9 @@ describe('importBackup', () => {
       'imagePresets',
     ]);
     expect(calls.map(([, record]) => (record as { id: string }).id)).toEqual([
+      'w1',
       'c1',
       'c2',
-      'w1',
       'co1',
       'p1',
       'p2',
@@ -201,18 +206,6 @@ describe('importBackup', () => {
     expect(dependencies.put).toHaveBeenCalledWith('presets', { id: 'pr1' });
   });
 
-  it('propagates a normalizer failure and stops further writes', async () => {
-    const dependencies = makeDependencies({
-      normalizeCharacter: vi.fn(() => {
-        throw new Error('bad character record');
-      }),
-    });
-    const payload = parseBackup(JSON.stringify({ characters: [{ id: 'c1' }], worlds: [{ id: 'w1' }] }));
-
-    await expect(importBackup(payload, dependencies)).rejects.toThrow('bad character record');
-    expect(dependencies.put).not.toHaveBeenCalled();
-  });
-
   it('propagates a write failure and stops further writes', async () => {
     const put = vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValue(undefined);
     const dependencies = makeDependencies({ put });
@@ -220,6 +213,145 @@ describe('importBackup', () => {
 
     await expect(importBackup(payload, dependencies)).rejects.toThrow('disk full');
     expect(put).toHaveBeenCalledTimes(1);
-    expect(put).toHaveBeenCalledWith('characters', { id: 'c1' });
+    expect(put).toHaveBeenCalledWith('worlds', { id: 'w1' });
+  });
+});
+
+describe('schema-v2 backups', () => {
+  it('exports only canonical schema-version-2 collections', async () => {
+    const records: Record<string, unknown[]> = {
+      worlds: [{ id: 'w1', name: 'Atlas', images: [{ dataUrl: 'old', embedding: [1] }] }],
+      locations: [{ id: 'l1', worldId: 'w1', name: 'Yard', aliases: [] }],
+      characters: [{ id: 'c1', worldId: 'w1', name: 'Mara', images: [{ dataUrl: 'old' }] }],
+      referenceAssets: [{ id: 'r1', worldId: 'w1', dataUrl: 'data:image/png;base64,abc' }],
+      classificationJobs: [{ id: 'j1', assetId: 'r1', worldId: 'w1' }],
+      comics: [{ id: 'co1', referenceSchemaVersion: 2 }],
+      pages: [{ id: 'p1', comicId: 'co1' }],
+      presets: [{ id: 'pr1' }],
+      imagePresets: [{ id: 'ip1' }],
+    };
+    const dependencies = makeDependencies({
+      getAll: vi.fn(async (storeName: string) => records[storeName] || []),
+    });
+
+    const payload = await buildBackup(dependencies, new Date('2026-07-22T00:00:00.000Z'));
+
+    expect(payload.schemaVersion).toBe(2);
+    expect(payload.referenceAssets).toEqual(records.referenceAssets);
+    expect(payload.locations).toEqual(records.locations);
+    expect(JSON.stringify(payload)).not.toMatch(/embedding|referenceKey|locationKey|"tag"|"images"/);
+  });
+
+  it('converts an unversioned backup before atomically writing canonical stores', async () => {
+    const dependencies = makeDependencies({ putBatch: vi.fn().mockResolvedValue(undefined) });
+    const payload = parseBackup(
+      JSON.stringify({
+        worlds: [{ id: 'w1', name: 'Atlas', images: ['data:image/png;base64,world'] }],
+        characters: [
+          {
+            id: 'c1',
+            name: 'Mara',
+            worldId: 'w1',
+            images: [{ id: 'portrait', dataUrl: 'data:image/png;base64,char' }],
+          },
+        ],
+        comics: [{ id: 'co1', worldId: 'w1', characterIds: ['c1'] }],
+      }),
+    );
+
+    await importBackup(payload, dependencies);
+
+    expect(dependencies.putBatch).toHaveBeenCalledOnce();
+    const writes = vi.mocked(dependencies.putBatch!).mock.calls[0][0];
+    expect(writes).toContainEqual([
+      'referenceAssets',
+      expect.objectContaining({ id: 'portrait', worldId: 'w1', characterIds: ['c1'] }),
+    ]);
+    expect(writes).toContainEqual(['comics', expect.objectContaining({ id: 'co1', referenceSchemaVersion: 1 })]);
+    expect(dependencies.put).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous legacy character ownership before writing', async () => {
+    const dependencies = makeDependencies({ putBatch: vi.fn().mockResolvedValue(undefined) });
+    const payload = parseBackup(
+      JSON.stringify({
+        worlds: [{ id: 'w1' }, { id: 'w2' }],
+        characters: [{ id: 'c1', images: [{ id: 'r1', dataUrl: 'data:image/png;base64,char' }] }],
+        comics: [
+          { id: 'co1', worldId: 'w1', characterIds: ['c1'] },
+          { id: 'co2', worldId: 'w2', characterIds: ['c1'] },
+        ],
+      }),
+    );
+
+    await expect(importBackup(payload, dependencies)).rejects.toThrow('parent world');
+    expect(dependencies.putBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed canonical records before the import transaction', () => {
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          schemaVersion: 2,
+          worlds: [{ id: 'w1', name: 'Atlas' }],
+          referenceAssets: [{ id: 'r1', worldId: 'missing', dataUrl: 'data:image/png;base64,x' }],
+        }),
+      ),
+    ).toThrow('Invalid referenceAssets data');
+  });
+
+  it.each([
+    ['an in-progress asset state', { classificationState: 'running' }, 'w1'],
+    ['an incomplete asset', { provenance: undefined }, 'w1'],
+    ['a cross-world location link', { locationId: 'l2' }, 'w1'],
+    ['a cross-world job link', {}, 'w2'],
+  ])('rejects %s', (_label, assetOverride, jobWorldId) => {
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          schemaVersion: 2,
+          worlds: [
+            { id: 'w1', name: 'Atlas' },
+            { id: 'w2', name: 'Elsewhere' },
+          ],
+          locations: [
+            { id: 'l1', worldId: 'w1', name: 'Yard', aliases: [] },
+            { id: 'l2', worldId: 'w2', name: 'Tower', aliases: [] },
+          ],
+          referenceAssets: [
+            {
+              id: 'r1',
+              worldId: 'w1',
+              dataUrl: 'data:image/png;base64,x',
+              subjectType: null,
+              use: null,
+              characterIds: [],
+              locationId: null,
+              facets: {},
+              description: '',
+              confidence: {},
+              provenance: { source: 'uploaded', metadata: 'local' },
+              classificationState: 'pending',
+              acceptedAsIs: false,
+              autoUse: true,
+              createdAt: 1,
+              updatedAt: 1,
+              ...assetOverride,
+            },
+          ],
+          classificationJobs: [
+            {
+              id: 'j1',
+              assetId: 'r1',
+              worldId: jobWorldId,
+              status: 'pending',
+              attemptCount: 0,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/Invalid (referenceAssets|classificationJobs) data/);
   });
 });

@@ -34,8 +34,6 @@ export interface CreateState {
   pages: any[];
   pageIds: string[];
   conversationHistory: Array<{ role: string; content: any }>;
-  referenceImages: any[];
-  characterImagesByName: Record<string, any>;
   characters: CharacterLike[];
   world: WorldLike | null;
   plannerMode: boolean;

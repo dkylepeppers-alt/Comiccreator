@@ -3,105 +3,6 @@ import 'fake-indexeddb/auto';
 
 const { default: DB } = await import('../src/js/db.js');
 
-describe('normalizeCharacterRecord', () => {
-  it('assigns stable IDs to gallery images and picks the primary as anchor', () => {
-    const legacy = {
-      id: 'c1',
-      name: 'Nova',
-      images: [
-        { dataUrl: 'data:image/png;base64,A', tag: 'default' },
-        { dataUrl: 'data:image/png;base64,B', tag: 'close-up' },
-      ],
-      primaryImageIndex: 1,
-    };
-    const { record, changed } = DB.normalizeCharacterRecord(legacy);
-    expect(changed).toBe(true);
-    expect(record.images.every((img) => typeof img.id === 'string' && img.id.length > 0)).toBe(true);
-    expect(record.identityAnchorImageId).toBe(record.images[1].id);
-    // Original object untouched (pure)
-    expect(legacy.images[0].id).toBeUndefined();
-  });
-
-  it('migrates legacy single-imageData records', () => {
-    const veryOld = { id: 'c2', name: 'Old', imageData: 'data:image/png;base64,OLD' };
-    const { record } = DB.normalizeCharacterRecord(veryOld);
-    expect(record.images.length).toBe(1);
-    expect(record.identityAnchorImageId).toBe(record.images[0].id);
-  });
-
-  it('falls back to the first valid image when primary index is invalid', () => {
-    const rec = {
-      id: 'c3',
-      name: 'X',
-      images: [{ id: 'i1', dataUrl: 'data:image/png;base64,A' }],
-      primaryImageIndex: 9,
-    };
-    const { record } = DB.normalizeCharacterRecord(rec);
-    expect(record.identityAnchorImageId).toBe('i1');
-  });
-
-  it('keeps a valid existing anchor and becomes idempotent after reference metadata migration', () => {
-    const rec = {
-      id: 'c4',
-      name: 'Y',
-      images: [
-        { id: 'i1', dataUrl: 'data:image/png;base64,A' },
-        { id: 'i2', dataUrl: 'data:image/png;base64,B' },
-      ],
-      primaryImageIndex: 0,
-      identityAnchorImageId: 'i2',
-    };
-    const first = DB.normalizeCharacterRecord(rec);
-    expect(first.changed).toBe(true);
-    expect(first.record.identityAnchorImageId).toBe('i2');
-    expect(first.record.images[0].referenceKey).toBeNull();
-    const second = DB.normalizeCharacterRecord(first.record);
-    expect(second.changed).toBe(false);
-    expect(second.record).toBe(first.record);
-  });
-
-  it('replaces a dangling anchor ID with a valid fallback', () => {
-    const rec = {
-      id: 'c5',
-      name: 'Z',
-      images: [{ id: 'i1', dataUrl: 'data:image/png;base64,A' }],
-      primaryImageIndex: 0,
-      identityAnchorImageId: 'deleted-image',
-    };
-    const { record, changed } = DB.normalizeCharacterRecord(rec);
-    expect(changed).toBe(true);
-    expect(record.identityAnchorImageId).toBe('i1');
-  });
-
-  it('yields a null anchor when no valid image exists', () => {
-    const { record } = DB.normalizeCharacterRecord({ id: 'c6', name: 'Empty', images: [], primaryImageIndex: 0 });
-    expect(record.identityAnchorImageId).toBeNull();
-  });
-});
-
-describe('normalizeWorldRecord', () => {
-  it('migrates legacy string images, assigns IDs, and sets a default anchor', () => {
-    const legacy = { id: 'w1', name: 'Town', images: ['data:image/png;base64,A', 'data:image/png;base64,B'] };
-    const { record, changed } = DB.normalizeWorldRecord(legacy);
-    expect(changed).toBe(true);
-    expect(record.images.length).toBe(2);
-    expect(record.images.every((img) => img.id)).toBe(true);
-    expect(record.defaultAnchorImageId).toBe(record.images[0].id);
-  });
-
-  it('normalizes location keys to slug form', () => {
-    const rec = {
-      id: 'w2',
-      name: 'Town',
-      images: [{ id: 'i1', dataUrl: 'data:image/png;base64,A', locationKey: 'Main Street!' }],
-      primaryImageIndex: 0,
-      defaultAnchorImageId: 'i1',
-    };
-    const { record } = DB.normalizeWorldRecord(rec);
-    expect(record.images[0].locationKey).toBe('main-street');
-  });
-});
-
 describe('deleteComicAndPages', () => {
   it('deletes the comic and all of its pages', async () => {
     const comicId = `comic-del-${Date.now()}`;
@@ -118,7 +19,7 @@ describe('deleteComicAndPages', () => {
   it('never leaves an orphaned page when it races a concurrent background write', async () => {
     const comicId = `comic-race-${Date.now()}`;
     const pageId = `page-race-${Date.now()}`;
-    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', pageCount: 1 });
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', pageCount: 1, referenceSchemaVersion: 2 });
 
     // Whichever of these two transactions IndexedDB happens to run first,
     // neither the comic nor the page it writes should survive both settling —
@@ -127,7 +28,7 @@ describe('deleteComicAndPages', () => {
     await Promise.all([
       DB.commitPageAndComic(
         { id: pageId, comicId, pageNum: 2, data: { title: 'P2', panels: [] }, createdAt: 1 },
-        { id: comicId, title: 'C', pageCount: 2 },
+        { id: comicId, title: 'C', pageCount: 2, referenceSchemaVersion: 2 },
       ),
       DB.deleteComicAndPages(comicId),
     ]);
@@ -141,13 +42,14 @@ describe('commitPageAndComic', () => {
   it('writes page and comic in one transaction when the comic exists', async () => {
     const comicId = `comic-${Date.now()}`;
     const pageId = `page-${Date.now()}`;
-    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', pageCount: 0 });
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', pageCount: 0, referenceSchemaVersion: 2 });
     const committed = await DB.commitPageAndComic(
       { id: pageId, comicId, pageNum: 1, data: { title: 'P1', panels: [] }, createdAt: 1 },
       {
         id: comicId,
         title: 'C',
         pageCount: 1,
+        referenceSchemaVersion: 2,
         visualContinuity: { schemaVersion: 1, characterStates: {}, updatedAt: 1 },
       },
     );
@@ -169,13 +71,25 @@ describe('commitPageAndComic', () => {
     expect(await DB.get(DB.STORES.pages, pageId)).toBeUndefined();
     expect(await DB.get(DB.STORES.comics, comicId)).toBeUndefined();
   });
+
+  it('rejects page and comic writes for read-only comics', async () => {
+    const comicId = `comic-legacy-${Date.now()}`;
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'Legacy', referenceSchemaVersion: 1 });
+    await expect(
+      DB.commitPageAndComic(
+        { id: `${comicId}-p1`, comicId, data: {} },
+        { id: comicId, title: 'Legacy', referenceSchemaVersion: 1 },
+      ),
+    ).rejects.toThrow('This comic is read-only');
+    expect(await DB.get(DB.STORES.pages, `${comicId}-p1`)).toBeUndefined();
+  });
 });
 
 describe('putPageIfComicExists', () => {
   it('writes the page and bumps the comic updatedAt when touchComic is true', async () => {
     const comicId = `comic-touch-${Date.now()}`;
     const pageId = `page-touch-${Date.now()}`;
-    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', updatedAt: 1 });
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'C', updatedAt: 1, referenceSchemaVersion: 2 });
     const committed = await DB.putPageIfComicExists(
       { id: pageId, comicId, pageNum: 1, data: { title: 'P1', panels: [] }, createdAt: 1 },
       comicId,
@@ -197,5 +111,13 @@ describe('putPageIfComicExists', () => {
     );
     expect(committed).toBe(false);
     expect(await DB.get(DB.STORES.pages, pageId)).toBeUndefined();
+  });
+
+  it('rejects page writes for read-only comics', async () => {
+    const comicId = `comic-legacy-page-${Date.now()}`;
+    await DB.put(DB.STORES.comics, { id: comicId, title: 'Legacy', referenceSchemaVersion: 1 });
+    await expect(DB.putPageIfComicExists({ id: `${comicId}-p1`, comicId, data: {} }, comicId)).rejects.toThrow(
+      'This comic is read-only',
+    );
   });
 });

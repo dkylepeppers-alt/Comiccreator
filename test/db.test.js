@@ -5,15 +5,17 @@ const { default: DB } = await import('../src/js/db.js');
 
 beforeEach(async () => {
   const db = await DB.open();
-  await Promise.all(Object.values(DB.STORES).map((storeName) => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite');
-      tx.objectStore(storeName).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  }));
+  await Promise.all(
+    Object.values(DB.STORES).map((storeName) => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    }),
+  );
 });
 
 describe('DB module', () => {
@@ -21,6 +23,9 @@ describe('DB module', () => {
     const db = await DB.open();
     expect(db.objectStoreNames.contains(DB.STORES.characters)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.worlds)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.locations)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.referenceAssets)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.classificationJobs)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.comics)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.pages)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.presets)).toBeTruthy();
@@ -34,6 +39,22 @@ describe('DB module', () => {
     const tx2 = db.transaction(DB.STORES.pages, 'readonly');
     expect(tx2.objectStore(DB.STORES.pages).indexNames.contains('comicId')).toBeTruthy();
     tx2.abort();
+
+    const tx3 = db.transaction(DB.STORES.referenceAssets, 'readonly');
+    const references = tx3.objectStore(DB.STORES.referenceAssets);
+    expect(references.indexNames.contains('worldId')).toBeTruthy();
+    expect(references.indexNames.contains('characterIds')).toBeTruthy();
+    expect(references.index('characterIds').multiEntry).toBeTruthy();
+    expect(references.indexNames.contains('locationId')).toBeTruthy();
+    expect(references.indexNames.contains('classificationState')).toBeTruthy();
+    tx3.abort();
+
+    const tx4 = db.transaction(DB.STORES.classificationJobs, 'readonly');
+    const jobs = tx4.objectStore(DB.STORES.classificationJobs);
+    expect(jobs.indexNames.contains('status')).toBeTruthy();
+    expect(jobs.indexNames.contains('assetId')).toBeTruthy();
+    expect(jobs.index('assetId').unique).toBeTruthy();
+    tx4.abort();
   });
 
   it('supports put/get/getAll/del', async () => {
@@ -107,56 +128,5 @@ describe('DB module', () => {
     const rows = await DB.getAll(DB.STORES.presets);
     expect(rows.length).toBe(1);
     expect(rows[0].id).toBe('new');
-  });
-});
-
-describe('DB.migrateWorld', () => {
-  const SAMPLE_IMAGE_URL = 'data:image/png;base64,abc';
-
-  it('returns null/undefined unchanged', () => {
-    expect(DB.migrateWorld(null)).toBe(null);
-    expect(DB.migrateWorld(undefined)).toBe(undefined);
-  });
-
-  it('converts legacy string image array to object format with embedding: null', () => {
-    const world = { id: '1', images: [SAMPLE_IMAGE_URL] };
-    const result = DB.migrateWorld(world);
-    expect(result.images.length).toBe(1);
-    expect(result.images[0].dataUrl).toBe(SAMPLE_IMAGE_URL);
-    expect(result.images[0].tag).toBe('establishing');
-    expect(result.images[0].description).toBe('');
-    expect(result.images[0].embedding).toBe(null);
-  });
-
-  it('adds embedding: null to already-migrated object-format images that are missing the field', () => {
-    const world = { id: '2', images: [{ dataUrl: 'data:image/png;base64,xyz', tag: 'interior', description: 'A cave' }] };
-    const result = DB.migrateWorld(world);
-    expect(result.images[0].embedding).toBe(null);
-    expect(result.images[0].description).toBe('A cave');
-  });
-
-  it('preserves an existing embedding value during migration', () => {
-    const embedding = [0.1, 0.2, 0.3];
-    const world = { id: '3', images: [{ dataUrl: 'data:image/png;base64,xyz', tag: 'exterior', description: 'Open sky', embedding }] };
-    const result = DB.migrateWorld(world);
-    expect(result.images[0].embedding).toEqual(embedding);
-  });
-
-  it('filters out null/undefined image entries', () => {
-    const world = { id: '4', images: [null, SAMPLE_IMAGE_URL, undefined] };
-    const result = DB.migrateWorld(world);
-    expect(result.images.length).toBe(1);
-  });
-
-  it('sets primaryImageIndex to 0 when missing', () => {
-    const world = { id: '5', images: [SAMPLE_IMAGE_URL] };
-    const result = DB.migrateWorld(world);
-    expect(result.primaryImageIndex).toBe(0);
-  });
-
-  it('does not mutate the original world object', () => {
-    const world = { id: '6', images: [SAMPLE_IMAGE_URL] };
-    DB.migrateWorld(world);
-    expect(typeof world.images[0]).toBe('string');
   });
 });

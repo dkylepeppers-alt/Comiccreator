@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { escHtml, timeAgo, getGenreEmoji, GENRES, dedupeByNameLatest, cosineSimilarity, sanitizeImagePrompt, buildImageEmbeddingText } from '../src/js/utils.js';
+import * as Utils from '../src/js/utils.js';
+import {
+  escHtml,
+  timeAgo,
+  getGenreEmoji,
+  GENRES,
+  dedupeByNameLatest,
+  cosineSimilarity,
+  sanitizeImagePrompt,
+} from '../src/js/utils.js';
 
 describe('utils escHtml', () => {
   it('handles nullish and empty', () => {
@@ -46,7 +55,7 @@ describe('utils genres', () => {
   it('has stable genre metadata', () => {
     expect(GENRES.length).toBe(9);
     expect(GENRES[GENRES.length - 1].id).toBe('custom');
-    expect(new Set(GENRES.map(g => g.id)).size).toBe(GENRES.length);
+    expect(new Set(GENRES.map((g) => g.id)).size).toBe(GENRES.length);
     for (const genre of GENRES) {
       expect(genre.id).toBeTruthy();
       expect(genre.name).toBeTruthy();
@@ -95,7 +104,7 @@ describe('utils cosineSimilarity', () => {
   });
 
   it('returns -1 for opposite vectors', () => {
-    expect(Math.abs(cosineSimilarity([1, 0], [-1, 0]) - (-1)) < 1e-9).toBeTruthy();
+    expect(Math.abs(cosineSimilarity([1, 0], [-1, 0]) - -1) < 1e-9).toBeTruthy();
   });
 
   it('returns 0 for orthogonal vectors', () => {
@@ -150,58 +159,8 @@ describe('utils sanitizeImagePrompt', () => {
   });
 });
 
-describe('utils buildImageEmbeddingText', () => {
-  it('combines tag, name, and description with colon separator', () => {
-    expect(buildImageEmbeddingText({ tag: 'action-pose', description: 'Fist raised' }, 'Iron Man')).toBe('action-pose Iron Man: Fist raised');
-  });
-
-  it('omits default tag but includes name', () => {
-    expect(buildImageEmbeddingText({ tag: 'default', description: 'Red cape flowing' }, 'Superman')).toBe('Superman: Red cape flowing');
-  });
-
-  it('omits establishing tag but includes name for world images', () => {
-    expect(buildImageEmbeddingText({ tag: 'establishing', description: 'Skyline at dusk' }, 'Metropolis')).toBe('Metropolis: Skyline at dusk');
-  });
-
-  it('omits custom tag but includes name', () => {
-    expect(buildImageEmbeddingText({ tag: 'custom', description: 'Unique pose' }, 'Hero')).toBe('Hero: Unique pose');
-  });
-
-  it('uses non-default tag without name', () => {
-    expect(buildImageEmbeddingText({ tag: 'front-view', description: 'Full body shot' }, '')).toBe('front-view: Full body shot');
-  });
-
-  it('returns description only when tag is default and no name', () => {
-    expect(buildImageEmbeddingText({ tag: 'default', description: 'Cape flowing' }, '')).toBe('Cape flowing');
-  });
-
-  it('returns description only when no tag and no name', () => {
-    expect(buildImageEmbeddingText({ tag: '', description: 'A hero standing tall' }, '')).toBe('A hero standing tall');
-  });
-
-  it('handles null/undefined img gracefully', () => {
-    expect(buildImageEmbeddingText(null, 'Name')).toBe('Name');
-    expect(buildImageEmbeddingText(undefined, '')).toBe('');
-  });
-
-  it('includes world image tag like night', () => {
-    expect(buildImageEmbeddingText({ tag: 'night', description: 'Neon-lit alley' }, 'Neo-Tokyo')).toBe('night Neo-Tokyo: Neon-lit alley');
-  });
-
-  it('handles name with no description', () => {
-    expect(buildImageEmbeddingText({ tag: 'close-up', description: '' }, 'Batman')).toBe('close-up Batman');
-  });
-
-  it('trims whitespace-only contextName and description', () => {
-    // whitespace-only name treated as missing
-    expect(buildImageEmbeddingText({ tag: 'front-view', description: 'Full body shot' }, '   ')).toBe('front-view: Full body shot');
-    // whitespace-only description treated as missing
-    expect(buildImageEmbeddingText({ tag: 'front-view', description: '  ' }, 'Batman')).toBe('front-view Batman');
-    // both whitespace-only
-    expect(buildImageEmbeddingText({ tag: 'default', description: '  ' }, '   ')).toBe('');
-  });
-
-  it('trims leading/trailing whitespace from description and name', () => {
-    expect(buildImageEmbeddingText({ tag: 'action-pose', description: '  Fist raised  ' }, '  Iron Man  ')).toBe('action-pose Iron Man: Fist raised');
+describe('removed embedding helpers', () => {
+  it('exports no image embedding text helper', () => {
+    expect(Utils.buildImageEmbeddingText).toBeUndefined();
   });
 });

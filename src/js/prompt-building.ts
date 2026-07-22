@@ -18,10 +18,9 @@ export interface PlannerManifest {
     role?: string;
     description?: string;
     powers?: string;
-    references?: Array<{ key: string; description?: string }>;
   }>;
-  world?: { name: string; description?: string; details?: string; atmosphere?: string } | null;
-  locationKeys?: string[];
+  world?: { id?: string; name: string; description?: string; details?: string; atmosphere?: string } | null;
+  locations?: Array<{ id: string; name: string; description?: string }>;
   customSystemPrompt?: string | null;
   panelCount?: string;
 }
@@ -174,17 +173,19 @@ export function buildPlannerSystemPrompt(manifest: PlannerManifest): string {
       if (c.role) line += ` (${c.role})`;
       if (c.description) line += `\n  ${c.description}`;
       if (c.powers) line += `\n  Abilities: ${c.powers}`;
-      if (c.references?.length) {
-        line += `\n  Allowed reference keys: ${c.references.map((reference) => `"${reference.key}"${reference.description ? ` (${reference.description})` : ''}`).join(', ')}`;
-      }
       return line;
     })
     .join('\n');
 
   const locationLines =
-    manifest.locationKeys && manifest.locationKeys.length > 0
-      ? manifest.locationKeys.map((k) => `- "${k}"`).join('\n')
-      : '(none — always use null for locationKey)';
+    manifest.locations && manifest.locations.length > 0
+      ? manifest.locations
+          .map(
+            (location) =>
+              `- id: "${location.id}"  name: ${location.name}${location.description ? ` — ${location.description}` : ''}`,
+          )
+          .join('\n')
+      : '(none — always use null for locationId)';
 
   let worldBlock = '';
   if (manifest.world) {
@@ -205,18 +206,16 @@ Your response must be a JSON object with this exact structure:
     "narration": "Scene-setting narration text (optional, may be empty)",
     "dialogue": [ { "speaker": "Character Name", "text": "What they say" } ],
     "visual": {
-      "locationKey": "one of the allowed location keys, or null",
+      "locationId": "one of the allowed location IDs, or null",
       "environment": "brief scene-specific environmental description",
-      "shot": "shot type (wide establishing shot, medium shot, close-up, over-the-shoulder, Dutch angle...)",
-      "composition": "composition notes (rule of thirds, foreground/background layers, diagonals...)",
-      "lighting": "lighting style (rim lighting, chiaroscuro, soft diffused light, hard shadows...)",
-      "colorMood": "color mood (desaturated, high contrast, warm palette...)",
+      "framing": "extreme-close-up | close-up | medium-close-up | medium | three-quarter | full-body | wide | establishing | detail",
+      "cameraElevation": "eye-level | high | low | overhead | aerial | ground-level",
+      "lighting": "brief lighting description",
       "characters": [
-        { "characterId": "id from the CHARACTER MANIFEST", "referenceKey": "an allowed key for this character, or null", "action": "what they are doing", "pose": "body position", "expression": "facial expression" }
+        { "characterId": "id from the CHARACTER MANIFEST", "appearanceState": "named visible state such as red-coat, or null", "action": "what they are doing", "pose": "body position", "expression": "facial expression" }
       ],
-      "keyProps": ["important objects visible in the panel"],
-      "focalPoint": "what the eye should land on (optional)",
-      "layoutHint": "wide | balanced | tall (optional)"
+      "interaction": { "participantIds": ["character IDs"], "type": "conversation, embrace, fight, handoff, or another concise relationship" },
+      "keyProps": ["important objects visible in the panel"]
     },
     "visualStateChanges": [
       {
@@ -242,17 +241,19 @@ Generate ${panelCount} panels per page.
 CHARACTER MANIFEST (the ONLY allowed characterId values):
 ${characterLines}
 
-ALLOWED LOCATION KEYS (the ONLY allowed locationKey values):
+LOCATION MANIFEST (the ONLY allowed locationId values):
 ${locationLines}
 
 STRICT PLANNING RULES:
 - Use ONLY characterId values from the CHARACTER MANIFEST. Never invent IDs and never use character names as IDs.
 - List EVERY visible character in visual.characters, including silent background cast whose identity matters.
-- Use referenceKey only when one of that character's listed references is a strong visual match; otherwise use null. Never invent a reference key.
+- Use appearanceState only for a concise, story-relevant visible state. Use null when the identity state is sufficient.
+- interaction.participantIds must contain only CHARACTER MANIFEST IDs and must describe the exact visible participants.
+- Use only the listed framing and cameraElevation values.
 - Do NOT describe any character's physical appearance, face, hair color, build, or clothing in visual fields. Identity and wardrobe are supplied separately by the application.
 - Report a wardrobe, hair, injury, carried-item, disguise, or transformation change ONLY in visualStateChanges, and ONLY when the story visibly changes it. Never redesign clothing for variety.
 - In "set", omit any field that does not change. A present value fully replaces the old value.
-- Use only the allowed locationKey values, or null when no listed location fits.
+- Use only LOCATION MANIFEST IDs for locationId, or null when no listed location fits.
 - Do not specify art style anywhere; the application's image preset is authoritative.
 - Provide 2-3 meaningful choices at the end that affect the story direction.${worldBlock}`;
 }

@@ -3,6 +3,7 @@ import type { PageModule } from '../utils.js';
 import { escHtml, timeAgo, getGenreEmoji, GENRES } from '../utils.js';
 import DB from '../db.js';
 import { saveRenderedPageImage } from '../export-actions.js';
+import { isComicReadOnly } from '../references/comic-access.js';
 
 /**
  * Library Page - View, resume, export, and delete comics
@@ -56,6 +57,7 @@ function renderComicItems(filtered: any[]): string {
           ${escHtml(c.genreName || c.genre)} &middot; ${c.pageCount || 0} pages
           ${c.finished ? ' &middot; Complete' : ' &middot; In Progress'}
           &middot; ${timeAgo(c.updatedAt || c.createdAt)}
+          ${isComicReadOnly(c) ? ' &middot; Read-only legacy snapshot' : ''}
         </div>
       </div>
       <div class="list-item-actions">
@@ -150,6 +152,7 @@ async function renderComic(comicId: string): Promise<string> {
 
   const pages = await DB.getByIndex(DB.STORES.pages, 'comicId', comicId);
   pages.sort((a, b) => a.pageNum - b.pageNum);
+  const readOnly = isComicReadOnly(comic);
 
   return `
     <div class="slide-up">
@@ -158,12 +161,13 @@ async function renderComic(comicId: string): Promise<string> {
         <div style="flex:1;">
           <h2 class="section-title" style="margin:0;">${escHtml(comic.title)}</h2>
           <p class="text-sm text-muted">${escHtml(comic.genreName || comic.genre)} &middot; ${pages.length} pages</p>
+          ${readOnly ? '<span class="reference-status">Read-only legacy snapshot</span>' : ''}
         </div>
       </div>
 
       <!-- Actions -->
       <div class="btn-group mb-md" style="flex-wrap:wrap;">
-        ${!comic.finished ? `<button class="btn btn-primary btn-sm" data-navigate="create" data-param="${comic.id}">Continue Story</button>` : ''}
+        ${!readOnly && !comic.finished ? `<button class="btn btn-primary btn-sm" data-navigate="create" data-param="${comic.id}">Continue Story</button>` : ''}
         <button class="btn btn-secondary btn-sm" data-action="exportPDF" data-args="${escHtml(JSON.stringify([comic.id]))}">Export PDF</button>
         <button class="btn btn-danger btn-sm" data-action="deleteComic" data-args="${escHtml(JSON.stringify([comic.id, comic.title]))}">Delete</button>
       </div>

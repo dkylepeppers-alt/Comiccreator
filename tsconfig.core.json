@@ -4,6 +4,7 @@
     "strict": true
   },
   "include": [
+    "src/js/references/**/*.ts",
     "src/js/generation/continuity/**/*.ts",
     "src/js/visual-continuity.ts",
     "src/js/generation-progress.ts",

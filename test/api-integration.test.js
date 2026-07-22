@@ -2,13 +2,15 @@ import { describe, it, beforeEach, expect } from 'vitest';
 import 'fake-indexeddb/auto';
 
 // Mock browser APIs needed by api.js (Image, canvas)
-globalThis.Image = globalThis.Image || class {
-  set src(_value) {
-    this.width = 256;
-    this.height = 256;
-    if (this.onload) this.onload();
-  }
-};
+globalThis.Image =
+  globalThis.Image ||
+  class {
+    set src(_value) {
+      this.width = 256;
+      this.height = 256;
+      if (this.onload) this.onload();
+    }
+  };
 
 if (typeof globalThis.document === 'undefined') {
   globalThis.document = {
@@ -37,33 +39,39 @@ const { default: API } = await import('../src/js/api.js');
 
 function sseResponse(lines) {
   const enc = new TextEncoder();
-  return new Response(new ReadableStream({
-    start(controller) {
-      for (const line of lines) controller.enqueue(enc.encode(line));
-      controller.close();
-    },
-  }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const line of lines) controller.enqueue(enc.encode(line));
+        controller.close();
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+  );
 }
 
 /** Clear all IndexedDB stores and reset API caches between tests */
 async function clearAllStores() {
   API._resetCacheForTesting();
   const db = await DB.open();
-  await Promise.all(Object.values(DB.STORES).map((storeName) => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite');
-      tx.objectStore(storeName).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  }));
+  await Promise.all(
+    Object.values(DB.STORES).map((storeName) => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    }),
+  );
 }
 
 describe('API integration', () => {
   beforeEach(async () => {
     await clearAllStores();
-    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
     await DB.setSetting('apiKey', 'test-key');
     await DB.setSetting('model', 'gpt-4o-mini');
   });
@@ -91,16 +99,20 @@ describe('API integration', () => {
 
   it('chatCompletionStream accumulates chunks and skips non-json frames', async () => {
     const deltas = [];
-    globalThis.fetch = async () => sseResponse([
-      'data: {"choices":[{"delta":{"content":"Hel"}}]}\n',
-      'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
-      'data: not-json\n',
-      'data: [DONE]\n',
-      '\n',
-    ]);
+    globalThis.fetch = async () =>
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}\n',
+        'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
+        'data: not-json\n',
+        'data: [DONE]\n',
+        '\n',
+      ]);
     const text = await API.chatCompletionStream([], (chunk, full) => deltas.push([chunk, full]));
     expect(text).toBe('Hello');
-    expect(deltas).toEqual([['Hel', 'Hel'], ['lo', 'Hello']]);
+    expect(deltas).toEqual([
+      ['Hel', 'Hel'],
+      ['lo', 'Hello'],
+    ]);
   });
 
   it('fetchTextModels sorts, caches, force-refreshes and falls back', async () => {
@@ -112,48 +124,51 @@ describe('API integration', () => {
       return new Response(JSON.stringify({ data: [{ id: 'z' }, { id: 'a' }] }), { status: 200 });
     };
     const first = await API.fetchTextModels();
-    expect(first.map(m => m.id)).toEqual(['a', 'z']);
+    expect(first.map((m) => m.id)).toEqual(['a', 'z']);
     mode = 'error';
     const cached = await API.fetchTextModels();
-    expect(cached.map(m => m.id)).toEqual(['a', 'z']);
+    expect(cached.map((m) => m.id)).toEqual(['a', 'z']);
     const forced = await API.fetchTextModels(true);
-    expect(forced.map(m => m.id)).toEqual(['a', 'z']);
+    expect(forced.map((m) => m.id)).toEqual(['a', 'z']);
     expect(fetchCalls).toBe(2);
   });
 
   it('fetchTextModels maps capabilities.vision and capabilities.tool_calling', async () => {
-    globalThis.fetch = async () => new Response(JSON.stringify({
-      data: [
-        // Real NanoGPT API shape: capabilities nested object
-        {
-          id: 'gpt-4o',
-          name: 'GPT-4o',
-          owned_by: 'openai',
-          context_length: 128000,
-          capabilities: { vision: true, tool_calling: true, reasoning: false },
-          pricing: { prompt: 2.5, completion: 10, currency: 'USD', unit: 'per_million_tokens' },
-        },
-        // Model with no capabilities / vision & tools both false
-        {
-          id: 'no-caps-model',
-          name: 'No Caps',
-          owned_by: 'other',
-          capabilities: { vision: false, tool_calling: false },
-        },
-      ],
-    }), { status: 200 });
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            // Real NanoGPT API shape: capabilities nested object
+            {
+              id: 'gpt-4o',
+              name: 'GPT-4o',
+              owned_by: 'openai',
+              context_length: 128000,
+              capabilities: { vision: true, tool_calling: true, reasoning: false },
+              pricing: { prompt: 2.5, completion: 10, currency: 'USD', unit: 'per_million_tokens' },
+            },
+            // Model with no capabilities / vision & tools both false
+            {
+              id: 'no-caps-model',
+              name: 'No Caps',
+              owned_by: 'other',
+              capabilities: { vision: false, tool_calling: false },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
 
     const models = await API.fetchTextModels(true);
 
-    const gpt4o = models.find(m => m.id === 'gpt-4o');
+    const gpt4o = models.find((m) => m.id === 'gpt-4o');
     expect(gpt4o.supports_vision).toBe(true);
     expect(gpt4o.supports_tools).toBe(true);
 
-    const noCaps = models.find(m => m.id === 'no-caps-model');
+    const noCaps = models.find((m) => m.id === 'no-caps-model');
     expect(noCaps.supports_vision).toBe(false);
     expect(noCaps.supports_tools).toBe(false);
   });
-
 
   it('fetchImageModels caches and falls back to defaults when empty cache', async () => {
     globalThis.fetch = async () => {
@@ -168,15 +183,23 @@ describe('API integration', () => {
     const calls = [];
     globalThis.fetch = async (url, opts) => {
       calls.push({ url, opts });
-      return new Response(JSON.stringify({
-        data: [
-          // Real API shape: sizes under supported_parameters.resolutions
-          { id: 'gpt-image-1', name: 'GPT 4o Image', owned_by: 'openai', supported_parameters: { resolutions: ['1024x1024', '1536x1024', '1024x1536', 'auto'] } },
-          // Legacy field names still supported as fallbacks
-          { id: 'flux-pro', name: 'Flux Pro', owned_by: 'Black Forest Labs', sizes: ['512x512', '1024x1024'] },
-          { id: 'dall-e-3', name: 'DALL-E 3', owned_by: 'OpenAI', supported_sizes: ['1024x1024', '1024x1792'] },
-        ],
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          data: [
+            // Real API shape: sizes under supported_parameters.resolutions
+            {
+              id: 'gpt-image-1',
+              name: 'GPT 4o Image',
+              owned_by: 'openai',
+              supported_parameters: { resolutions: ['1024x1024', '1536x1024', '1024x1536', 'auto'] },
+            },
+            // Legacy field names still supported as fallbacks
+            { id: 'flux-pro', name: 'Flux Pro', owned_by: 'Black Forest Labs', sizes: ['512x512', '1024x1024'] },
+            { id: 'dall-e-3', name: 'DALL-E 3', owned_by: 'OpenAI', supported_sizes: ['1024x1024', '1024x1792'] },
+          ],
+        }),
+        { status: 200 },
+      );
     };
 
     const models = await API.fetchImageModels(true);
@@ -186,11 +209,11 @@ describe('API integration', () => {
     expect(calls[0].opts.headers.Authorization).toBe('Bearer test-key');
 
     // Models should be sorted by id and sizes captured from all field variants
-    const gpt = models.find(m => m.id === 'gpt-image-1');
+    const gpt = models.find((m) => m.id === 'gpt-image-1');
     expect(gpt.sizes).toEqual(['1024x1024', '1536x1024', '1024x1536', 'auto']);
-    const dall3 = models.find(m => m.id === 'dall-e-3');
+    const dall3 = models.find((m) => m.id === 'dall-e-3');
     expect(dall3.sizes).toEqual(['1024x1024', '1024x1792']);
-    const flux = models.find(m => m.id === 'flux-pro');
+    const flux = models.find((m) => m.id === 'flux-pro');
     expect(flux.sizes).toEqual(['512x512', '1024x1024']);
 
     // Sizes should be available via getModelSizes after fetch
@@ -199,21 +222,37 @@ describe('API integration', () => {
   });
 
   it('fetchImageModels maps capabilities.image_to_image to supports_edit', async () => {
-    globalThis.fetch = async () => new Response(JSON.stringify({
-      data: [
-        // Real NanoGPT API shape: edit support under capabilities.image_to_image
-        { id: 'flux-kontext', name: 'Flux Kontext', owned_by: 'Black Forest Labs', capabilities: { image_generation: true, image_to_image: true }, supported_parameters: { resolutions: ['1024x1024'] } },
-        // Text-to-image only model
-        { id: 'nano-banana-pro-ultra', name: 'NBP Ultra', owned_by: 'gemini', capabilities: { image_generation: true, image_to_image: false }, supported_parameters: { resolutions: ['4k', '8k'] } },
-      ],
-    }), { status: 200 });
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            // Real NanoGPT API shape: edit support under capabilities.image_to_image
+            {
+              id: 'flux-kontext',
+              name: 'Flux Kontext',
+              owned_by: 'Black Forest Labs',
+              capabilities: { image_generation: true, image_to_image: true },
+              supported_parameters: { resolutions: ['1024x1024'] },
+            },
+            // Text-to-image only model
+            {
+              id: 'nano-banana-pro-ultra',
+              name: 'NBP Ultra',
+              owned_by: 'gemini',
+              capabilities: { image_generation: true, image_to_image: false },
+              supported_parameters: { resolutions: ['4k', '8k'] },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
 
     const models = await API.fetchImageModels(true);
 
-    const editModel = models.find(m => m.id === 'flux-kontext');
+    const editModel = models.find((m) => m.id === 'flux-kontext');
     expect(editModel.supports_edit).toBe(true);
 
-    const textOnly = models.find(m => m.id === 'nano-banana-pro-ultra');
+    const textOnly = models.find((m) => m.id === 'nano-banana-pro-ultra');
     expect(textOnly.supports_edit).toBe(false);
   });
 
@@ -293,10 +332,7 @@ describe('API integration', () => {
     };
 
     const result = await API.generateImage('draw scene', {
-      imageDataUrls: [
-        'data:image/png;base64,aGVsbG8=',
-        'data:image/png;base64,aGVsbG8=',
-      ],
+      imageDataUrls: ['data:image/png;base64,aGVsbG8=', 'data:image/png;base64,aGVsbG8='],
     });
 
     expect(result).toBe('ref-img');
@@ -325,101 +361,6 @@ describe('API integration', () => {
     expect(requestBody.size).toBeTruthy();
   });
 
-  it('generateEmbedding returns null when no API key is set', async () => {
-    await DB.setSetting('apiKey', '');
-    const result = await API.generateEmbedding('test text');
-    expect(result).toBe(null);
-  });
-
-  it('generateEmbedding reads model from settings and sends dimensions for supported models', async () => {
-    const calls = [];
-    const fakeEmbedding = [0.1, -0.2, 0.3, 0.4];
-    globalThis.fetch = async (url, opts) => {
-      calls.push({ url, body: JSON.parse(opts.body), headers: opts.headers });
-      return new Response(JSON.stringify({
-        object: 'list',
-        data: [{ object: 'embedding', index: 0, embedding: fakeEmbedding }],
-        model: 'text-embedding-3-small',
-        usage: { prompt_tokens: 5, total_tokens: 5 },
-      }), { status: 200 });
-    };
-
-    // Default model (text-embedding-3-small) supports dimension reduction
-    const result = await API.generateEmbedding('hero with cape');
-
-    expect(result).toEqual(fakeEmbedding);
-    expect(calls.length).toBe(1);
-    expect(calls[0].url.endsWith('/embeddings')).toBeTruthy();
-    expect(calls[0].headers['Authorization']).toBe('Bearer test-key');
-    expect(calls[0].body.input).toBe('hero with cape');
-    expect(calls[0].body.model).toBe('text-embedding-3-small');
-    expect(calls[0].body.encoding_format).toBe('float');
-    expect(calls[0].body.dimensions).toBe(256);
-  });
-
-  it('generateEmbedding reads configured embeddingModel from settings', async () => {
-    await DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
-    let requestBody;
-    globalThis.fetch = async (_url, opts) => {
-      requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({
-        data: [{ embedding: [0.5, 0.5] }],
-      }), { status: 200 });
-    };
-
-    await API.generateEmbedding('test');
-    expect(requestBody.model).toBe('qwen/qwen3-embedding-8b');
-    expect(requestBody.dimensions).toBe(256);
-  });
-
-  it('generateEmbedding omits dimensions for models that do not support it', async () => {
-    let requestBody;
-    globalThis.fetch = async (_url, opts) => {
-      requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({
-        data: [{ embedding: [0.5, 0.5] }],
-      }), { status: 200 });
-    };
-
-    // BAAI/bge-m3 does NOT support dimension reduction
-    await API.generateEmbedding('test', { model: 'BAAI/bge-m3' });
-    expect(requestBody.model).toBe('BAAI/bge-m3');
-    expect(requestBody.dimensions).toBe(undefined);
-  });
-
-  it('generateEmbedding uses explicit options.model override over settings', async () => {
-    await DB.setSetting('embeddingModel', 'qwen/qwen3-embedding-8b');
-    let requestBody;
-    globalThis.fetch = async (_url, opts) => {
-      requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({
-        data: [{ embedding: [0.5, 0.5] }],
-      }), { status: 200 });
-    };
-
-    await API.generateEmbedding('test', { model: 'text-embedding-3-large' });
-    expect(requestBody.model).toBe('text-embedding-3-large');
-    expect(requestBody.dimensions).toBe(256);
-  });
-
-  it('generateEmbedding returns null on HTTP error', async () => {
-    globalThis.fetch = async () => new Response('{"error":{"message":"bad request"}}', { status: 400 });
-    const result = await API.generateEmbedding('test text');
-    expect(result).toBe(null);
-  });
-
-  it('generateEmbedding returns null on network error', async () => {
-    globalThis.fetch = async () => { throw new Error('network down'); };
-    const result = await API.generateEmbedding('test text');
-    expect(result).toBe(null);
-  });
-
-  it('generateEmbedding returns null when response has no embedding data', async () => {
-    globalThis.fetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
-    const result = await API.generateEmbedding('test text');
-    expect(result).toBe(null);
-  });
-
   it('generateImageCaption returns null when no API key is set', async () => {
     await DB.setSetting('apiKey', '');
     const result = await API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
@@ -428,13 +369,14 @@ describe('API integration', () => {
 
   it('generateImageCaption returns null (silently) for non-vision models without calling fetch', async () => {
     // Seed the model cache with a model that explicitly has supports_vision = false
-    await DB.setSetting('cachedTextModels', [
-      { id: 'no-vision-model', supports_vision: false, supports_tools: false },
-    ]);
+    await DB.setSetting('cachedTextModels', [{ id: 'no-vision-model', supports_vision: false, supports_tools: false }]);
     await DB.setSetting('cachedTextModelsAt', Date.now());
     await DB.setSetting('captionModel', 'no-vision-model');
     let fetchCalled = false;
-    globalThis.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }); };
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      return new Response('{}', { status: 200 });
+    };
     const result = await API.generateImageCaption('data:image/png;base64,abc', { type: 'character', name: 'Hero' });
     expect(result).toBe(null);
     expect(fetchCalled).toBe(false);
@@ -444,11 +386,18 @@ describe('API integration', () => {
     const calls = [];
     globalThis.fetch = async (url, opts) => {
       calls.push({ url, body: JSON.parse(opts.body) });
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'A hero in red armor.' } }] }), { status: 200 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'A hero in red armor.' } }] }), {
+        status: 200,
+      });
     };
     // With explicit captionModel
     await DB.setSetting('captionModel', 'gpt-4o');
-    const r1 = await API.generateImageCaption('data:image/jpeg;base64,abc', { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose' });
+    const r1 = await API.generateImageCaption('data:image/jpeg;base64,abc', {
+      type: 'character',
+      name: 'Iron Man',
+      role: 'hero',
+      tag: 'action-pose',
+    });
     expect(r1).toBe('A hero in red armor.');
     expect(calls[0].body.model).toBe('gpt-4o');
     // Without captionModel, falls back to text model from settings
@@ -461,13 +410,17 @@ describe('API integration', () => {
     let requestBody;
     globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Neon skyline at dusk.' } }] }), { status: 200 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Neon skyline at dusk.' } }] }), {
+        status: 200,
+      });
     };
     await DB.setSetting('captionModel', 'gpt-4o');
-    const result = await API.generateImageCaption(
-      'data:image/png;base64,aGVsbG8=',
-      { type: 'world', name: 'Neo-Tokyo', era: '2099', tag: 'night' },
-    );
+    const result = await API.generateImageCaption('data:image/png;base64,aGVsbG8=', {
+      type: 'world',
+      name: 'Neo-Tokyo',
+      era: '2099',
+      tag: 'night',
+    });
     expect(result).toBe('Neon skyline at dusk.');
     // System message is first to frame the comic context
     const sysMsg = requestBody.messages[0];
@@ -477,11 +430,11 @@ describe('API integration', () => {
     const userMsg = requestBody.messages[1];
     expect(userMsg.role).toBe('user');
     expect(Array.isArray(userMsg.content)).toBeTruthy();
-    const imagePart = userMsg.content.find(c => c.type === 'image_url');
+    const imagePart = userMsg.content.find((c) => c.type === 'image_url');
     expect(imagePart).toBeTruthy();
     // The image URL should be a compressed JPEG (from compressDataUrl)
     expect(imagePart.image_url.url.startsWith('data:image/')).toBeTruthy();
-    const textPart = userMsg.content.find(c => c.type === 'text');
+    const textPart = userMsg.content.find((c) => c.type === 'text');
     expect(textPart.text.includes('Neo-Tokyo')).toBeTruthy();
     expect(textPart.text.includes('2099')).toBeTruthy();
     expect(textPart.text.includes('night')).toBeTruthy();
@@ -494,15 +447,21 @@ describe('API integration', () => {
     let requestBody;
     globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Iron Man stands in red and gold armor.' } }] }), { status: 200 });
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Iron Man stands in red and gold armor.' } }] }),
+        { status: 200 },
+      );
     };
     await DB.setSetting('captionModel', 'gpt-4o');
-    await API.generateImageCaption(
-      'data:image/png;base64,aGVsbG8=',
-      { type: 'character', name: 'Iron Man', role: 'hero', tag: 'action-pose', appearance: 'red and gold armor' },
-    );
+    await API.generateImageCaption('data:image/png;base64,aGVsbG8=', {
+      type: 'character',
+      name: 'Iron Man',
+      role: 'hero',
+      tag: 'action-pose',
+      appearance: 'red and gold armor',
+    });
     const userMsg = requestBody.messages[1];
-    const textPart = userMsg.content.find(c => c.type === 'text');
+    const textPart = userMsg.content.find((c) => c.type === 'text');
     // Prompt must mention character name and request name-anchored description
     expect(textPart.text.includes('Iron Man')).toBeTruthy();
     expect(textPart.text.includes('red and gold armor')).toBeTruthy();
@@ -511,7 +470,9 @@ describe('API integration', () => {
 
   it('generateImageCaption returns null on API error', async () => {
     await DB.setSetting('captionModel', 'gpt-4o');
-    globalThis.fetch = async () => { throw new Error('network down'); };
+    globalThis.fetch = async () => {
+      throw new Error('network down');
+    };
     const result = await API.generateImageCaption('data:image/png;base64,abc', {});
     expect(result).toBe(null);
   });
@@ -520,15 +481,23 @@ describe('API integration', () => {
     let requestBody;
     globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova shown from front, side, and back views wearing silver armor.' } }] }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'Nova shown from front, side, and back views wearing silver armor.' } }],
+        }),
+        { status: 200 },
+      );
     };
     await DB.setSetting('captionModel', 'gpt-4o');
-    const result = await API.generateImageCaption(
-      'data:image/png;base64,aGVsbG8=',
-      { type: 'character', name: 'Nova', role: 'hero', tag: 'character-sheet', appearance: 'silver armor, blue cape' },
-    );
+    const result = await API.generateImageCaption('data:image/png;base64,aGVsbG8=', {
+      type: 'character',
+      name: 'Nova',
+      role: 'hero',
+      tag: 'character-sheet',
+      appearance: 'silver armor, blue cape',
+    });
     expect(result).toBe('Nova shown from front, side, and back views wearing silver armor.');
-    const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
+    const textPart = requestBody.messages[1].content.find((c) => c.type === 'text');
     expect(textPart.text.includes('character sheet')).toBeTruthy();
     expect(textPart.text.includes('multiple')).toBeTruthy();
     expect(textPart.text.includes('Nova')).toBeTruthy();
@@ -541,15 +510,21 @@ describe('API integration', () => {
     let requestBody;
     globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova stands amid the neon towers of Neo-Tokyo.' } }] }), { status: 200 });
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Nova stands amid the neon towers of Neo-Tokyo.' } }] }),
+        { status: 200 },
+      );
     };
     await DB.setSetting('captionModel', 'gpt-4o');
-    const result = await API.generateImageCaption(
-      'data:image/png;base64,aGVsbG8=',
-      { type: 'character-in-world', name: 'Nova', tag: 'character-in-world', appearance: 'silver armor', worldName: 'Neo-Tokyo' },
-    );
+    const result = await API.generateImageCaption('data:image/png;base64,aGVsbG8=', {
+      type: 'character-in-world',
+      name: 'Nova',
+      tag: 'character-in-world',
+      appearance: 'silver armor',
+      worldName: 'Neo-Tokyo',
+    });
     expect(result).toBe('Nova stands amid the neon towers of Neo-Tokyo.');
-    const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
+    const textPart = requestBody.messages[1].content.find((c) => c.type === 'text');
     expect(textPart.text.includes('Nova')).toBeTruthy();
     expect(textPart.text.includes('Neo-Tokyo')).toBeTruthy();
     expect(textPart.text.includes('character-in-world')).toBeTruthy();
@@ -559,15 +534,21 @@ describe('API integration', () => {
     let requestBody;
     globalThis.fetch = async (_url, opts) => {
       requestBody = JSON.parse(opts.body);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Nova and Blaze face off in the arena.' } }] }), { status: 200 });
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Nova and Blaze face off in the arena.' } }] }),
+        { status: 200 },
+      );
     };
     await DB.setSetting('captionModel', 'gpt-4o');
-    const result = await API.generateImageCaption(
-      'data:image/png;base64,aGVsbG8=',
-      { type: 'character-interaction', name: 'Colosseum', tag: 'character-interaction', characterNames: 'Nova, Blaze', worldName: 'Colosseum' },
-    );
+    const result = await API.generateImageCaption('data:image/png;base64,aGVsbG8=', {
+      type: 'character-interaction',
+      name: 'Colosseum',
+      tag: 'character-interaction',
+      characterNames: 'Nova, Blaze',
+      worldName: 'Colosseum',
+    });
     expect(result).toBe('Nova and Blaze face off in the arena.');
-    const textPart = requestBody.messages[1].content.find(c => c.type === 'text');
+    const textPart = requestBody.messages[1].content.find((c) => c.type === 'text');
     expect(textPart.text.includes('Nova, Blaze')).toBeTruthy();
     expect(textPart.text.includes('Colosseum')).toBeTruthy();
     expect(textPart.text.includes('interacting')).toBeTruthy();
@@ -577,8 +558,7 @@ describe('API integration', () => {
 describe('generateImage negative prompt', () => {
   beforeEach(async () => {
     await clearAllStores();
-    globalThis.fetch = async () =>
-      new Response(JSON.stringify({ data: [{ b64_json: 'imgdata' }] }), { status: 200 });
+    globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ b64_json: 'imgdata' }] }), { status: 200 });
     await DB.setSetting('apiKey', 'test-key');
     await DB.setSetting('imageModel', 'flux-2-turbo');
   });
@@ -643,7 +623,9 @@ describe('enrichImagePrompt', () => {
 
   it('returns the enriched prompt from the LLM', async () => {
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ choices: [{ message: { content: 'Cinematic wide shot — hero stands tall' } }] }), { status: 200 });
+      new Response(JSON.stringify({ choices: [{ message: { content: 'Cinematic wide shot — hero stands tall' } }] }), {
+        status: 200,
+      });
     const result = await API.enrichImagePrompt('hero stands in city');
     expect(result).toBe('Cinematic wide shot — hero stands tall');
   });
@@ -661,7 +643,7 @@ describe('enrichImagePrompt', () => {
       return new Response(JSON.stringify({ choices: [{ message: { content: 'enriched' } }] }), { status: 200 });
     };
     await API.enrichImagePrompt('dark alley scene', { genre: 'noir' });
-    const userMsg = requestBody.messages.find(m => m.role === 'user');
+    const userMsg = requestBody.messages.find((m) => m.role === 'user');
     expect(userMsg.content.includes('noir')).toBeTruthy();
   });
 
