@@ -9,7 +9,7 @@ import { migrateCompanionSettings } from '../image-generation-config.js';
 import { saveBackupFile } from '../export-actions.js';
 import { parseBackup, importBackup } from '../settings/backup-import.js';
 import { loadModelCatalog } from '../settings/model-loader.js';
-import { downloadLocalLlm, getLocalLlmAvailability } from '../local-llm-classifier.js';
+import { localReferenceClassifier } from '../references/local-classifier.js';
 
 /**
  * Settings Page
@@ -421,30 +421,31 @@ async function onMount() {
 }
 
 async function refreshLocalLlmStatus(): Promise<void> {
-  const status = await getLocalLlmAvailability();
+  const { status } = await localReferenceClassifier.getAvailability();
   const statusEl = document.getElementById('local-llm-status');
   const button = document.getElementById('local-llm-download-btn');
   if (!statusEl || !button) return;
   const labels = {
-    unsupported: 'Available only in a supported native iOS or Android app.',
     unavailable: 'This device does not support the local model.',
-    notready: 'The local model is not ready yet.',
     downloadable: 'Model download is available. Nothing is downloaded until you choose it.',
+    downloading: 'The local model is downloading.',
     available: 'Ready. New and manually reclassified references can be tagged locally.',
   };
   statusEl.textContent = labels[status] || status;
-  button.classList.toggle('hidden', status === 'unsupported' || status === 'unavailable' || status === 'available');
-  button.disabled = status === 'notready';
+  button.classList.toggle('hidden', status === 'unavailable' || status === 'available');
+  button.disabled = status === 'downloading';
 }
 
 async function downloadLocalModel(): Promise<void> {
   const button = document.getElementById('local-llm-download-btn');
   if (button) button.disabled = true;
-  const started = await downloadLocalLlm();
-  App.toast(
-    started ? 'Local model download started' : 'Could not start the local model download',
-    started ? 'info' : 'error',
-  );
+  try {
+    await localReferenceClassifier.download();
+    App.toast('Local model download started', 'info');
+  } catch (error) {
+    App.logError('downloadLocalModel()', error);
+    App.toast('Could not start the local model download', 'error');
+  }
   await refreshLocalLlmStatus();
 }
 

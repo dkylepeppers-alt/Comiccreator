@@ -13,7 +13,6 @@ import {
   embedImagesForSave,
 } from '../entity-gallery.js';
 import { normalizeReferenceKey } from '../reference-metadata.js';
-import { classifyCharacterReferences } from '../reference-classification-service.js';
 
 /**
  * Character Builder Page
@@ -217,7 +216,6 @@ async function renderEditor() {
           <div class="char-img-toolbar" id="char-img-toolbar">
             ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" data-action="addImageSlot">+ Add Image</button>` : ''}
             <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" data-action="recaptionAll" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
-            ${editingId && editorImages.some((img) => img.dataUrl) ? '<button class="btn btn-secondary btn-sm" data-action="classifyReferences">Auto-tag Locally</button>' : ''}
             <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" data-action="generateReferences" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
             ${editorImages.some((img) => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" data-action="generateWorldInteractions" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
           </div>
@@ -557,21 +555,8 @@ async function saveCharacter() {
   // records assembled from older editor state
   const normalized = DB.normalizeCharacterRecord(char).record;
   await DB.put(DB.STORES.characters, normalized);
-  void classifyCharacterReferences(normalized.id).catch((error) =>
-    App.logError('classifyCharacterReferences()', error),
-  );
   App.toast(`Character ${editingId ? 'updated' : 'created'}!`, 'success');
   backToList();
-}
-
-async function classifyReferences(): Promise<void> {
-  if (!editingId) return App.toast('Save the character before classifying references', 'info');
-  const count = await classifyCharacterReferences(editingId, { reclassify: true });
-  App.toast(
-    count ? `Auto-tagged ${count} reference${count === 1 ? '' : 's'} locally` : 'No references were classified',
-    count ? 'success' : 'info',
-  );
-  if (count) App.refreshPage();
 }
 
 async function exportCharacter(id: string): Promise<void> {
@@ -612,7 +597,6 @@ const CharactersPage: PageModule & Record<string, any> = {
   _doGenerateWorldInteractions,
   _pendingWorldData: null,
   saveCharacter,
-  classifyReferences,
   exportCharacter,
   deleteCharacter,
   confirmDelete,
