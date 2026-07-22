@@ -5,6 +5,10 @@
 import type { ImageRef } from './utils.js';
 import { ensureImageIds, normalizeLocationKey } from './utils.js';
 import type { CharacterVisualStateDefaults, ComicVisualContinuity } from './visual-continuity.js';
+import { migrateCharacterReferenceMetadata } from './reference-metadata.js';
+import type { CharacterReferenceImage } from './reference-metadata.js';
+
+export type DefaultVisualStateField = keyof Required<CharacterVisualStateDefaults>;
 
 export interface Character {
   id: string;
@@ -15,12 +19,14 @@ export interface Character {
   appearance?: string;
   powers?: string;
   imageData?: string;
-  images: ImageRef[];
+  images: CharacterReferenceImage[];
   primaryImageIndex: number;
   /** Stable ID of the single authoritative identity-anchor gallery image. */
   identityAnchorImageId?: string | null;
   /** Reusable default mutable visual state (wardrobe, hair, items…). */
   defaultVisualState?: CharacterVisualStateDefaults;
+  /** Per-field provenance prevents local classification from overwriting user edits. */
+  defaultVisualStateSources?: Partial<Record<DefaultVisualStateField, 'local' | 'manual'>>;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -263,8 +269,9 @@ function normalizeCharacterRecord(char: any): { record: any; changed: boolean } 
   if (!char) return { record: char, changed: false };
   const migrated = migrateCharacter(char);
   let changed = migrated !== char;
-  const { images, changed: idsChanged } = ensureImageIds(migrated.images);
-  changed = changed || idsChanged;
+  const { images: imagesWithIds, changed: idsChanged } = ensureImageIds(migrated.images);
+  const { images, changed: metadataChanged } = migrateCharacterReferenceMetadata(imagesWithIds);
+  changed = changed || idsChanged || metadataChanged;
 
   let record = idsChanged || changed ? Object.assign({}, migrated, { images }) : migrated;
 

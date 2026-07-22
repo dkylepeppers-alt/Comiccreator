@@ -9,6 +9,7 @@ import { migrateCompanionSettings } from '../image-generation-config.js';
 import { saveBackupFile } from '../export-actions.js';
 import { parseBackup, importBackup } from '../settings/backup-import.js';
 import { loadModelCatalog } from '../settings/model-loader.js';
+import { downloadLocalLlm, getLocalLlmAvailability } from '../local-llm-classifier.js';
 
 /**
  * Settings Page
@@ -340,6 +341,13 @@ async function render() {
         </div>
       </div>
 
+      <div class="card mt-md">
+        <h3 class="card-title mb-sm">On-device Reference Classification</h3>
+        <p class="text-sm text-muted mb-sm">Use Apple Intelligence or Gemini Nano to auto-tag character references from their descriptions. Reference text stays on the device, and Android downloads are always explicit.</p>
+        <div id="local-llm-status" class="text-sm text-muted mb-sm">Checking availability…</div>
+        <button class="btn btn-secondary btn-block" id="local-llm-download-btn" data-action="downloadLocalModel">Download Local Model</button>
+      </div>
+
       <!-- App Updates -->
       <div class="card mt-md">
         <h3 class="card-title mb-sm">App Updates</h3>
@@ -409,6 +417,35 @@ async function onMount() {
   }
   // Close dropdowns when clicking outside
   document.addEventListener('click', handleOutsideClick);
+  await refreshLocalLlmStatus();
+}
+
+async function refreshLocalLlmStatus(): Promise<void> {
+  const status = await getLocalLlmAvailability();
+  const statusEl = document.getElementById('local-llm-status');
+  const button = document.getElementById('local-llm-download-btn');
+  if (!statusEl || !button) return;
+  const labels = {
+    unsupported: 'Available only in a supported native iOS or Android app.',
+    unavailable: 'This device does not support the local model.',
+    notready: 'The local model is not ready yet.',
+    downloadable: 'Model download is available. Nothing is downloaded until you choose it.',
+    available: 'Ready. New and manually reclassified references can be tagged locally.',
+  };
+  statusEl.textContent = labels[status] || status;
+  button.classList.toggle('hidden', status === 'unsupported' || status === 'unavailable' || status === 'available');
+  button.disabled = status === 'notready';
+}
+
+async function downloadLocalModel(): Promise<void> {
+  const button = document.getElementById('local-llm-download-btn');
+  if (button) button.disabled = true;
+  const started = await downloadLocalLlm();
+  App.toast(
+    started ? 'Local model download started' : 'Could not start the local model download',
+    started ? 'info' : 'error',
+  );
+  await refreshLocalLlmStatus();
 }
 
 /**
@@ -1055,5 +1092,6 @@ const SettingsPage: PageModule & Record<string, any> = {
   checkForUpdate,
   reloadForUpdate,
   clearAppCache,
+  downloadLocalModel,
 };
 export default SettingsPage;

@@ -19,6 +19,14 @@ export interface ImageRef {
   embedding?: number[] | null;
   embeddingText?: string | null;
   locationKey?: string | null;
+  referenceKey?: string | null;
+  referenceClassifications?: {
+    schemaVersion: 1;
+    viewAngle: 'front' | 'side' | 'back' | 'three-quarter' | 'multiple' | 'unspecified';
+    framing: 'close-up' | 'medium' | 'full-body' | 'character-sheet' | 'unspecified';
+    activity: 'neutral' | 'action' | 'expression' | 'interaction' | 'unspecified';
+    context: 'isolated' | 'in-world' | 'unspecified';
+  };
 }
 
 /** Generate a stable unique ID for gallery images and other records. */
@@ -235,6 +243,11 @@ export function buildImageEmbeddingText(img: ImageRef | null | undefined, contex
   const tag = img?.tag;
   if (tag && tag !== 'default' && tag !== 'establishing' && tag !== 'custom') {
     parts.push(tag);
+  }
+  if (img?.referenceKey) parts.push(img.referenceKey);
+  if (img?.referenceClassifications) {
+    const { viewAngle, framing, activity, context } = img.referenceClassifications;
+    parts.push(...[viewAngle, framing, activity, context].filter((value) => value && value !== 'unspecified'));
   }
   const name = (contextName || '').trim();
   if (name) parts.push(name);

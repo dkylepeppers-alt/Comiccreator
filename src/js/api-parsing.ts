@@ -181,6 +181,7 @@ export function parsePlannedPageResponse(text: string): any | null {
           colorMood: p?.visual?.colorMood || p?.visual?.color_mood || '',
           characters: (Array.isArray(p?.visual?.characters) ? p.visual.characters : []).map((c: any) => ({
             characterId: c?.characterId || c?.character_id || '',
+            referenceKey: c?.referenceKey || c?.reference_key || null,
             action: c?.action || '',
             pose: c?.pose || '',
             expression: c?.expression || '',
