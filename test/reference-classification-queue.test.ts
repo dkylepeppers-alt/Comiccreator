@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClassificationQueue, isAutomaticallyEligible } from '../src/js/references/classification-queue.js';
 import { createReferenceRepository } from '../src/js/references/repository.js';
+import { createReferenceWorkspace } from '../src/js/reference-workspace.js';
 import type {
   ReferenceRepositoryDependencies,
   ReferenceStoreName,
@@ -299,5 +300,70 @@ describe('reference classification queue', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(unavailableRepository.listJobs).toHaveBeenCalledOnce();
+  });
+
+  it('does not let an in-flight classifier overwrite a manual ready save', async () => {
+    let resolveClassification!: (outcome: any) => void;
+    classifier.classify.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveClassification = resolve;
+        }),
+    );
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+    const workspace = createReferenceWorkspace({
+      repository: repo,
+      queue,
+      listCharacters: async () => [{ id: 'mara', name: 'Mara' }],
+      listLocations: async () => [],
+    });
+    queue.pause();
+    await queue.enqueue('r1');
+    const running = queue.resume();
+    await vi.waitFor(() => expect(classifier.classify).toHaveBeenCalledOnce());
+
+    await workspace.handleAction({
+      action: 'save-reference-classification',
+      referenceId: 'r1',
+      classification: {
+        subjectType: 'character',
+        use: 'identity',
+        characterIds: ['mara'],
+        locationId: null,
+        facets: {},
+        description: 'Manual replacement',
+      },
+    });
+    resolveClassification({ kind: 'classified', classification });
+    await running;
+
+    expect(await repo.getAsset('r1')).toMatchObject({
+      classificationState: 'ready',
+      description: 'Manual replacement',
+      provenance: { metadata: 'manual' },
+    });
+    expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'complete' });
+  });
+
+  it('does not recreate an asset deleted while classification is in flight', async () => {
+    let resolveClassification!: (outcome: any) => void;
+    classifier.classify.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveClassification = resolve;
+        }),
+    );
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+    queue.pause();
+    await queue.enqueue('r1');
+    const running = queue.resume();
+    await vi.waitFor(() => expect(classifier.classify).toHaveBeenCalledOnce());
+
+    await repo.deleteAsset('r1');
+    resolveClassification({ kind: 'classified', classification });
+    await running;
+
+    expect(await repo.getAsset('r1')).toBeUndefined();
+    expect(await repo.getJobByAsset('r1')).toBeUndefined();
   });
 });

@@ -84,6 +84,8 @@ export interface ReferenceAsset {
   classificationState: ClassificationState;
   acceptedAsIs: boolean;
   autoUse: boolean;
+  /** Monotonic guard against stale asynchronous classification finalization. */
+  classificationVersion?: number;
   createdAt: number;
   updatedAt: number;
 }

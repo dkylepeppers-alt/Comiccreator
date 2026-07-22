@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import {
-  createReferenceWorkspace,
-  normalizeReferenceEditorSubject,
-} from '../src/js/reference-workspace.js';
+import { createReferenceWorkspace, normalizeReferenceEditorSubject } from '../src/js/reference-workspace.js';
 import type { ReferenceAsset } from '../src/js/references/types.js';
 
 function asset(overrides: Partial<ReferenceAsset> = {}): ReferenceAsset {
@@ -39,6 +36,10 @@ function dependencies(records = [asset()]) {
     deleteAsset: vi.fn(async () => undefined),
     getJobByAsset: vi.fn(async () => undefined),
     putJob: vi.fn(async () => undefined),
+    putAssetAndJob: vi.fn(async (updated: ReferenceAsset) => {
+      const index = records.findIndex((record) => record.id === updated.id);
+      if (index >= 0) records[index] = updated;
+    }),
     setAutoUse: vi.fn(async () => undefined),
   };
   const queue = {
@@ -134,6 +135,7 @@ describe('reference workspace', () => {
     expect(html).toContain('Classification source');
     expect(html).toContain('Could not classify: invalid-schema');
     expect(html).toContain('data-action="save-reference-classification"');
+    expect(html).toContain('data-action="close-reference-editor"');
   });
 
   it('saves a valid manual ready classification, clears confidence, and completes its job', async () => {
@@ -164,7 +166,7 @@ describe('reference workspace', () => {
       },
     });
 
-    expect(deps.repository.putAsset).toHaveBeenCalledWith(
+    expect(deps.repository.putAssetAndJob).toHaveBeenCalledWith(
       expect.objectContaining({
         subjectType: 'character',
         locationId: null,
@@ -172,8 +174,34 @@ describe('reference workspace', () => {
         confidence: {},
         classificationState: 'ready',
       }),
+      expect.anything(),
     );
-    expect(deps.repository.putJob).toHaveBeenCalledWith(expect.objectContaining({ status: 'complete' }));
+    expect(deps.repository.putAssetAndJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'complete' }),
+    );
+  });
+
+  it('rejects a ready manual classification that links a non-world character', async () => {
+    const deps = dependencies();
+    const workspace = createReferenceWorkspace(deps);
+
+    await expect(
+      workspace.handleAction({
+        action: 'save-reference-classification',
+        referenceId: 'r1',
+        classification: {
+          subjectType: 'interaction',
+          use: 'relationship',
+          characterIds: ['mara', 'outsider'],
+          locationId: null,
+          facets: {},
+          description: 'Cross-world interaction',
+        },
+      }),
+    ).rejects.toThrow('current-world characters');
+    expect(deps.repository.putAsset).not.toHaveBeenCalled();
+    expect(deps.repository.putAssetAndJob).not.toHaveBeenCalled();
   });
 
   it('saves partial manual metadata as a needs-review draft and normalizes subject links', async () => {

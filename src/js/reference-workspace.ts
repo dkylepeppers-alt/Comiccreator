@@ -26,6 +26,7 @@ export interface ReferenceWorkspaceDependencies {
     deleteAsset(id: string): Promise<void>;
     getJobByAsset(assetId: string): Promise<ClassificationJob | undefined>;
     putJob(job: ClassificationJob): Promise<void>;
+    putAssetAndJob(asset: ReferenceAsset, job: ClassificationJob): Promise<void>;
     setAutoUse(id: string, autoUse: boolean): Promise<void>;
   };
   queue: {
@@ -232,7 +233,11 @@ function normalizeManualClassification(input: ManualClassificationInput): Manual
   return { ...shared, characterIds: [], locationId: null };
 }
 
-function validateReadyClassification(input: ManualClassificationInput, locations: readonly WorldLocation[]): void {
+function validateReadyClassification(
+  input: ManualClassificationInput,
+  characters: readonly { id: string }[],
+  locations: readonly WorldLocation[],
+): void {
   if (!input.subjectType) throw new Error('Choose a reference subject.');
   if (!input.use) throw new Error('Choose a use compatible with the selected subject.');
   if (input.subjectType === 'character' && input.characterIds.length < 1) {
@@ -240,6 +245,12 @@ function validateReadyClassification(input: ManualClassificationInput, locations
   }
   if (input.subjectType === 'interaction' && input.characterIds.length < 2) {
     throw new Error('Choose at least two current-world characters for an interaction.');
+  }
+  if (
+    (input.subjectType === 'character' || input.subjectType === 'interaction') &&
+    input.characterIds.some((id) => !characters.some((character) => character.id === id))
+  ) {
+    throw new Error('Choose only current-world characters.');
   }
   if (input.subjectType === 'location' && !locations.some((location) => location.id === input.locationId)) {
     throw new Error('Choose a current-world location.');
@@ -386,6 +397,7 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
       return `<section class="reference-editor" data-reference-editor data-reference-id="${escHtml(asset.id)}">
         <header class="reference-editor-header">
           <div><p class="reference-eyebrow">References</p><h3>Manual classification</h3></div>
+          <button class="btn btn-sm btn-secondary" data-action="close-reference-editor" aria-label="Close reference editor">Close</button>
           <button class="btn btn-sm btn-secondary" data-action="preview-reference" data-args="${actionArgs(asset.id)}">Preview image</button>
         </header>
         <img class="reference-review-image" src="${escHtml(asset.dataUrl)}" alt="${escHtml(asset.description || 'Reference image')}">
@@ -464,9 +476,10 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
         const asset = await dependencies.repository.getAsset(referenceId);
         if (!asset || !classification) return;
         const normalized = normalizeManualClassification(classification);
+        const characters = await dependencies.listCharacters(asset.worldId);
         if (action === 'save-reference-classification') {
           const locations = await dependencies.listLocations(asset.worldId);
-          validateReadyClassification(normalized, locations);
+          validateReadyClassification(normalized, characters, locations);
         }
         const updated: ReferenceAsset = {
           ...asset,
@@ -475,18 +488,19 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
           provenance: { ...asset.provenance, metadata: 'manual' },
           classificationState: action === 'save-reference-classification' ? 'ready' : 'needs-review',
           acceptedAsIs: false,
+          classificationVersion: (asset.classificationVersion || 0) + 1,
           updatedAt: Date.now(),
         };
-        await dependencies.repository.putAsset(updated);
-        if (action === 'save-reference-classification') {
-          const job = await dependencies.repository.getJobByAsset(referenceId);
-          if (job)
-            await dependencies.repository.putJob({
-              ...job,
-              status: 'complete',
-              lastError: undefined,
-              updatedAt: Date.now(),
-            });
+        const job = await dependencies.repository.getJobByAsset(referenceId);
+        if (job) {
+          await dependencies.repository.putAssetAndJob(updated, {
+            ...job,
+            status: 'complete',
+            lastError: undefined,
+            updatedAt: Date.now(),
+          });
+        } else {
+          await dependencies.repository.putAsset(updated);
         }
       }
     },

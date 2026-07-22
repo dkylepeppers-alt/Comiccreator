@@ -11,6 +11,7 @@ import {
 } from '../reference-workspace.js';
 import {
   addUploadedReference,
+  closeReferenceEditor,
   fileToDataUrl,
   openReferenceEditor,
   referenceRepository,
@@ -344,6 +345,7 @@ const CharactersPage: PageModule & Record<string, any> = {
   'save-reference-classification': (id, element) => saveReferenceClassification(id, element),
   'save-reference-draft': (id, element) => saveReferenceClassification(id, element, true),
   'delete-reference': deleteReference,
+  'close-reference-editor': closeReferenceEditor,
   'normalize-reference-subject': normalizeReferenceSubject,
   'set-reference-filter': setReferenceFilter,
   'review-reference': reviewReference,

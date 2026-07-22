@@ -95,12 +95,30 @@ describe('reference repository', () => {
     memory.put('worlds', { id: 'w1', preferredStyleReferenceId: 'r1' });
     memory.put('locations', { id: 'yard', worldId: 'w1', preferredReferenceId: 'r1' });
     await repo.putAsset(asset());
+    await repo.putJob({
+      id: 'classification-r1',
+      assetId: 'r1',
+      worldId: 'w1',
+      status: 'failed',
+      attemptCount: 1,
+      createdAt: 10,
+      updatedAt: 10,
+    });
+    await repo.recordDiagnostic({
+      id: 'diagnostic-r1',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: { stage: 'inference', code: 'inference-failed' },
+    });
 
     await repo.setAutoUse('r1', false);
     expect((await repo.getAsset('r1'))?.autoUse).toBe(false);
 
     await repo.deleteAsset('r1');
     expect(await repo.getAsset('r1')).toBeUndefined();
+    expect(await repo.getJobByAsset('r1')).toBeUndefined();
+    expect(await repo.listDiagnostics('r1')).toEqual([]);
     expect(memory.getCharacter('mara')?.preferredIdentityReferenceId).toBeNull();
     expect(memory.get<Record<string, unknown>>('worlds', 'w1')?.preferredStyleReferenceId).toBeNull();
     expect(memory.get<WorldLocation>('locations', 'yard')?.preferredReferenceId).toBeNull();

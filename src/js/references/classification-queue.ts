@@ -55,6 +55,10 @@ function pendingJob(asset: ReferenceAsset, now: number, existing?: Classificatio
   };
 }
 
+function nextClassificationVersion(asset: ReferenceAsset): number {
+  return (asset.classificationVersion || 0) + 1;
+}
+
 function diagnostic(asset: ReferenceAsset, error: ClassificationErrorDetails, now: number): ClassificationDiagnostic {
   return {
     id: `diagnostic-${asset.id}-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -104,6 +108,7 @@ export function createClassificationQueue({
       ...asset,
       classificationState: 'pending',
       acceptedAsIs: false,
+      classificationVersion: nextClassificationVersion(asset),
       updatedAt: now(),
     };
     await repository.putAssetAndJob(
@@ -125,7 +130,8 @@ export function createClassificationQueue({
       lastError: error.code,
       updatedAt: now(),
     };
-    await repository.putAssetAndJob(
+    await repository.finalizeAssetAndJobIfCurrent(
+      asset,
       {
         ...asset,
         classificationState: error.code === 'manual-metadata' ? 'needs-review' : 'could-not-classify',
@@ -133,8 +139,8 @@ export function createClassificationQueue({
         updatedAt: now(),
       },
       failed,
+      diagnostic(asset, { ...error, queueState: 'failed' }, now()),
     );
-    await repository.recordDiagnostic(diagnostic(asset, { ...error, queueState: 'failed' }, now()));
   }
 
   async function waitJob(
@@ -150,12 +156,13 @@ export function createClassificationQueue({
       retryDelayMs: outcome.retryDelayMs,
       queueState: 'pending',
     };
-    await repository.putAssetAndJob(
+    const finalized = await repository.finalizeAssetAndJobIfCurrent(
+      asset,
       { ...asset, classificationState: 'pending', updatedAt: now() },
       { ...job, status: 'pending', retryAt, waitingReason: outcome.reason, lastError: undefined, updatedAt: now() },
+      diagnostic(asset, error, now()),
     );
-    await repository.recordDiagnostic(diagnostic(asset, error, now()));
-    scheduleRetry(retryAt);
+    if (finalized) scheduleRetry(retryAt);
   }
 
   async function processJob(job: ClassificationJob): Promise<void> {
@@ -171,12 +178,6 @@ export function createClassificationQueue({
     await repository.putJob(running);
     const asset = await repository.getAsset(job.assetId);
     if (!asset) {
-      await repository.putJob({
-        ...running,
-        status: 'failed',
-        lastError: 'missing-asset',
-        updatedAt: now(),
-      });
       return;
     }
     if (asset.provenance.metadata === 'manual') {
@@ -207,20 +208,8 @@ export function createClassificationQueue({
     }
 
     const needsReview = outcome.state === 'needs-review';
-    await repository.putAssetAndJob(
-      {
-        ...asset,
-        ...outcome.classification,
-        provenance: { ...asset.provenance, metadata: 'local' },
-        classificationState: needsReview ? 'needs-review' : 'ready',
-        acceptedAsIs: false,
-        updatedAt: now(),
-      },
-      { ...running, status: 'complete', lastError: undefined, updatedAt: now() },
-    );
-    if (outcome.validationReason) {
-      await repository.recordDiagnostic(
-        diagnostic(
+    const validationDiagnostic = outcome.validationReason
+      ? diagnostic(
           asset,
           {
             stage: 'validation',
@@ -230,9 +219,21 @@ export function createClassificationQueue({
             queueState: 'complete',
           },
           now(),
-        ),
-      );
-    }
+        )
+      : undefined;
+    await repository.finalizeAssetAndJobIfCurrent(
+      asset,
+      {
+        ...asset,
+        ...outcome.classification,
+        provenance: { ...asset.provenance, metadata: 'local' },
+        classificationState: needsReview ? 'needs-review' : 'ready',
+        acceptedAsIs: false,
+        updatedAt: now(),
+      },
+      { ...running, status: 'complete', lastError: undefined, updatedAt: now() },
+      validationDiagnostic,
+    );
   }
 
   async function processPendingJobs(): Promise<void> {
@@ -292,6 +293,7 @@ export function createClassificationQueue({
       ...asset,
       classificationState: 'pending',
       acceptedAsIs: false,
+      classificationVersion: nextClassificationVersion(asset),
       updatedAt: now(),
     };
     await repository.putAssetAndJob(
@@ -306,10 +308,14 @@ export function createClassificationQueue({
     for (const job of failed) {
       const asset = await repository.getAsset(job.assetId);
       if (!asset) continue;
-      await repository.putAssetAndJob(
-        { ...asset, classificationState: 'pending', acceptedAsIs: false, updatedAt: now() },
-        pendingJob(asset, now(), job),
-      );
+      const updatedAsset: ReferenceAsset = {
+        ...asset,
+        classificationState: 'pending',
+        acceptedAsIs: false,
+        classificationVersion: nextClassificationVersion(asset),
+        updatedAt: now(),
+      };
+      await repository.putAssetAndJob(updatedAsset, pendingJob(updatedAsset, now(), job));
     }
     if (failed.length) await startIfUnpaused();
     return failed.length;
@@ -322,6 +328,7 @@ export function createClassificationQueue({
       ...asset,
       acceptedAsIs: true,
       autoUse: true,
+      classificationVersion: nextClassificationVersion(asset),
       provenance: { ...asset.provenance, metadata: 'accepted' },
       updatedAt: now(),
     });
@@ -335,6 +342,7 @@ export function createClassificationQueue({
       classificationState: 'pending',
       acceptedAsIs: false,
       provenance: { ...asset.provenance, metadata: 'local' },
+      classificationVersion: nextClassificationVersion(asset),
       updatedAt: now(),
     };
     await repository.putAssetAndJob(

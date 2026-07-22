@@ -33,6 +33,12 @@ export interface ReferenceRepository {
   listJobs(): Promise<ClassificationJob[]>;
   putJob(job: ClassificationJob): Promise<void>;
   putAssetAndJob(asset: ReferenceAsset, job: ClassificationJob): Promise<void>;
+  finalizeAssetAndJobIfCurrent(
+    snapshot: ReferenceAsset,
+    asset: ReferenceAsset,
+    job: ClassificationJob,
+    diagnostic?: ClassificationDiagnostic,
+  ): Promise<boolean>;
   recordDiagnostic(diagnostic: ClassificationDiagnostic): Promise<void>;
   listDiagnostics(assetId?: string): Promise<ClassificationDiagnostic[]>;
   listLocations(worldId: string): Promise<WorldLocation[]>;
@@ -145,6 +151,17 @@ function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): Classificatio
   };
 }
 
+async function pruneDiagnostics(transaction: ReferenceTransaction): Promise<void> {
+  const cutoff = Date.now() - DIAGNOSTIC_MAX_AGE_MS;
+  const existing = await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics');
+  const expired = existing.filter((diagnostic) => diagnostic.createdAt < cutoff);
+  const retained = existing
+    .filter((diagnostic) => diagnostic.createdAt >= cutoff)
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+  const overflow = retained.slice(0, Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT));
+  for (const stale of [...expired, ...overflow]) await transaction.delete('classificationDiagnostics', stale.id);
+}
+
 async function clearPreferredReference(
   transaction: ReferenceTransaction,
   storeName: 'characters' | 'worlds' | 'locations',
@@ -218,13 +235,21 @@ export function createReferenceRepository(
 
     deleteAsset: (id) =>
       dependencies.transaction(
-        ['referenceAssets', 'characters', 'worlds', 'locations'],
+        ['referenceAssets', 'classificationJobs', 'classificationDiagnostics', 'characters', 'worlds', 'locations'],
         'readwrite',
         async (transaction) => {
           await clearPreferredReference(transaction, 'characters', id);
           await clearPreferredReference(transaction, 'worlds', id);
           await clearPreferredReference(transaction, 'locations', id);
           await transaction.delete('referenceAssets', id);
+          const jobs = await transaction.getAllByIndex<ClassificationJob>('classificationJobs', 'assetId', id);
+          for (const job of jobs) await transaction.delete('classificationJobs', job.id);
+          const diagnostics = await transaction.getAllByIndex<ClassificationDiagnostic>(
+            'classificationDiagnostics',
+            'assetId',
+            id,
+          );
+          for (const item of diagnostics) await transaction.delete('classificationDiagnostics', item.id);
         },
       ),
 
@@ -250,19 +275,32 @@ export function createReferenceRepository(
         await transaction.put('classificationJobs', job);
       }),
 
+    finalizeAssetAndJobIfCurrent: (snapshot, asset, job, diagnostic) =>
+      dependencies.transaction(
+        ['referenceAssets', 'classificationJobs', 'classificationDiagnostics'],
+        'readwrite',
+        async (transaction) => {
+          const current = await transaction.get<ReferenceAsset>('referenceAssets', snapshot.id);
+          if (
+            !current ||
+            current.provenance.metadata === 'manual' ||
+            current.updatedAt !== snapshot.updatedAt ||
+            current.classificationVersion !== snapshot.classificationVersion
+          ) {
+            return false;
+          }
+          await transaction.put('referenceAssets', normalizeAsset(asset));
+          await transaction.put('classificationJobs', job);
+          if (diagnostic) await transaction.put('classificationDiagnostics', sanitizeDiagnostic(diagnostic));
+          if (diagnostic) await pruneDiagnostics(transaction);
+          return true;
+        },
+      ),
+
     recordDiagnostic: (item) =>
       dependencies.transaction(['classificationDiagnostics'], 'readwrite', async (transaction) => {
         await transaction.put('classificationDiagnostics', sanitizeDiagnostic(item));
-        const cutoff = Date.now() - DIAGNOSTIC_MAX_AGE_MS;
-        const existing = await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics');
-        const expired = existing.filter((diagnostic) => diagnostic.createdAt < cutoff);
-        const retained = existing
-          .filter((diagnostic) => diagnostic.createdAt >= cutoff)
-          .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
-        const overflow = retained.slice(0, Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT));
-        for (const stale of [...expired, ...overflow]) {
-          await transaction.delete('classificationDiagnostics', stale.id);
-        }
+        await pruneDiagnostics(transaction);
       }),
 
     listDiagnostics: (assetId) =>

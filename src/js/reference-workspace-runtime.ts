@@ -46,9 +46,29 @@ export const referenceWorkspace = createReferenceWorkspace({
   listLocations: (worldId) => referenceRepository.listLocations(worldId),
 });
 
+let referenceEditorRestoreFocus: HTMLElement | null = null;
+let referenceEditorEscapeListenerAttached = false;
+
+export function closeReferenceEditor(): void {
+  App.hideModal();
+  referenceEditorRestoreFocus?.focus();
+  referenceEditorRestoreFocus = null;
+}
+
+function handleReferenceEditorEscape(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !document.querySelector('#modal-content [data-reference-editor]')) return;
+  event.preventDefault();
+  closeReferenceEditor();
+}
+
 /** Open the shared editor and place keyboard focus on its first decision. */
 export async function openReferenceEditor(worldId: string, referenceId: string): Promise<void> {
+  referenceEditorRestoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   App.showModal(await referenceWorkspace.renderEditor({ worldId, referenceId }));
+  if (!referenceEditorEscapeListenerAttached) {
+    document.addEventListener('keydown', handleReferenceEditorEscape);
+    referenceEditorEscapeListenerAttached = true;
+  }
   document.querySelector<HTMLElement>('#modal-content [autofocus]')?.focus();
 }
 

@@ -105,6 +105,14 @@ describe('page-actions delegated dispatch', () => {
     expect(select.closest('[data-reference-editor]')).not.toBeNull();
   });
 
+  it('dispatches the shared reference editor close control', () => {
+    module['close-reference-editor'] = vi.fn();
+    document.body.innerHTML =
+      '<button data-action="close-reference-editor" aria-label="Close reference editor">Close</button>';
+    fire(document.querySelector('button'), 'click');
+    expect(module['close-reference-editor']).toHaveBeenCalledWith(document.querySelector('button'));
+  });
+
   it('dispatches input events via data-action-input with the element appended', () => {
     module.setSearch = vi.fn();
     document.body.innerHTML = '<input data-action-input="setSearch" value="q">';
