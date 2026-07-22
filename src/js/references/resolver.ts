@@ -74,7 +74,9 @@ function stableValue(value: unknown): string {
   if (Array.isArray(value)) return JSON.stringify([...value].sort());
   if (typeof value === 'object' && value !== null) {
     return JSON.stringify(
-      Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))),
+      Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)),
+      ),
     );
   }
   return JSON.stringify(value);
@@ -196,15 +198,13 @@ export function resolvePanelReferences(input: ResolvePanelReferencesInput): Refe
     if (conflicts.length > 0) {
       warnings.push(`Reference "${chosen.id}" conflicts with requested facets: ${conflicts.join(', ')}`);
     }
-    selected.push({ asset: chosen, role, label: chosen.description || `${role} ${id}`, order: order++ });
+    selected.push({ asset: chosen, role, label: id, order: order++ });
   }
 
   for (const characterId of [...new Set(request.characterIds)]) {
     addRequirement('identity', characterId, 'identity', [characterId, 'identity'], (asset) =>
       Boolean(
-        asset.subjectType === 'character' &&
-          asset.use === 'identity' &&
-          sameIds(asset.characterIds, [characterId]),
+        asset.subjectType === 'character' && asset.use === 'identity' && sameIds(asset.characterIds, [characterId]),
       ),
     );
   }

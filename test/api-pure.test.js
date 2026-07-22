@@ -1,15 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import {
-  KNOWN_IMAGE_SIZES,
-  getModelSizesStatic,
-  extractProvider,
-  buildModelDetails,
-} from '../src/js/model-catalog.js';
-import { parseComicResponse } from '../src/js/api-parsing.js';
+import { KNOWN_IMAGE_SIZES, getModelSizesStatic, extractProvider, buildModelDetails } from '../src/js/model-catalog.js';
+import { parseComicResponse, parsePlannedPageResponse } from '../src/js/api-parsing.js';
 import { buildSystemPrompt } from '../src/js/prompt-building.js';
 import { compareVersions } from '../src/js/utils.js';
 
 describe('api pure parsing and prompt helpers', () => {
+  it('parses structured world reference requests with stable IDs', () => {
+    const parsed = parsePlannedPageResponse(
+      JSON.stringify({
+        panels: [
+          {
+            visual: {
+              locationId: 'yard',
+              environment: 'windblown grass',
+              framing: 'medium',
+              cameraElevation: 'eye-level',
+              lighting: 'late afternoon',
+              characters: [{ characterId: 'mara', appearanceState: 'red-coat', action: 'talking' }],
+              interaction: { participantIds: ['mara', 'theo'], type: 'conversation' },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(parsed.panels[0].visual).toMatchObject({
+      locationId: 'yard',
+      characters: [{ characterId: 'mara', appearanceState: 'red-coat', action: 'talking' }],
+      interaction: { participantIds: ['mara', 'theo'], type: 'conversation' },
+    });
+    expect(parsed.panels[0].visual).not.toHaveProperty('locationKey');
+    expect(parsed.panels[0].visual.characters[0]).not.toHaveProperty('referenceKey');
+  });
+
   it('parseComicResponse handles valid, fenced, embedded, invalid and defaults', () => {
     expect(parseComicResponse('nope')).toBe(null);
     expect(parseComicResponse('{"title":"x","panels":[],"choices":[]}').title).toBe('x');
@@ -42,14 +65,22 @@ describe('api pure parsing and prompt helpers', () => {
     expect(!p.includes('CHARACTERS:')).toBeTruthy();
     const custom = buildSystemPrompt('x', [], null, 'Custom');
     expect(custom.startsWith('Custom')).toBeTruthy();
-    const withAll = buildSystemPrompt('x', [{ name: 'A', description: 'B', role: 'Hero', appearance: 'Cape' }], { name: 'W', description: 'D', details: 'Fog' });
+    const withAll = buildSystemPrompt('x', [{ name: 'A', description: 'B', role: 'Hero', appearance: 'Cape' }], {
+      name: 'W',
+      description: 'D',
+      details: 'Fog',
+    });
     expect(withAll.includes('CHARACTERS:')).toBeTruthy();
     expect(withAll.includes('WORLD SETTING:')).toBeTruthy();
     expect(withAll.includes('Details: Fog')).toBeTruthy();
   });
 
   it('buildSystemPrompt includes VISUAL CONSISTENCY RULES when characters have appearance', () => {
-    const prompt = buildSystemPrompt('action', [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }], null);
+    const prompt = buildSystemPrompt(
+      'action',
+      [{ name: 'Nova', description: 'A hero', role: 'hero', appearance: 'Silver hair, black armor' }],
+      null,
+    );
     expect(prompt.includes('VISUAL CONSISTENCY RULES:')).toBeTruthy();
     expect(prompt.includes('APPEARANCE: Silver hair, black armor')).toBeTruthy();
     expect(prompt.includes('identical across all panels')).toBeTruthy();
@@ -69,7 +100,11 @@ describe('api pure parsing and prompt helpers', () => {
   });
 
   it('buildSystemPrompt includes world atmosphere when provided', () => {
-    const prompt = buildSystemPrompt('action', [], { name: 'Gotham', description: 'A dark city', atmosphere: 'Gritty noir' });
+    const prompt = buildSystemPrompt('action', [], {
+      name: 'Gotham',
+      description: 'A dark city',
+      atmosphere: 'Gritty noir',
+    });
     expect(prompt.includes('Atmosphere: Gritty noir')).toBeTruthy();
   });
 
@@ -217,7 +252,7 @@ describe('settings pure helpers', () => {
     // Image model with per_image pricing
     const imgModel = buildModelDetails({
       supports_edit: true,
-      pricing: { per_image: { '1024x1024': 0.04, '1024x1536': 0.06, 'auto': 0.04 }, currency: 'USD' },
+      pricing: { per_image: { '1024x1024': 0.04, '1024x1536': 0.06, auto: 0.04 }, currency: 'USD' },
     });
     expect(imgModel.includes('edit')).toBeTruthy();
     expect(imgModel.includes('$0.04/img')).toBeTruthy();

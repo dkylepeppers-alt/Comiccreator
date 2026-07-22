@@ -3,9 +3,9 @@ import type {
   CharacterVisualState,
   PlannedPanel,
   PreviousFrameRef,
-  ReferenceManifestItem,
   WorldLike,
 } from '../../visual-continuity.js';
+import type { ReferenceAsset, ReferenceManifestItem } from '../../references/types.js';
 
 export type ContinuityStrategy = 'sequential-page' | 'independent-panels';
 
@@ -59,9 +59,15 @@ export interface ContinuityPlanningInput {
   readonly charactersById: Readonly<Record<string, CharacterLike>>;
   readonly selectedCharacterIds: readonly string[];
   readonly world?: WorldLike | null;
+  readonly worldId?: string;
+  readonly referenceAssets?: readonly ReferenceAsset[];
+  readonly preferredReferenceIds?: Readonly<Record<string, string>>;
+  readonly pinnedReferenceIds?: Readonly<Record<string, string>>;
+  readonly manualReferenceIdsByPanel?: Readonly<Record<number, readonly string[]>>;
   readonly referenceBudget: number | 'auto' | null | undefined;
   readonly useReferenceImages: boolean;
   readonly previousFrame?: PreviousFrameRef | null;
+  /** @deprecated Removed when the legacy create-page integration migrates. */
   readonly anchorImageIdByCharacter?: Readonly<Record<string, string | null | undefined>>;
   /** Present, including an empty array, when planning a targeted retry. */
   readonly targetPanelIndexes?: readonly number[];

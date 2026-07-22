@@ -9,9 +9,10 @@ import {
   type ContinuityPageData,
 } from '../src/js/generation/continuity/orchestrator.js';
 import type { ContinuityPlanningInput } from '../src/js/generation/continuity/types.js';
+import type { ReferenceAsset } from '../src/js/references/types.js';
+import { resolvePanelReferences } from '../src/js/references/resolver.js';
 import {
   SEQUENTIAL_MODEL_ID,
-  allocateReferences,
   compileIndependentPanelPrompt,
   compilePanelDescription,
   compileSequentialPagePrompt,
@@ -43,28 +44,75 @@ const ellis = {
 const world = {
   id: 'world-rustfield',
   name: 'Rustfield',
-  images: [{ id: 'img-shop', dataUrl: 'data:image/png;base64,SHOP', locationKey: 'machine-shop' }],
-  primaryImageIndex: 0,
-  defaultAnchorImageId: 'img-shop',
 };
+
+function referenceAsset(overrides: Partial<ReferenceAsset> & Pick<ReferenceAsset, 'id' | 'dataUrl'>): ReferenceAsset {
+  return {
+    worldId: world.id,
+    subjectType: 'character',
+    use: 'identity',
+    characterIds: [],
+    locationId: null,
+    facets: {},
+    description: '',
+    confidence: {},
+    provenance: { source: 'generated', metadata: 'accepted' },
+    classificationState: 'ready',
+    acceptedAsIs: true,
+    autoUse: true,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+const referenceAssets: ReferenceAsset[] = [
+  referenceAsset({ id: 'img-mara', dataUrl: 'data:image/png;base64,MARA', characterIds: ['char-mara'] }),
+  referenceAsset({ id: 'img-ellis', dataUrl: 'data:image/png;base64,ELLIS', characterIds: ['char-ellis'] }),
+  referenceAsset({
+    id: 'img-mara-armor',
+    dataUrl: 'data:image/png;base64,ARMOR',
+    use: 'appearance',
+    characterIds: ['char-mara'],
+    facets: { appearanceState: 'red-coat' },
+  }),
+  referenceAsset({
+    id: 'img-shop',
+    dataUrl: 'data:image/png;base64,SHOP',
+    subjectType: 'location',
+    use: 'spatial',
+    locationId: 'machine-shop',
+  }),
+  referenceAsset({
+    id: 'img-conversation',
+    dataUrl: 'data:image/png;base64,TALK',
+    subjectType: 'interaction',
+    use: 'relationship',
+    characterIds: ['char-mara', 'char-ellis'],
+    facets: { interactionType: 'conversation' },
+  }),
+];
 
 function panel(index: number, characterIds = ['char-mara']) {
   return {
     narration: '',
     dialogue: [],
     visual: {
-      locationKey: 'machine-shop',
+      locationId: 'machine-shop',
       environment: `workbench row ${index + 1}`,
-      shot: 'medium shot',
-      composition: 'subject centered',
+      framing: 'medium',
+      cameraElevation: 'eye-level',
       lighting: 'dusty shafts of light',
-      colorMood: 'warm rust',
       characters: characterIds.map((characterId) => ({
         characterId,
+        ...(characterId === 'char-mara' ? { appearanceState: 'red-coat' } : {}),
         action: `works at station ${index + 1}`,
         pose: 'crouched',
         expression: 'focused',
       })),
+      interaction: characterIds.includes('char-ellis')
+        ? { participantIds: ['char-mara', 'char-ellis'], type: 'conversation' }
+        : null,
       keyProps: ['red toolbox'],
     },
     visualStateChanges: [],
@@ -86,9 +134,10 @@ function planningInput(overrides: Partial<ContinuityPlanningInput> = {}): Contin
     charactersById: { 'char-mara': mara, 'char-ellis': ellis },
     selectedCharacterIds: ['char-mara', 'char-ellis'],
     world,
+    worldId: world.id,
+    referenceAssets,
     referenceBudget: 'auto',
     useReferenceImages: true,
-    anchorImageIdByCharacter: { 'char-mara': 'img-mara', 'char-ellis': 'img-ellis' },
     stylePreset: 'inked dieselpunk comic',
     negativePrompt: 'photorealism',
     warnings: [],
@@ -142,7 +191,29 @@ describe('buildContinuityGenerationPlan', () => {
       negativePrompt: 'photorealism',
     });
     expect(plan.requests[0].prompt).toBe(plan.compiledPrompts[0]);
-    expect(plan.requests[0].imageDataUrls).toEqual(['data:image/png;base64,MARA', 'data:image/png;base64,SHOP']);
+    expect(plan.requests[0].imageDataUrls).toEqual([
+      'data:image/png;base64,MARA',
+      'data:image/png;base64,ARMOR',
+      'data:image/png;base64,SHOP',
+    ]);
+    expect(plan.referenceManifest.map((item) => item.role)).toEqual(['identity', 'appearance', 'location']);
+    expect(plan.referenceManifest.some((item) => 'referenceKey' in item)).toBe(false);
+  });
+
+  it('includes an exact interaction reference for a structured panel request', () => {
+    const panels = [panel(0, ['char-mara', 'char-ellis']), panel(1)];
+    const plan = buildContinuityGenerationPlan(
+      planningInput({
+        panels,
+        renderStates: [
+          { 'char-mara': createCharacterVisualState(mara), 'char-ellis': createCharacterVisualState(ellis) },
+          { 'char-mara': createCharacterVisualState(mara) },
+        ],
+      }),
+    );
+
+    expect(plan.referenceManifest.map((item) => item.role)).toContain('interaction');
+    expect(plan.referenceManifest.some((item) => 'referenceKey' in item)).toBe(false);
   });
 
   it('builds independent requests in panel order with stable one-based ids', () => {
@@ -195,10 +266,10 @@ describe('buildContinuityGenerationPlan', () => {
     const panels = [panel(0, ['char-mara', 'char-ellis']), panel(1, ['char-mara'])];
     const plan = buildContinuityGenerationPlan(
       planningInput({
-        pageModelId: 'capacity-one-model',
-        pageModel: { maxInputImages: 1, maxOutputImages: 1, sizes: ['1920x1920'] },
-        companionModelId: 'capacity-one-model',
-        companionModel: { maxInputImages: 1, maxOutputImages: 1, sizes: ['1920x1920'] },
+        pageModelId: 'capacity-three-model',
+        pageModel: { maxInputImages: 3, maxOutputImages: 1, sizes: ['1920x1920'] },
+        companionModelId: 'capacity-three-model',
+        companionModel: { maxInputImages: 3, maxOutputImages: 1, sizes: ['1920x1920'] },
         panels,
         renderStates: [
           {
@@ -207,17 +278,16 @@ describe('buildContinuityGenerationPlan', () => {
           },
           { 'char-mara': createCharacterVisualState(mara) },
         ],
-        world: null,
-        referenceBudget: 1,
+        referenceBudget: 3,
       }),
     );
 
-    expect(plan.blockedPanels).toEqual([{ panelIndex: 0, required: 2, capacity: 1 }]);
+    expect(plan.blockedPanels).toEqual([{ panelIndex: 0, required: 5, capacity: 3 }]);
     expect(plan.requests.map((request) => request.id)).toEqual(['panel-2']);
     expect(plan.panelPrompts[0]).toBeNull();
     expect(plan.warnings).toEqual([
       'Selected model has no verified sequence adapter',
-      'Panel 1: This request needs 2 mandatory reference image(s) (2 character identities, 1 location(s)) but only 1 fit.',
+      'Panel 1: This panel needs 5 mandatory reference image(s), but only 3 fit.',
     ]);
   });
 
@@ -237,18 +307,22 @@ describe('buildContinuityGenerationPlan', () => {
 
   it('preserves helper prompt, manifest, and warning ordering contracts', () => {
     const input = planningInput({
-      anchorImageIdByCharacter: { 'char-mara': 'deleted-anchor' },
       warnings: ['preflight warning'],
     });
     const plan = buildContinuityGenerationPlan(input);
-    const expectedAllocation = allocateReferences({
-      characterIds: ['char-mara'],
-      charactersById: input.charactersById,
-      locationKeys: ['machine-shop'],
-      world: input.world,
+    const expectedAllocation = resolvePanelReferences({
+      request: {
+        worldId: world.id,
+        characterIds: ['char-mara'],
+        locationId: 'machine-shop',
+        characterStates: { 'char-mara': 'red-coat' },
+        interaction: null,
+        facets: { framing: 'medium', cameraElevation: 'eye-level', lighting: 'dusty shafts of light' },
+        propNames: ['red toolbox'],
+      },
+      assets: referenceAssets,
       budget: 10,
       previousFrame: input.previousFrame,
-      anchorImageIdByCharacter: input.anchorImageIdByCharacter,
     });
 
     expect(plan.referenceManifest).toEqual(expectedAllocation.manifest);
@@ -285,14 +359,19 @@ describe('buildContinuityGenerationPlan', () => {
 
     plan.requests.forEach((request, requestIndex) => {
       const panelIndex = request.panelIndexes[0];
-      const expectedAllocation = allocateReferences({
-        characterIds: ['char-mara'],
-        charactersById: input.charactersById,
-        locationKeys: ['machine-shop'],
-        world: input.world,
+      const expectedAllocation = resolvePanelReferences({
+        request: {
+          worldId: world.id,
+          characterIds: ['char-mara'],
+          locationId: 'machine-shop',
+          characterStates: { 'char-mara': 'red-coat' },
+          interaction: null,
+          facets: { framing: 'medium', cameraElevation: 'eye-level', lighting: 'dusty shafts of light' },
+          propNames: ['red toolbox'],
+        },
+        assets: referenceAssets,
         budget: 10,
         previousFrame: input.previousFrame,
-        anchorImageIdByCharacter: input.anchorImageIdByCharacter,
       });
       expect(request.prompt).toBe(
         compileIndependentPanelPrompt({
@@ -515,17 +594,17 @@ describe('executeIndependentPlan', () => {
   it('preserves allocation failures while executing the remaining requests', async () => {
     const panels = [panel(0, ['char-mara', 'char-ellis']), panel(1, ['char-mara'])];
     const plan = independentPlan({
-      pageModelId: 'capacity-one-model',
-      pageModel: { maxInputImages: 1, maxOutputImages: 1, sizes: ['1920x1920'] },
-      companionModelId: 'capacity-one-model',
-      companionModel: { maxInputImages: 1, maxOutputImages: 1, sizes: ['1920x1920'] },
+      pageModelId: 'capacity-three-model',
+      pageModel: { maxInputImages: 3, maxOutputImages: 1, sizes: ['1920x1920'] },
+      companionModelId: 'capacity-three-model',
+      companionModel: { maxInputImages: 3, maxOutputImages: 1, sizes: ['1920x1920'] },
       panels,
       renderStates: [
         { 'char-mara': createCharacterVisualState(mara), 'char-ellis': createCharacterVisualState(ellis) },
         { 'char-mara': createCharacterVisualState(mara) },
       ],
       world: null,
-      referenceBudget: 1,
+      referenceBudget: 3,
       warnings: ['Panel 1: unrelated preflight warning'],
     });
     const pageData = pageFixture(2);
@@ -537,14 +616,11 @@ describe('executeIndependentPlan', () => {
     expect(plan.allocationFailures).toEqual([
       {
         panelIndex: 0,
-        detail:
-          'This request needs 2 mandatory reference image(s) (2 character identities, 1 location(s)) but only 1 fit.',
+        detail: 'This panel needs 5 mandatory reference image(s), but only 3 fit.',
       },
     ]);
     expect(dependencies.generateImages).toHaveBeenCalledTimes(1);
-    expect(pageData.panels[0].generationError).toBe(
-      'This request needs 2 mandatory reference image(s) (2 character identities, 1 location(s)) but only 1 fit.',
-    );
+    expect(pageData.panels[0].generationError).toBe('This panel needs 5 mandatory reference image(s), but only 3 fit.');
     expect(pageData.panels[1].imageUrl).toBe('data:image-0');
   });
 
