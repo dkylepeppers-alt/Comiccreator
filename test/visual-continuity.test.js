@@ -25,7 +25,7 @@ const mara = {
   appearance: 'tall, wiry, cropped black hair',
   images: [
     { id: 'img-a', dataUrl: 'data:image/png;base64,AAA', tag: 'default' },
-    { id: 'img-b', dataUrl: 'data:image/png;base64,BBB', tag: 'alternate-outfit' },
+    { id: 'img-b', dataUrl: 'data:image/png;base64,BBB', tag: 'alternate-outfit', referenceKey: 'battle-armor' },
   ],
   primaryImageIndex: 1,
   identityAnchorImageId: 'img-a',
@@ -377,6 +377,20 @@ describe('reference allocation', () => {
     expect(alloc.unanchoredCharacterIds).toEqual(['char-bare']);
     expect(alloc.manifest).toEqual([]);
   });
+
+  it('allocates a requested character variant after its identity anchor', () => {
+    const alloc = allocateReferences({
+      characterIds: ['char-mara'],
+      characterReferences: [{ characterId: 'char-mara', referenceKey: 'battle-armor' }],
+      charactersById: byId,
+      locationKeys: [],
+      budget: 5,
+    });
+    expect(alloc.manifest.map((item) => [item.role, item.imageId])).toEqual([
+      ['identity', 'img-a'],
+      ['variant', 'img-b'],
+    ]);
+  });
 });
 
 describe('effectiveReferenceBudget', () => {
@@ -482,6 +496,30 @@ describe('validatePlannedPage', () => {
     expect(sanitized.panels[0].visual.locationKey).toBeNull();
     expect(sanitized.panels[0].visualStateChanges).toEqual([]);
     expect(errors.length).toBe(3);
+  });
+
+  it('keeps known reference keys and clears unknown ones', () => {
+    const page = {
+      title: 't',
+      choices: [],
+      panels: [
+        panel({
+          visual: {
+            characters: [
+              { characterId: 'char-mara', referenceKey: 'battle-armor', action: '', pose: '', expression: '' },
+              { characterId: 'char-mara', referenceKey: 'invented-look', action: '', pose: '', expression: '' },
+            ],
+          },
+        }),
+      ],
+    };
+    const { page: sanitized, errors } = validatePlannedPage(page, {
+      characterIds: ['char-mara'],
+      locationKeys: [],
+      referenceKeysByCharacter: { 'char-mara': ['battle-armor'] },
+    });
+    expect(sanitized.panels[0].visual.characters.map((c) => c.referenceKey)).toEqual(['battle-armor', null]);
+    expect(errors[0]).toContain('unknown reference key');
   });
 });
 

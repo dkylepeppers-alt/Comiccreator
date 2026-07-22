@@ -40,7 +40,7 @@ describe('normalizeCharacterRecord', () => {
     expect(record.identityAnchorImageId).toBe('i1');
   });
 
-  it('keeps a valid existing anchor and reports unchanged for already-normalized records', () => {
+  it('keeps a valid existing anchor and becomes idempotent after reference metadata migration', () => {
     const rec = {
       id: 'c4',
       name: 'Y',
@@ -52,8 +52,12 @@ describe('normalizeCharacterRecord', () => {
       identityAnchorImageId: 'i2',
     };
     const first = DB.normalizeCharacterRecord(rec);
-    expect(first.changed).toBe(false);
+    expect(first.changed).toBe(true);
     expect(first.record.identityAnchorImageId).toBe('i2');
+    expect(first.record.images[0].referenceKey).toBeNull();
+    const second = DB.normalizeCharacterRecord(first.record);
+    expect(second.changed).toBe(false);
+    expect(second.record).toBe(first.record);
   });
 
   it('replaces a dangling anchor ID with a valid fallback', () => {

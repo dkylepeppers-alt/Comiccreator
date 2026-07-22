@@ -1019,6 +1019,9 @@ async function startGenerating() {
         role: c.role,
         description: c.description,
         powers: c.powers,
+        references: (c.images || [])
+          .filter((image) => image?.referenceKey)
+          .map((image) => ({ key: image.referenceKey, description: image.description || image.tag || '' })),
       })),
       world: world
         ? { name: world.name, description: world.description, details: world.details, atmosphere: world.atmosphere }
@@ -1135,6 +1138,12 @@ async function generatePage(presetData: any): Promise<void> {
         const { page: validated, errors } = validatePlannedPage(planned, {
           characterIds: state.characters.map((c) => c.id),
           locationKeys,
+          referenceKeysByCharacter: Object.fromEntries(
+            state.characters.map((character) => [
+              character.id,
+              (character.images || []).map((image) => image?.referenceKey).filter(Boolean),
+            ]),
+          ),
         });
         pageData = {
           title: validated.title,

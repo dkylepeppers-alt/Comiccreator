@@ -12,7 +12,14 @@ export interface BuildSystemPromptOptions {
 
 export interface PlannerManifest {
   genreName: string;
-  characters: Array<{ id: string; name: string; role?: string; description?: string; powers?: string }>;
+  characters: Array<{
+    id: string;
+    name: string;
+    role?: string;
+    description?: string;
+    powers?: string;
+    references?: Array<{ key: string; description?: string }>;
+  }>;
   world?: { name: string; description?: string; details?: string; atmosphere?: string } | null;
   locationKeys?: string[];
   customSystemPrompt?: string | null;
@@ -167,6 +174,9 @@ export function buildPlannerSystemPrompt(manifest: PlannerManifest): string {
       if (c.role) line += ` (${c.role})`;
       if (c.description) line += `\n  ${c.description}`;
       if (c.powers) line += `\n  Abilities: ${c.powers}`;
+      if (c.references?.length) {
+        line += `\n  Allowed reference keys: ${c.references.map((reference) => `"${reference.key}"${reference.description ? ` (${reference.description})` : ''}`).join(', ')}`;
+      }
       return line;
     })
     .join('\n');
@@ -202,7 +212,7 @@ Your response must be a JSON object with this exact structure:
       "lighting": "lighting style (rim lighting, chiaroscuro, soft diffused light, hard shadows...)",
       "colorMood": "color mood (desaturated, high contrast, warm palette...)",
       "characters": [
-        { "characterId": "id from the CHARACTER MANIFEST", "action": "what they are doing", "pose": "body position", "expression": "facial expression" }
+        { "characterId": "id from the CHARACTER MANIFEST", "referenceKey": "an allowed key for this character, or null", "action": "what they are doing", "pose": "body position", "expression": "facial expression" }
       ],
       "keyProps": ["important objects visible in the panel"],
       "focalPoint": "what the eye should land on (optional)",
@@ -238,6 +248,7 @@ ${locationLines}
 STRICT PLANNING RULES:
 - Use ONLY characterId values from the CHARACTER MANIFEST. Never invent IDs and never use character names as IDs.
 - List EVERY visible character in visual.characters, including silent background cast whose identity matters.
+- Use referenceKey only when one of that character's listed references is a strong visual match; otherwise use null. Never invent a reference key.
 - Do NOT describe any character's physical appearance, face, hair color, build, or clothing in visual fields. Identity and wardrobe are supplied separately by the application.
 - Report a wardrobe, hair, injury, carried-item, disguise, or transformation change ONLY in visualStateChanges, and ONLY when the story visibly changes it. Never redesign clothing for variety.
 - In "set", omit any field that does not change. A present value fully replaces the old value.

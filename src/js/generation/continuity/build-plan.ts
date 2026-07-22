@@ -57,6 +57,23 @@ function orderedPanelCast(input: ContinuityPlanningInput, panelIndex: number): s
   return [...ordered, ...extras];
 }
 
+function orderedCharacterReferences(input: ContinuityPlanningInput, panelIndexes: number[]) {
+  const cast = new Set(panelIndexes.flatMap((panelIndex) => collectPanelCast(input.panels[panelIndex])));
+  const orderedIds = [
+    ...input.selectedCharacterIds.filter((id) => cast.has(id)),
+    ...[...cast].filter((id) => !input.selectedCharacterIds.includes(id)).sort(),
+  ];
+  return orderedIds.flatMap((characterId) => {
+    const keys = new Set<string>();
+    for (const panelIndex of panelIndexes) {
+      for (const character of input.panels[panelIndex].visual?.characters || []) {
+        if (character.characterId === characterId && character.referenceKey) keys.add(character.referenceKey);
+      }
+    }
+    return [{ characterId }, ...[...keys].map((referenceKey) => ({ characterId, referenceKey }))];
+  });
+}
+
 function supportsSize(capability: NarrowedModelCapability | null, imageSize: string): boolean {
   return !Array.isArray(capability?.sizes) || capability.sizes.length === 0 || capability.sizes.includes(imageSize);
 }
@@ -95,6 +112,10 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
   const pageAllocation = input.useReferenceImages
     ? allocateReferences({
         characterIds: collectPageCast(plannedPage, [...input.selectedCharacterIds]),
+        characterReferences: orderedCharacterReferences(
+          input,
+          input.panels.map((_, index) => index),
+        ),
         charactersById: input.charactersById,
         locationKeys: collectLocationKeys([...input.panels]),
         world: input.world,
@@ -109,6 +130,7 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
     input.useReferenceImages
       ? allocateReferences({
           characterIds: orderedPanelCast(input, panelIndex),
+          characterReferences: orderedCharacterReferences(input, [panelIndex]),
           charactersById: input.charactersById,
           locationKeys: input.panels[panelIndex].visual?.locationKey
             ? [input.panels[panelIndex].visual.locationKey]

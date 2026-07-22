@@ -12,6 +12,8 @@ import {
   confirmDeleteEntity,
   embedImagesForSave,
 } from '../entity-gallery.js';
+import { normalizeReferenceKey } from '../reference-metadata.js';
+import { classifyCharacterReferences } from '../reference-classification-service.js';
 
 /**
  * Character Builder Page
@@ -37,7 +39,9 @@ const gallery = createGalleryEditor({
   idPrefix: 'char',
   imageTags: IMAGE_TAGS,
   defaultTag: 'default',
+  newImageExtra: () => ({ referenceKey: null }),
   descPlaceholder: 'e.g. Battle armor with sword drawn',
+  slotExtraInputs: (img, i) => renderReferenceMetadataInputs(img, i),
   anchorBadgeTitle: "Identity anchor — controls this character's stable identity in generated panels",
   anchorButtonTitle: 'Set as identity anchor',
   captionMeta: () => ({
@@ -69,6 +73,50 @@ const gallery = createGalleryEditor({
     `Identity anchor removed — falling back to "${label}". Pick a different anchor if needed.`,
   anchorRemovedEmptyToast: 'Identity anchor removed — this character has no anchor until you add an image.',
 });
+
+function referenceOptions(values, selected) {
+  return values
+    .map((value) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${value}</option>`)
+    .join('');
+}
+
+function renderReferenceMetadataInputs(img, index) {
+  const facets = img.referenceClassifications || {};
+  return `
+    <input type="text" class="char-img-refkey" value="${escHtml(img.referenceKey || '')}" placeholder="Reference key, e.g. battle-armor" data-action-input="updateReferenceKey" data-args="[${index}]">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <select title="View angle" data-action-change="updateReferenceFacet" data-args='[${index},"viewAngle"]'>${referenceOptions(['unspecified', 'front', 'side', 'back', 'three-quarter', 'multiple'], facets.viewAngle)}</select>
+      <select title="Framing" data-action-change="updateReferenceFacet" data-args='[${index},"framing"]'>${referenceOptions(['unspecified', 'close-up', 'medium', 'full-body', 'character-sheet'], facets.framing)}</select>
+      <select title="Activity" data-action-change="updateReferenceFacet" data-args='[${index},"activity"]'>${referenceOptions(['unspecified', 'neutral', 'action', 'expression', 'interaction'], facets.activity)}</select>
+      <select title="Context" data-action-change="updateReferenceFacet" data-args='[${index},"context"]'>${referenceOptions(['unspecified', 'isolated', 'in-world'], facets.context)}</select>
+    </div>`;
+}
+
+function updateReferenceKey(idx, input) {
+  const image = gallery.state.images[idx];
+  if (!image) return;
+  image.referenceKey = normalizeReferenceKey(input.value) || null;
+  image.referenceKeySource = 'manual';
+  image.referenceMetadataSource = 'manual';
+  input.value = image.referenceKey || '';
+  image.embedding = null;
+  image.embeddingText = null;
+}
+
+function updateReferenceFacet(idx, facet, select) {
+  const image = gallery.state.images[idx];
+  if (!image) return;
+  image.referenceClassifications = {
+    schemaVersion: 1,
+    viewAngle: 'unspecified',
+    framing: 'unspecified',
+    activity: 'unspecified',
+    context: 'unspecified',
+    ...(image.referenceClassifications || {}),
+    [facet]: select.value,
+  };
+  image.referenceMetadataSource = 'manual';
+}
 
 const entityCfg = {
   store: DB.STORES.characters,
@@ -169,6 +217,7 @@ async function renderEditor() {
           <div class="char-img-toolbar" id="char-img-toolbar">
             ${editorImages.length < MAX_IMAGES ? `<button class="btn btn-secondary btn-sm" data-action="addImageSlot">+ Add Image</button>` : ''}
             <button class="btn btn-secondary btn-sm" id="char-caption-all-btn" data-action="recaptionAll" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}">&#128221; Caption All</button>
+            ${editingId && editorImages.some((img) => img.dataUrl) ? '<button class="btn btn-secondary btn-sm" data-action="classifyReferences">Auto-tag Locally</button>' : ''}
             <button class="btn btn-secondary btn-sm" id="char-gen-refs-btn" data-action="generateReferences" style="${editorImages.some((img) => img.dataUrl) ? '' : 'display:none'}" title="Generate reference images from your uploaded image">&#127912; Generate References</button>
             ${editorImages.some((img) => img.dataUrl) && char.linkedWorldId ? `<button class="btn btn-secondary btn-sm" id="char-gen-world-btn" data-action="generateWorldInteractions" title="Generate images of this character interacting with their linked world">&#127758; Generate in World</button>` : ''}
           </div>
@@ -467,6 +516,24 @@ async function saveCharacter() {
       .map((s) => s.trim())
       .filter(Boolean);
 
+  const defaultVisualState = {
+    wardrobeDescription: document.getElementById('char-dvs-wardrobe')?.value.trim() || '',
+    hairState: document.getElementById('char-dvs-hair')?.value.trim() || '',
+    carriedItems: parseList('char-dvs-items'),
+    injuries: parseList('char-dvs-injuries'),
+    temporaryChanges: parseList('char-dvs-temporary'),
+  };
+  const priorDefaults = existingChar?.defaultVisualState || {};
+  const defaultVisualStateSources = { ...(existingChar?.defaultVisualStateSources || {}) };
+  for (const field of Object.keys(defaultVisualState)) {
+    if (
+      JSON.stringify(defaultVisualState[field]) !==
+      JSON.stringify(priorDefaults[field] ?? (Array.isArray(defaultVisualState[field]) ? [] : ''))
+    ) {
+      defaultVisualStateSources[field] = 'manual';
+    }
+  }
+
   const char = {
     id: editingId || DB.uuid(),
     name,
@@ -479,13 +546,8 @@ async function saveCharacter() {
     images: validImages,
     primaryImageIndex: primaryIdx,
     identityAnchorImageId: gallery.state.anchorImageId,
-    defaultVisualState: {
-      wardrobeDescription: document.getElementById('char-dvs-wardrobe')?.value.trim() || '',
-      hairState: document.getElementById('char-dvs-hair')?.value.trim() || '',
-      carriedItems: parseList('char-dvs-items'),
-      injuries: parseList('char-dvs-injuries'),
-      temporaryChanges: parseList('char-dvs-temporary'),
-    },
+    defaultVisualState,
+    defaultVisualStateSources,
     imageData: '', // clear legacy field when images[] is present
     createdAt: existingChar?.createdAt || Date.now(),
     updatedAt: Date.now(),
@@ -493,9 +555,23 @@ async function saveCharacter() {
 
   // Normalization guarantees stable image IDs and a valid anchor even for
   // records assembled from older editor state
-  await DB.put(DB.STORES.characters, DB.normalizeCharacterRecord(char).record);
+  const normalized = DB.normalizeCharacterRecord(char).record;
+  await DB.put(DB.STORES.characters, normalized);
+  void classifyCharacterReferences(normalized.id).catch((error) =>
+    App.logError('classifyCharacterReferences()', error),
+  );
   App.toast(`Character ${editingId ? 'updated' : 'created'}!`, 'success');
   backToList();
+}
+
+async function classifyReferences(): Promise<void> {
+  if (!editingId) return App.toast('Save the character before classifying references', 'info');
+  const count = await classifyCharacterReferences(editingId, { reclassify: true });
+  App.toast(
+    count ? `Auto-tagged ${count} reference${count === 1 ? '' : 's'} locally` : 'No references were classified',
+    count ? 'success' : 'info',
+  );
+  if (count) App.refreshPage();
 }
 
 async function exportCharacter(id: string): Promise<void> {
@@ -522,6 +598,8 @@ const CharactersPage: PageModule & Record<string, any> = {
   addImageSlot: gallery.addImageSlot,
   updateTag: gallery.updateTag,
   updateDesc: gallery.updateDesc,
+  updateReferenceKey,
+  updateReferenceFacet,
   setPrimary: gallery.setPrimary,
   setAnchor: gallery.setAnchor,
   removeImage: gallery.removeImage,
@@ -534,6 +612,7 @@ const CharactersPage: PageModule & Record<string, any> = {
   _doGenerateWorldInteractions,
   _pendingWorldData: null,
   saveCharacter,
+  classifyReferences,
   exportCharacter,
   deleteCharacter,
   confirmDelete,
