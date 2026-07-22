@@ -203,14 +203,50 @@ describe('reference repository', () => {
   });
 
   it('retains a bounded non-sensitive parse excerpt', async () => {
+    const multibyteExcerpt = '😀'.repeat(5_000);
     await repo.recordDiagnostic({
       id: 'safe-parse',
       assetId: 'r1',
       worldId: 'w1',
       createdAt: Date.now(),
-      error: { stage: 'parse', code: 'invalid-json', rawOutputExcerpt: 'x'.repeat(20 * 1024) },
+      error: { stage: 'parse', code: 'invalid-json', rawOutputExcerpt: multibyteExcerpt },
     });
 
-    expect((await repo.listDiagnostics('r1'))[0]?.error.rawOutputExcerpt).toHaveLength(16 * 1024);
+    expect(new TextEncoder().encode((await repo.listDiagnostics('r1'))[0]?.error.rawOutputExcerpt).byteLength).toBe(
+      16 * 1024,
+    );
+  });
+
+  it('prunes expired diagnostics during reads even when no new diagnostic is written', async () => {
+    memory.put('classificationDiagnostics', {
+      id: 'stale',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000 - 1,
+      error: { stage: 'parse', code: 'invalid-json' },
+    });
+
+    expect(await repo.listDiagnostics('r1')).toEqual([]);
+    expect(memory.get('classificationDiagnostics', 'stale')).toBeUndefined();
+  });
+
+  it('reconstructs diagnostics from allowlisted top-level fields', async () => {
+    await repo.recordDiagnostic({
+      id: 'allowlisted',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: { stage: 'parse', code: 'invalid-json' },
+      prompt: 'secret prompt',
+      image: 'data:image/png;base64,secret',
+      worldDescription: 'secret world',
+      roster: ['secret'],
+    } as any);
+
+    const diagnostic = (await repo.listDiagnostics('r1'))[0] as Record<string, unknown>;
+    expect(diagnostic).not.toHaveProperty('prompt');
+    expect(diagnostic).not.toHaveProperty('image');
+    expect(diagnostic).not.toHaveProperty('worldDescription');
+    expect(diagnostic).not.toHaveProperty('roster');
   });
 });

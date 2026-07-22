@@ -1,4 +1,5 @@
 import DB from '../db.js';
+import { safeDiagnosticExcerpt } from './diagnostic-privacy.js';
 import type { ClassificationDiagnostic, ClassificationJob, ReferenceAsset, WorldLocation } from './types.js';
 
 export type ReferenceStoreName =
@@ -123,15 +124,15 @@ function normalizeAsset(asset: ReferenceAsset): ReferenceAsset {
 const DIAGNOSTIC_MAX_COUNT = 500;
 const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-function safeRawOutputExcerpt(value: string | undefined): string | undefined {
-  if (!value || /data:|\b(?:prompt|roster|world|characters|locations)\b/i.test(value)) return undefined;
-  return value.slice(0, 16 * 1024);
-}
-
 function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): ClassificationDiagnostic {
   const { stage, code, mode, retryDelayMs, validationReason, queueState, rawOutputExcerpt } = diagnostic.error;
+  const safeExcerpt = safeDiagnosticExcerpt(rawOutputExcerpt);
   return {
-    ...diagnostic,
+    id: diagnostic.id,
+    assetId: diagnostic.assetId,
+    worldId: diagnostic.worldId,
+    createdAt: diagnostic.createdAt,
+    ...(diagnostic.queueState ? { queueState: diagnostic.queueState } : {}),
     error: {
       stage,
       code,
@@ -139,7 +140,7 @@ function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): Classificatio
       ...(retryDelayMs === undefined ? {} : { retryDelayMs }),
       ...(validationReason ? { validationReason } : {}),
       ...(queueState ? { queueState } : {}),
-      ...(safeRawOutputExcerpt(rawOutputExcerpt) ? { rawOutputExcerpt: safeRawOutputExcerpt(rawOutputExcerpt) } : {}),
+      ...(safeExcerpt ? { rawOutputExcerpt: safeExcerpt } : {}),
     },
   };
 }
@@ -265,13 +266,20 @@ export function createReferenceRepository(
       }),
 
     listDiagnostics: (assetId) =>
-      dependencies.transaction(['classificationDiagnostics'], 'readonly', async (transaction) =>
-        stableRecords(
-          assetId
-            ? await transaction.getAllByIndex<ClassificationDiagnostic>('classificationDiagnostics', 'assetId', assetId)
-            : await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics'),
-        ),
-      ),
+      dependencies.transaction(['classificationDiagnostics'], 'readwrite', async (transaction) => {
+        const cutoff = Date.now() - DIAGNOSTIC_MAX_AGE_MS;
+        const all = await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics');
+        const retained = all
+          .filter((diagnostic) => diagnostic.createdAt >= cutoff)
+          .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+        const removed = [
+          ...all.filter((diagnostic) => diagnostic.createdAt < cutoff),
+          ...retained.slice(0, Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT)),
+        ];
+        for (const diagnostic of removed) await transaction.delete('classificationDiagnostics', diagnostic.id);
+        const visible = retained.slice(Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT));
+        return stableRecords(assetId ? visible.filter((diagnostic) => diagnostic.assetId === assetId) : visible);
+      }),
 
     listLocations: (worldId) =>
       dependencies.transaction(['locations'], 'readonly', async (transaction) =>

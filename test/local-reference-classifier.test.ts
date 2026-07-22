@@ -99,6 +99,11 @@ describe('local reference classifier', () => {
       getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
       download: vi.fn(),
     });
+    const multibyteClassifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: '😀'.repeat(5_000) }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
 
     await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toMatchObject({
       kind: 'failure',
@@ -107,6 +112,8 @@ describe('local reference classifier', () => {
     const echoed = await echoedPromptClassifier.classify({ asset, world, characters: [], locations: [] });
     expect(echoed).toMatchObject({ kind: 'failure' });
     expect((echoed as any).error).not.toHaveProperty('rawOutputExcerpt');
+    const multibyte = await multibyteClassifier.classify({ asset, world, characters: [], locations: [] });
+    expect(new TextEncoder().encode((multibyte as any).error.rawOutputExcerpt).byteLength).toBe(16 * 1024);
   });
 
   it('uses generic diagnostic details when the native plugin throws sensitive text', async () => {

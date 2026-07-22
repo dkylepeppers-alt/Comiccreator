@@ -1,4 +1,5 @@
 import { registerPlugin } from '@capacitor/core';
+import { safeDiagnosticExcerpt } from './diagnostic-privacy.js';
 import { parseReferenceClassificationDraft, validateReferenceClassificationDraft } from './schema.js';
 import type { ClassificationOutcome, ReferenceAsset, WorldLocation } from './types.js';
 
@@ -93,12 +94,6 @@ function extractJsonObject(text: string): unknown | null {
   return null;
 }
 
-function safeRawOutputExcerpt(text: string): string | undefined {
-  const excerpt = text.trim().slice(0, 16 * 1024);
-  if (!excerpt || /data:|\b(?:prompt|roster|world|characters|locations)\b/i.test(excerpt)) return undefined;
-  return excerpt;
-}
-
 function waiting(status: LocalClassifierStatus): ClassificationOutcome {
   return status === 'downloadable' || status === 'downloading'
     ? { kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000 }
@@ -149,7 +144,7 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
         }
         const raw = extractJsonObject(response.text);
         if (!raw) {
-          const rawOutputExcerpt = safeRawOutputExcerpt(response.text);
+          const rawOutputExcerpt = safeDiagnosticExcerpt(response.text);
           return {
             kind: 'failure',
             error: {
