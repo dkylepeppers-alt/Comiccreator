@@ -1008,8 +1008,6 @@ async function exportData() {
       return storeName === DB.STORES.pages ? prepareExportPages(records) : records;
     },
     put: DB.put,
-    normalizeCharacter: DB.normalizeCharacterRecord,
-    normalizeWorld: DB.normalizeWorldRecord,
   });
   await saveBackupFile(data);
 }
@@ -1025,8 +1023,6 @@ async function importData(input: any): Promise<void> {
       stores: DB.STORES,
       put: DB.put,
       putBatch: DB.putBatch,
-      normalizeCharacter: DB.normalizeCharacterRecord,
-      normalizeWorld: DB.normalizeWorldRecord,
     });
 
     App.toast('Data imported!', 'success');

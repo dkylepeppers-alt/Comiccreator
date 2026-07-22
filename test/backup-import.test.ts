@@ -23,8 +23,6 @@ function makeDependencies(overrides: Partial<BackupImportDependencies> = {}): Ba
     stores: STORES,
     put: vi.fn().mockResolvedValue(undefined),
     getAll: vi.fn().mockResolvedValue([]),
-    normalizeCharacter: vi.fn((record: unknown) => ({ record })),
-    normalizeWorld: vi.fn((record: unknown) => ({ record })),
     ...overrides,
   };
 }
@@ -125,27 +123,14 @@ describe('parseBackup', () => {
 });
 
 describe('importBackup', () => {
-  it('normalizes character and world records via the supplied dependencies before writing', async () => {
-    const dependencies = makeDependencies({
-      normalizeCharacter: vi.fn((record: unknown) => ({
-        record: { ...(record as Record<string, unknown>), normalized: 'char' },
-      })),
-      normalizeWorld: vi.fn((record: unknown) => ({
-        record: { ...(record as Record<string, unknown>), normalized: 'world' },
-      })),
-    });
+  it('writes canonical character and world records unmodified', async () => {
+    const dependencies = makeDependencies();
     const payload = parseBackup(JSON.stringify({ characters: [{ id: 'c1' }], worlds: [{ id: 'w1' }] }));
 
     await importBackup(payload, dependencies);
 
-    expect(dependencies.normalizeCharacter).toHaveBeenCalledWith({ id: 'c1', worldId: 'w1' });
-    expect(dependencies.normalizeWorld).toHaveBeenCalledWith({ id: 'w1' });
-    expect(dependencies.put).toHaveBeenCalledWith('characters', {
-      id: 'c1',
-      worldId: 'w1',
-      normalized: 'char',
-    });
-    expect(dependencies.put).toHaveBeenCalledWith('worlds', { id: 'w1', normalized: 'world' });
+    expect(dependencies.put).toHaveBeenCalledWith('characters', { id: 'c1', worldId: 'w1' });
+    expect(dependencies.put).toHaveBeenCalledWith('worlds', { id: 'w1' });
   });
 
   it('writes comics, pages, presets, and imagePresets unmodified (no normalizer)', async () => {
@@ -219,18 +204,6 @@ describe('importBackup', () => {
 
     expect(dependencies.put).toHaveBeenCalledTimes(1);
     expect(dependencies.put).toHaveBeenCalledWith('presets', { id: 'pr1' });
-  });
-
-  it('propagates a normalizer failure and stops further writes', async () => {
-    const dependencies = makeDependencies({
-      normalizeCharacter: vi.fn(() => {
-        throw new Error('bad character record');
-      }),
-    });
-    const payload = parseBackup(JSON.stringify({ characters: [{ id: 'c1' }], worlds: [{ id: 'w1' }] }));
-
-    await expect(importBackup(payload, dependencies)).rejects.toThrow('bad character record');
-    expect(dependencies.put).not.toHaveBeenCalled();
   });
 
   it('propagates a write failure and stops further writes', async () => {

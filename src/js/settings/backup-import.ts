@@ -58,18 +58,12 @@ export interface BackupImportStoreNames {
   readonly imagePresets: string;
 }
 
-export interface BackupRecordNormalizationResult {
-  readonly record: unknown;
-}
-
 export interface BackupImportDependencies {
   readonly stores: BackupImportStoreNames;
   readonly getAll?: (storeName: string) => Promise<unknown[]>;
   readonly put: (storeName: string, record: unknown) => Promise<unknown>;
   /** Production supplies one IndexedDB transaction for the complete validated write set. */
   readonly putBatch?: (writes: readonly BackupWrite[]) => Promise<void>;
-  readonly normalizeCharacter: (record: unknown) => BackupRecordNormalizationResult;
-  readonly normalizeWorld: (record: unknown) => BackupRecordNormalizationResult;
   readonly now?: () => number;
 }
 
@@ -433,23 +427,13 @@ function isV2(payload: BackupPayload): payload is BackupPayloadV2 {
   return payload.schemaVersion === 2;
 }
 
-function normalizedWrites(payload: BackupPayloadV2, dependencies: BackupImportDependencies): BackupWrite[] {
-  return V2_COLLECTIONS.flatMap((key) =>
-    payload[key].map((item) => {
-      const normalized =
-        key === 'characters'
-          ? dependencies.normalizeCharacter(item).record
-          : key === 'worlds'
-            ? dependencies.normalizeWorld(item).record
-            : item;
-      return [dependencies.stores[key], normalized] as const;
-    }),
-  );
+function backupWrites(payload: BackupPayloadV2, dependencies: BackupImportDependencies): BackupWrite[] {
+  return V2_COLLECTIONS.flatMap((key) => payload[key].map((item) => [dependencies.stores[key], item] as const));
 }
 
 export async function importBackup(payload: BackupPayload, dependencies: BackupImportDependencies): Promise<void> {
   const canonical = isV2(payload) ? payload : convertLegacyBackup(payload, dependencies.now?.());
-  const writes = normalizedWrites(canonical, dependencies);
+  const writes = backupWrites(canonical, dependencies);
   if (dependencies.putBatch) {
     await dependencies.putBatch(writes);
     return;

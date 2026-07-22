@@ -157,15 +157,6 @@ function open(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains(STORES.settings)) {
         d.createObjectStore(STORES.settings, { keyPath: 'key' });
       }
-      // v4: assign stable image IDs and explicit anchors to existing records.
-      // Must run inside the versionchange transaction so IDs persist exactly once.
-      if (e.oldVersion > 0 && e.oldVersion < 4) {
-        const upgradeTx = (e.target as IDBOpenDBRequest).transaction;
-        if (upgradeTx) {
-          rewriteStoreRecords(upgradeTx, STORES.characters, normalizeCharacterRecord);
-          rewriteStoreRecords(upgradeTx, STORES.worlds, normalizeWorldRecord);
-        }
-      }
       // v5: comics created before the unified reference system are immutable snapshots.
       if (e.oldVersion > 0 && e.oldVersion < 5) {
         const upgradeTx = (e.target as IDBOpenDBRequest).transaction;
@@ -296,14 +287,6 @@ function rewriteStoreRecords(
   } catch (_) {
     /* store may not exist yet on fresh databases */
   }
-}
-
-function normalizeCharacterRecord(char: any): { record: any; changed: boolean } {
-  return { record: char, changed: false };
-}
-
-function normalizeWorldRecord(world: any): { record: any; changed: boolean } {
-  return { record: world, changed: false };
 }
 
 /**
@@ -524,8 +507,6 @@ const DB = {
   getSetting,
   setSetting,
   fileToDataURL,
-  normalizeCharacterRecord,
-  normalizeWorldRecord,
   deleteComicAndPages,
   commitPageAndComic,
   putPageIfComicExists,

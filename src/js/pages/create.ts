@@ -749,12 +749,12 @@ async function renderResume(comicId: string): Promise<string> {
   state.characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
-    if (c) state.characters.push(DB.normalizeCharacterRecord(c).record);
+    if (c) state.characters.push(c);
   }
   state.world = null;
   if (state.selectedWorld) {
     const worldRec = await DB.get(DB.STORES.worlds, state.selectedWorld);
-    if (worldRec) state.world = DB.normalizeWorldRecord(worldRec).record;
+    if (worldRec) state.world = worldRec;
   }
   // Anchored comics that predate the ledger get one initialized from current
   // character defaults; the user can review/edit it before the next page.
@@ -917,26 +917,18 @@ async function startGenerating() {
   // The draft is only cleared when the user explicitly clicks "New Comic".
   await saveDraft();
 
-  // Build context — normalize records so every image has a stable ID and an
-  // explicit anchor before generation. Persist newly assigned IDs immediately
-  // so anchors stay stable across sessions (covers imported/legacy records).
+  // Build context from canonical character and world records.
   const characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
     if (!c) continue;
-    const { record, changed } = DB.normalizeCharacterRecord(c);
-    if (changed) await DB.put(DB.STORES.characters, record);
-    characters.push(record);
+    characters.push(c);
   }
   state.characters = characters;
   let world = null;
   if (state.selectedWorld) {
     const worldRec = await DB.get(DB.STORES.worlds, state.selectedWorld);
-    if (worldRec) {
-      const { record, changed } = DB.normalizeWorldRecord(worldRec);
-      if (changed) await DB.put(DB.STORES.worlds, record);
-      world = record;
-    }
+    if (worldRec) world = worldRec;
   }
   state.world = world;
 
