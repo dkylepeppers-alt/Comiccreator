@@ -53,6 +53,7 @@ test.describe('Core navigation', () => {
 
   test('navigates to the Library page via App.navigate()', async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('#content h2').filter({ hasText: /settings/i })).toBeVisible();
 
     await page.evaluate(() => App.navigate('library'));
 
