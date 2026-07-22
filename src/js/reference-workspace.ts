@@ -143,6 +143,7 @@ function actionArgs(referenceId: string): string {
 
 function referenceCard(asset: ReferenceAsset, label: string, picker: boolean): string {
   const hidden = !asset.autoUse;
+  const retryAllowed = asset.provenance.metadata === 'local';
   return `<article class="reference-card" data-reference-id="${escHtml(asset.id)}">
     <button class="reference-preview" data-action="preview-reference" data-args="${actionArgs(asset.id)}" aria-label="Preview ${escHtml(label)}">
       <img src="${escHtml(asset.thumbnailDataUrl || asset.dataUrl)}" alt="${escHtml(label)}">
@@ -159,7 +160,7 @@ function referenceCard(asset: ReferenceAsset, label: string, picker: boolean): s
       <button class="btn btn-sm btn-secondary" data-action="review-reference" data-args="${actionArgs(asset.id)}">Review</button>
       <button class="btn btn-sm btn-secondary" data-action="${hidden ? 'unhide' : 'hide'}-reference" data-args="${actionArgs(asset.id)}">${hidden ? 'Unhide' : 'Hide'}</button>
       ${
-        asset.classificationState === 'needs-review'
+        asset.classificationState === 'needs-review' && retryAllowed
           ? `<button class="btn btn-sm btn-secondary" data-action="accept-reference" data-args="${actionArgs(asset.id)}">Accept as-is</button>
              <button class="btn btn-sm btn-secondary" data-action="retry-reference" data-args="${actionArgs(asset.id)}">Retry</button>`
           : ''
@@ -269,7 +270,12 @@ function worldProgress(
     couldNotClassify: assets.filter((asset) => asset.classificationState === 'could-not-classify').length,
     queued: jobs.filter((job) => job?.status === 'pending').length,
     running: jobs.filter((job) => job?.status === 'running').length,
-    failed: jobs.filter((job) => job?.status === 'failed').length,
+    failed: assets.filter(
+      (asset, index) =>
+        jobs[index]?.status === 'failed' &&
+        asset.provenance.metadata !== 'manual' &&
+        asset.provenance.metadata !== 'accepted',
+    ).length,
     paused: progress.paused,
   };
 }
@@ -390,10 +396,11 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
         dependencies.repository.getJobByAsset(referenceId),
       ]);
       if (!asset || asset.worldId !== worldId) {
-        return `<section class="reference-editor-empty" role="alert"><strong>Reference unavailable.</strong><span>It may have been deleted or moved to another world.</span></section>`;
+        return `<section class="reference-editor reference-editor-empty" data-reference-editor role="alert"><header class="reference-editor-header"><div><p class="reference-eyebrow">References</p><h3>Reference unavailable</h3></div><button class="btn btn-sm btn-secondary" data-action="close-reference-editor" autofocus>Close</button></header><span>It may have been deleted or moved to another world.</span></section>`;
       }
       const compatibleUses = asset.subjectType ? COMPATIBLE_USES[asset.subjectType] : [];
       const hidden = !asset.autoUse;
+      const retryAllowed = asset.provenance.metadata === 'local';
       return `<section class="reference-editor" data-reference-editor data-reference-id="${escHtml(asset.id)}">
         <header class="reference-editor-header">
           <div><p class="reference-eyebrow">References</p><h3>Manual classification</h3></div>
@@ -423,7 +430,7 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
         </div>
         <div class="reference-editor-actions">
           <button class="btn btn-sm btn-secondary" data-action="${hidden ? 'unhide' : 'hide'}-reference" data-args="${actionArgs(asset.id)}">${hidden ? 'Unhide reference' : 'Hide reference'}</button>
-          <button class="btn btn-sm btn-secondary" data-action="retry-reference" data-args="${actionArgs(asset.id)}">Retry classification</button>
+          ${retryAllowed ? `<button class="btn btn-sm btn-secondary" data-action="retry-reference" data-args="${actionArgs(asset.id)}">Retry classification</button>` : ''}
           <button class="btn btn-sm btn-secondary" data-action="reclassify-reference" data-args="${actionArgs(asset.id)}">Reclassify</button>
           <button class="btn btn-sm btn-danger" data-action="delete-reference" data-args="${actionArgs(asset.id)}">Delete reference</button>
         </div>
@@ -457,7 +464,12 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
         const jobs = await Promise.all(assets.map((asset) => dependencies.repository.getJobByAsset(asset.id)));
         await Promise.all(
           assets
-            .filter((_, index) => jobs[index]?.status === 'failed')
+            .filter(
+              (asset, index) =>
+                jobs[index]?.status === 'failed' &&
+                asset.provenance.metadata !== 'manual' &&
+                asset.provenance.metadata !== 'accepted',
+            )
             .map((asset) => dependencies.queue.retry(asset.id)),
         );
         return;

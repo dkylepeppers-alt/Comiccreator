@@ -50,6 +50,7 @@ function pendingJob(asset: ReferenceAsset, now: number, existing?: Classificatio
     worldId: asset.worldId,
     status: 'pending',
     attemptCount: existing?.attemptCount || 0,
+    assetVersion: asset.classificationVersion,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
@@ -175,15 +176,8 @@ export function createClassificationQueue({
       lastError: undefined,
       updatedAt: now(),
     };
-    await repository.putJob(running);
-    const asset = await repository.getAsset(job.assetId);
-    if (!asset) {
-      return;
-    }
-    if (asset.provenance.metadata === 'manual') {
-      await failJob(asset, running, { stage: 'validation', code: 'manual-metadata', mode: 'local' });
-      return;
-    }
+    const asset = await repository.claimPendingJobIfCurrent(job, running);
+    if (!asset) return;
 
     let outcome: ClassificationOutcome;
     try {
@@ -289,6 +283,9 @@ export function createClassificationQueue({
   async function retry(assetId: string): Promise<void> {
     const asset = await repository.getAsset(assetId);
     if (!asset) throw new Error(`Unknown reference asset "${assetId}"`);
+    if (asset.provenance.metadata === 'manual' || asset.provenance.metadata === 'accepted') {
+      throw new Error('Manual or accepted reference metadata can only be replaced through Reclassify.');
+    }
     const updatedAsset: ReferenceAsset = {
       ...asset,
       classificationState: 'pending',
@@ -305,9 +302,10 @@ export function createClassificationQueue({
 
   async function retryAllFailed(): Promise<number> {
     const failed = (await repository.listJobs()).filter((job) => job.status === 'failed');
+    let retried = 0;
     for (const job of failed) {
       const asset = await repository.getAsset(job.assetId);
-      if (!asset) continue;
+      if (!asset || asset.provenance.metadata === 'manual' || asset.provenance.metadata === 'accepted') continue;
       const updatedAsset: ReferenceAsset = {
         ...asset,
         classificationState: 'pending',
@@ -316,9 +314,10 @@ export function createClassificationQueue({
         updatedAt: now(),
       };
       await repository.putAssetAndJob(updatedAsset, pendingJob(updatedAsset, now(), job));
+      retried += 1;
     }
-    if (failed.length) await startIfUnpaused();
-    return failed.length;
+    if (retried) await startIfUnpaused();
+    return retried;
   }
 
   async function acceptAsIs(assetId: string): Promise<void> {

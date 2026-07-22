@@ -188,6 +188,15 @@ describe('reference classification queue', () => {
     });
   });
 
+  it('rejects retry for manual or accepted metadata so only explicit reclassify can replace it', async () => {
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+    await repo.putAsset(asset({ provenance: { source: 'uploaded', metadata: 'manual' } }));
+    await expect(queue.retry('r1')).rejects.toThrow('Reclassify');
+
+    await repo.putAsset(asset({ provenance: { source: 'uploaded', metadata: 'accepted' }, acceptedAsIs: true }));
+    await expect(queue.retry('r1')).rejects.toThrow('Reclassify');
+  });
+
   it('only considers ready or explicitly accepted visible assets eligible', () => {
     expect(isAutomaticallyEligible(asset({ classificationState: 'ready' }))).toBe(true);
     expect(isAutomaticallyEligible(asset({ classificationState: 'needs-review', acceptedAsIs: true }))).toBe(true);
@@ -365,5 +374,56 @@ describe('reference classification queue', () => {
 
     expect(await repo.getAsset('r1')).toBeUndefined();
     expect(await repo.getJobByAsset('r1')).toBeUndefined();
+  });
+
+  it('does not recreate a running job when deletion wins between pending selection and claim', async () => {
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+    queue.pause();
+    await queue.enqueue('r1');
+    const claim = repo.claimPendingJobIfCurrent.bind(repo);
+    repo.claimPendingJobIfCurrent = async (...args) => {
+      await repo.deleteAsset('r1');
+      return claim(...args);
+    };
+
+    await queue.resume();
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(await repo.getAsset('r1')).toBeUndefined();
+    expect(await repo.getJobByAsset('r1')).toBeUndefined();
+  });
+
+  it('does not overwrite a manual-completed job when manual save wins between pending selection and claim', async () => {
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+    const workspace = createReferenceWorkspace({
+      repository: repo,
+      queue,
+      listCharacters: async () => [{ id: 'mara', name: 'Mara' }],
+      listLocations: async () => [],
+    });
+    queue.pause();
+    await queue.enqueue('r1');
+    const claim = repo.claimPendingJobIfCurrent.bind(repo);
+    repo.claimPendingJobIfCurrent = async (...args) => {
+      await workspace.handleAction({
+        action: 'save-reference-classification',
+        referenceId: 'r1',
+        classification: {
+          subjectType: 'character',
+          use: 'identity',
+          characterIds: ['mara'],
+          locationId: null,
+          facets: {},
+          description: 'Manual before claim',
+        },
+      });
+      return claim(...args);
+    };
+
+    await queue.resume();
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(await repo.getAsset('r1')).toMatchObject({ provenance: { metadata: 'manual' } });
+    expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'complete' });
   });
 });

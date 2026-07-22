@@ -153,6 +153,8 @@ export interface ClassificationJob {
   lastError?: string;
   retryAt?: number;
   waitingReason?: ClassificationWaitingReason;
+  /** Asset revision this pending job is permitted to classify. */
+  assetVersion?: number;
   createdAt: number;
   updatedAt: number;
 }

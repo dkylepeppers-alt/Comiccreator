@@ -33,6 +33,7 @@ export interface ReferenceRepository {
   listJobs(): Promise<ClassificationJob[]>;
   putJob(job: ClassificationJob): Promise<void>;
   putAssetAndJob(asset: ReferenceAsset, job: ClassificationJob): Promise<void>;
+  claimPendingJobIfCurrent(job: ClassificationJob, running: ClassificationJob): Promise<ReferenceAsset | undefined>;
   finalizeAssetAndJobIfCurrent(
     snapshot: ReferenceAsset,
     asset: ReferenceAsset,
@@ -273,6 +274,30 @@ export function createReferenceRepository(
       dependencies.transaction(['referenceAssets', 'classificationJobs'], 'readwrite', async (transaction) => {
         await transaction.put('referenceAssets', normalizeAsset(asset));
         await transaction.put('classificationJobs', job);
+      }),
+
+    claimPendingJobIfCurrent: (job, running) =>
+      dependencies.transaction(['referenceAssets', 'classificationJobs'], 'readwrite', async (transaction) => {
+        const [asset, currentJob] = await Promise.all([
+          transaction.get<ReferenceAsset>('referenceAssets', job.assetId),
+          transaction.get<ClassificationJob>('classificationJobs', job.id),
+        ]);
+        if (
+          !asset ||
+          asset.provenance.metadata === 'manual' ||
+          asset.classificationState !== 'pending' ||
+          asset.classificationVersion !== job.assetVersion ||
+          !currentJob ||
+          currentJob.assetId !== job.assetId ||
+          currentJob.worldId !== job.worldId ||
+          currentJob.status !== 'pending' ||
+          currentJob.updatedAt !== job.updatedAt ||
+          currentJob.assetVersion !== job.assetVersion
+        ) {
+          return undefined;
+        }
+        await transaction.put('classificationJobs', running);
+        return asset;
       }),
 
     finalizeAssetAndJobIfCurrent: (snapshot, asset, job, diagnostic) =>

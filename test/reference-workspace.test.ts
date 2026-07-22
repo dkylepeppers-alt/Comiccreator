@@ -138,6 +138,19 @@ describe('reference workspace', () => {
     expect(html).toContain('data-action="close-reference-editor"');
   });
 
+  it('does not expose retry for manual metadata and gives unavailable editors a focusable close control', async () => {
+    const deps = dependencies([asset({ provenance: { source: 'uploaded', metadata: 'manual' } })]);
+    const workspace = createReferenceWorkspace(deps);
+
+    const manualHtml = await workspace.renderEditor({ worldId: 'w1', referenceId: 'r1' });
+    const unavailableHtml = await workspace.renderEditor({ worldId: 'w1', referenceId: 'missing' });
+
+    expect(manualHtml).not.toContain('Retry classification');
+    expect(unavailableHtml).toContain('data-reference-editor');
+    expect(unavailableHtml).toContain('data-action="close-reference-editor"');
+    expect(unavailableHtml).toContain('autofocus');
+  });
+
   it('saves a valid manual ready classification, clears confidence, and completes its job', async () => {
     const records = [asset({ classificationState: 'needs-review', confidence: { subject: 0.4 } })];
     const deps = dependencies(records);
