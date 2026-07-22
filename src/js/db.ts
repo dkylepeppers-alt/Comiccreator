@@ -96,7 +96,7 @@ export interface Setting {
 }
 
 const DB_NAME = 'ComicCreatorDB';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 let db: IDBDatabase | null = null;
 
 const STORES = {
@@ -105,6 +105,7 @@ const STORES = {
   locations: 'locations',
   referenceAssets: 'referenceAssets',
   classificationJobs: 'classificationJobs',
+  classificationDiagnostics: 'classificationDiagnostics',
   comics: 'comics',
   pages: 'pages',
   presets: 'presets',
@@ -139,6 +140,11 @@ function open(): Promise<IDBDatabase> {
         const jobs = d.createObjectStore(STORES.classificationJobs, { keyPath: 'id' });
         jobs.createIndex('status', 'status');
         jobs.createIndex('assetId', 'assetId', { unique: true });
+      }
+      if (!d.objectStoreNames.contains(STORES.classificationDiagnostics)) {
+        const diagnostics = d.createObjectStore(STORES.classificationDiagnostics, { keyPath: 'id' });
+        diagnostics.createIndex('assetId', 'assetId');
+        diagnostics.createIndex('createdAt', 'createdAt');
       }
       if (!d.objectStoreNames.contains(STORES.comics)) {
         const cs = d.createObjectStore(STORES.comics, { keyPath: 'id' });

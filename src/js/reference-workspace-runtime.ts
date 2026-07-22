@@ -12,7 +12,12 @@ export const referenceClassificationQueue = createClassificationQueue({
   classifier: {
     classify: async (asset) => {
       const world = await DB.get(DB.STORES.worlds, asset.worldId);
-      if (!world) return null;
+      if (!world) {
+        return {
+          kind: 'failure' as const,
+          error: { stage: 'validation' as const, code: 'missing-asset' as const, mode: 'local' as const },
+        };
+      }
       const characters = (await DB.getAll(DB.STORES.characters))
         .filter((character) => (character.worldId || character.linkedWorldId) === asset.worldId)
         .map(({ id, name, appearance }) => ({ id, name, appearance }));

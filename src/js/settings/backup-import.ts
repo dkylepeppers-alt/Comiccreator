@@ -145,7 +145,7 @@ function validateCanonical(payload: BackupPayloadV2): void {
     characterWorlds.set(String(item.id), item.worldId);
   }
 
-  const classificationStates = new Set(['pending', 'ready', 'needs-review']);
+  const classificationStates = new Set(['pending', 'ready', 'needs-review', 'could-not-classify']);
   const provenanceSources = new Set(['uploaded', 'generated', 'migrated']);
   const provenanceMetadata = new Set(['local', 'manual', 'accepted']);
   const assetWorlds = new Map<string, string>();
@@ -205,6 +205,7 @@ function validateCanonical(payload: BackupPayloadV2): void {
         !Number.isInteger(item.attemptCount) ||
         Number(item.attemptCount) < 0 ||
         (item.lastError !== undefined && typeof item.lastError !== 'string') ||
+        (item.retryAt !== undefined && !isTimestamp(item.retryAt)) ||
         !isTimestamp(item.createdAt) ||
         !isTimestamp(item.updatedAt),
     )

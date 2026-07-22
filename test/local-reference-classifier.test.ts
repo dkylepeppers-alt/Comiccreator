@@ -61,17 +61,20 @@ describe('local reference classifier', () => {
       }),
     );
     expect(plugin.classify.mock.calls[0][0].prompt).toContain('"id":"yard"');
-    expect(result?.characterIds).toEqual(['mara']);
+    expect(result).toMatchObject({ kind: 'classified', classification: { characterIds: ['mara'] } });
   });
 
-  it('returns null for unsupported devices or invalid JSON', async () => {
+  it('returns typed waiting and failure outcomes rather than null', async () => {
     const unavailablePlugin = {
       classify: vi.fn(),
       getAvailability: vi.fn().mockResolvedValue({ status: 'unavailable' as const }),
       download: vi.fn(),
     };
     const unavailableClassifier = createLocalReferenceClassifier(unavailablePlugin);
-    expect(await unavailableClassifier.classify({ asset, world, characters: [], locations: [] })).toBeNull();
+    expect(await unavailableClassifier.classify({ asset, world, characters: [], locations: [] })).toMatchObject({
+      kind: 'waiting',
+      reason: 'model-unavailable',
+    });
     expect(unavailablePlugin.classify).not.toHaveBeenCalled();
 
     const invalidClassifier = createLocalReferenceClassifier({
@@ -79,7 +82,36 @@ describe('local reference classifier', () => {
       getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
       classify: vi.fn().mockResolvedValue({ text: 'not json' }),
     });
-    expect(await invalidClassifier.classify({ asset, world, characters: [], locations: [] })).toBeNull();
+    expect(await invalidClassifier.classify({ asset, world, characters: [], locations: [] })).toMatchObject({
+      kind: 'failure',
+      error: { stage: 'parse', code: 'invalid-json' },
+    });
+  });
+
+  it('extracts a fenced JSON object surrounded by model prose', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: `Here is the result:\n\`\`\`json\n${validJson}\n\`\`\`` }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'classified',
+      classification: { subjectType: 'character' },
+    });
+  });
+
+  it('reports an undecodable native response as a decode failure', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: 42 }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'failure',
+      error: { stage: 'decode', code: 'decode-failed' },
+    });
   });
 
   it('exposes availability and download without a remote fallback', async () => {

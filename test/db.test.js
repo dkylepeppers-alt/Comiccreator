@@ -26,6 +26,7 @@ describe('DB module', () => {
     expect(db.objectStoreNames.contains(DB.STORES.locations)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.referenceAssets)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.classificationJobs)).toBeTruthy();
+    expect(db.objectStoreNames.contains(DB.STORES.classificationDiagnostics)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.comics)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.pages)).toBeTruthy();
     expect(db.objectStoreNames.contains(DB.STORES.presets)).toBeTruthy();
@@ -55,6 +56,10 @@ describe('DB module', () => {
     expect(jobs.indexNames.contains('assetId')).toBeTruthy();
     expect(jobs.index('assetId').unique).toBeTruthy();
     tx4.abort();
+
+    const tx5 = db.transaction(DB.STORES.classificationDiagnostics, 'readonly');
+    expect(tx5.objectStore(DB.STORES.classificationDiagnostics).indexNames.contains('assetId')).toBeTruthy();
+    tx5.abort();
   });
 
   it('supports put/get/getAll/del', async () => {

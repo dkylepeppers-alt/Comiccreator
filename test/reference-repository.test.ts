@@ -141,4 +141,37 @@ describe('reference repository', () => {
     expect(await repo.listLocations('w1')).toEqual([location]);
     expect((await repo.listJobs()).map((item) => item.id)).toEqual(['j1']);
   });
+
+  it('stores redacted diagnostics with bounded retention', async () => {
+    for (let index = 0; index < 51; index += 1) {
+      await repo.recordDiagnostic({
+        id: `d${index}`,
+        assetId: 'r1',
+        worldId: 'w1',
+        createdAt: index,
+        error: {
+          stage: 'parse',
+          code: 'invalid-json',
+          mode: 'local',
+          message: 'prompt=data:image/png;base64,secret-token',
+        },
+      });
+    }
+
+    const diagnostics = await repo.listDiagnostics('r1');
+    expect(diagnostics).toHaveLength(50);
+    expect(diagnostics[0]?.error.message).not.toContain('secret-token');
+  });
+
+  it('retains the newest diagnostics by timestamp rather than diagnostic ID', async () => {
+    const error = { stage: 'parse' as const, code: 'invalid-json' as const };
+    for (let index = 1; index <= 49; index += 1) {
+      await repo.recordDiagnostic({ id: `middle-${index}`, assetId: 'r1', worldId: 'w1', createdAt: index, error });
+    }
+    await repo.recordDiagnostic({ id: 'z-oldest', assetId: 'r1', worldId: 'w1', createdAt: 0, error });
+    await repo.recordDiagnostic({ id: 'a-newest', assetId: 'r1', worldId: 'w1', createdAt: 100, error });
+
+    expect((await repo.listDiagnostics('r1')).map((item) => item.id)).toEqual(expect.arrayContaining(['a-newest']));
+    expect((await repo.listDiagnostics('r1')).map((item) => item.id)).not.toContain('z-oldest');
+  });
 });

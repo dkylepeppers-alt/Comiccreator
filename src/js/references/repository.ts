@@ -1,7 +1,8 @@
 import DB from '../db.js';
-import type { ClassificationJob, ReferenceAsset, WorldLocation } from './types.js';
+import type { ClassificationDiagnostic, ClassificationJob, ReferenceAsset, WorldLocation } from './types.js';
 
-export type ReferenceStoreName = 'characters' | 'worlds' | 'locations' | 'referenceAssets' | 'classificationJobs';
+export type ReferenceStoreName =
+  'characters' | 'worlds' | 'locations' | 'referenceAssets' | 'classificationJobs' | 'classificationDiagnostics';
 
 export interface ReferenceTransaction {
   get<T>(storeName: ReferenceStoreName, id: string): Promise<T | undefined>;
@@ -31,6 +32,8 @@ export interface ReferenceRepository {
   listJobs(): Promise<ClassificationJob[]>;
   putJob(job: ClassificationJob): Promise<void>;
   putAssetAndJob(asset: ReferenceAsset, job: ClassificationJob): Promise<void>;
+  recordDiagnostic(diagnostic: ClassificationDiagnostic): Promise<void>;
+  listDiagnostics(assetId?: string): Promise<ClassificationDiagnostic[]>;
   listLocations(worldId: string): Promise<WorldLocation[]>;
   putLocation(location: WorldLocation): Promise<void>;
 }
@@ -109,7 +112,19 @@ function stableRecords<T extends { id: string }>(records: T[]): T[] {
 }
 
 function normalizeAsset(asset: ReferenceAsset): ReferenceAsset {
-  return { ...asset, characterIds: [...new Set(asset.characterIds)] };
+  return {
+    ...asset,
+    characterIds: [...new Set(asset.characterIds)],
+    proposedCharacterNames: [...new Set(asset.proposedCharacterNames || [])],
+    proposedLocationName: asset.proposedLocationName || null,
+  };
+}
+
+function redactDiagnostic(diagnostic: ClassificationDiagnostic): ClassificationDiagnostic {
+  const message = diagnostic.error.message
+    ?.replace(/data:[^\s,;]+(?:;base64)?,[^\s]+/gi, '[redacted-data-url]')
+    .replace(/(?:prompt|token|api[-_ ]?key)\s*[:=]\s*[^\s,]+/gi, '$1=[redacted]');
+  return { ...diagnostic, error: { ...diagnostic.error, ...(message ? { message: message.slice(0, 500) } : {}) } };
 }
 
 async function clearPreferredReference(
@@ -216,6 +231,30 @@ export function createReferenceRepository(
         await transaction.put('referenceAssets', normalizeAsset(asset));
         await transaction.put('classificationJobs', job);
       }),
+
+    recordDiagnostic: (item) =>
+      dependencies.transaction(['classificationDiagnostics'], 'readwrite', async (transaction) => {
+        await transaction.put('classificationDiagnostics', redactDiagnostic(item));
+        const existing = (
+          await transaction.getAllByIndex<ClassificationDiagnostic>(
+            'classificationDiagnostics',
+            'assetId',
+            item.assetId,
+          )
+        ).sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+        for (const stale of existing.slice(0, Math.max(0, existing.length - 50))) {
+          await transaction.delete('classificationDiagnostics', stale.id);
+        }
+      }),
+
+    listDiagnostics: (assetId) =>
+      dependencies.transaction(['classificationDiagnostics'], 'readonly', async (transaction) =>
+        stableRecords(
+          assetId
+            ? await transaction.getAllByIndex<ClassificationDiagnostic>('classificationDiagnostics', 'assetId', assetId)
+            : await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics'),
+        ),
+      ),
 
     listLocations: (worldId) =>
       dependencies.transaction(['locations'], 'readonly', async (transaction) =>

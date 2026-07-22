@@ -15,8 +15,21 @@ export type ReferenceUse =
   | 'state'
   | 'rendering';
 
-export type ClassificationState = 'pending' | 'ready' | 'needs-review';
+export type ClassificationState = 'pending' | 'ready' | 'needs-review' | 'could-not-classify';
 export type ClassificationJobStatus = 'pending' | 'running' | 'complete' | 'failed';
+export type ClassificationStage = 'plugin' | 'decode' | 'inference' | 'parse' | 'validation';
+export type ClassificationErrorCode =
+  | 'plugin-unavailable'
+  | 'decode-failed'
+  | 'inference-failed'
+  | 'invalid-json'
+  | 'invalid-schema'
+  | 'low-confidence'
+  | 'unmatched-entity-links'
+  | 'manual-metadata'
+  | 'missing-asset'
+  | 'busy';
+export type ClassificationWaitingReason = 'model-unavailable' | 'model-downloading' | 'app-background' | 'quota-busy';
 
 export interface ReferenceFacets {
   framing?:
@@ -61,6 +74,9 @@ export interface ReferenceAsset {
   facets: ReferenceFacets;
   description: string;
   confidence: Partial<Record<'subject' | 'links' | 'use' | 'facets', number>>;
+  /** Editable names retained when a model's entity link is not in the current roster. */
+  proposedCharacterNames?: string[];
+  proposedLocationName?: string | null;
   provenance: {
     source: 'uploaded' | 'generated' | 'migrated';
     metadata: 'local' | 'manual' | 'accepted';
@@ -80,6 +96,39 @@ export interface ReferenceClassification {
   facets: ReferenceFacets;
   description: string;
   confidence: ReferenceAsset['confidence'];
+  proposedCharacterNames?: string[];
+  proposedLocationName?: string | null;
+}
+
+export type ReferenceClassificationDraft = ReferenceClassification;
+
+export interface ClassificationErrorDetails {
+  stage: ClassificationStage;
+  code: ClassificationErrorCode;
+  mode?: 'local';
+  message?: string;
+  retryDelayMs?: number;
+  validationReason?: string;
+  queueState?: ClassificationJobStatus;
+}
+
+export type ClassificationOutcome =
+  | {
+      kind: 'classified';
+      classification: ReferenceClassificationDraft;
+      state?: Extract<ClassificationState, 'ready' | 'needs-review'>;
+      validationReason?: string;
+    }
+  | { kind: 'waiting'; reason: ClassificationWaitingReason; retryDelayMs: number }
+  | { kind: 'failure'; error: ClassificationErrorDetails };
+
+export interface ClassificationDiagnostic {
+  id: string;
+  assetId: string;
+  worldId: string;
+  createdAt: number;
+  queueState?: ClassificationJobStatus;
+  error: ClassificationErrorDetails;
 }
 
 export interface WorldLocation {
@@ -98,6 +147,7 @@ export interface ClassificationJob {
   status: ClassificationJobStatus;
   attemptCount: number;
   lastError?: string;
+  retryAt?: number;
   createdAt: number;
   updatedAt: number;
 }

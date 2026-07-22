@@ -300,6 +300,55 @@ describe('schema-v2 backups', () => {
     ).toThrow('Invalid referenceAssets data');
   });
 
+  it('accepts recoverable classification state and queued retry timestamps', () => {
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          schemaVersion: 2,
+          worlds: [{ id: 'w1', name: 'Atlas' }],
+          locations: [],
+          characters: [],
+          referenceAssets: [
+            {
+              id: 'r1',
+              worldId: 'w1',
+              dataUrl: 'data:image/png;base64,x',
+              subjectType: null,
+              use: null,
+              characterIds: [],
+              locationId: null,
+              facets: {},
+              description: '',
+              confidence: {},
+              provenance: { source: 'uploaded', metadata: 'local' },
+              classificationState: 'could-not-classify',
+              acceptedAsIs: false,
+              autoUse: true,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          classificationJobs: [
+            {
+              id: 'j1',
+              assetId: 'r1',
+              worldId: 'w1',
+              status: 'pending',
+              attemptCount: 1,
+              retryAt: 25,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          comics: [],
+          pages: [],
+          presets: [],
+          imagePresets: [],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   it.each([
     ['an in-progress asset state', { classificationState: 'running' }, 'w1'],
     ['an incomplete asset', { provenance: undefined }, 'w1'],

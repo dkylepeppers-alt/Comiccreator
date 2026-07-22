@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatReferenceLabel,
+  parseReferenceClassificationDraft,
   parseReferenceClassification,
+  validateReferenceClassificationDraft,
 } from '../src/js/references/schema.js';
 
 describe('reference classification schema', () => {
@@ -138,5 +140,66 @@ describe('reference classification schema', () => {
         roster,
       ),
     ).toBeNull();
+  });
+
+  it('keeps an otherwise valid draft reviewable when its entity links no longer match the roster', () => {
+    const draft = parseReferenceClassificationDraft({
+      subjectType: 'character',
+      use: 'identity',
+      characterIds: ['Mara Vale'],
+      locationId: 'Forgotten atrium',
+      facets: { framing: 'medium' },
+      description: 'A red-coated woman in an atrium.',
+      confidence: { subject: 0.91, links: 0.83, use: 0.9, facets: 0.88 },
+    });
+
+    expect(validateReferenceClassificationDraft(draft!, roster).classification).toMatchObject({
+      proposedCharacterNames: ['Mara Vale'],
+      proposedLocationName: 'Forgotten atrium',
+    });
+    expect(validateReferenceClassificationDraft(draft!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'unmatched-entity-links',
+    });
+  });
+
+  it('requires the 0.75 confidence threshold and the subject-specific roster links before a draft is ready', () => {
+    const draft = parseReferenceClassificationDraft({
+      subjectType: 'interaction',
+      use: 'relationship',
+      characterIds: ['mara', 'theo'],
+      locationId: null,
+      facets: {},
+      description: 'Mara and Theo speak.',
+      confidence: { subject: 0.75, links: 0.75, use: 0.75, facets: 0.75 },
+    });
+    const lowConfidence = parseReferenceClassificationDraft({
+      subjectType: 'style',
+      use: 'rendering',
+      characterIds: [],
+      locationId: null,
+      facets: {},
+      description: 'Ink wash.',
+      confidence: { subject: 0.74, links: 1, use: 1, facets: 1 },
+    });
+    const missingConfidence = parseReferenceClassificationDraft({
+      subjectType: 'prop',
+      use: 'design',
+      characterIds: [],
+      locationId: null,
+      facets: {},
+      description: 'A silver locket.',
+      confidence: {},
+    });
+
+    expect(validateReferenceClassificationDraft(draft!, roster)).toMatchObject({ state: 'ready' });
+    expect(validateReferenceClassificationDraft(lowConfidence!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'low-confidence',
+    });
+    expect(validateReferenceClassificationDraft(missingConfidence!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'low-confidence',
+    });
   });
 });

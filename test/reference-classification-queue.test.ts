@@ -69,7 +69,7 @@ const classification = {
   locationId: null,
   facets: { framing: 'medium' as const },
   description: 'Mara facing forward.',
-  confidence: { subject: 0.9 },
+  confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
 };
 
 describe('reference classification queue', () => {
@@ -80,7 +80,7 @@ describe('reference classification queue', () => {
   beforeEach(async () => {
     now.mockClear();
     repo = createReferenceRepository(memoryDependencies());
-    classifier = { classify: vi.fn().mockResolvedValue(classification) };
+    classifier = { classify: vi.fn().mockResolvedValue({ kind: 'classified', classification }) };
     await repo.putAsset(asset());
   });
 
@@ -108,13 +108,16 @@ describe('reference classification queue', () => {
   });
 
   it('keeps failures reviewable and supports accept as-is', async () => {
-    classifier.classify.mockResolvedValueOnce(null);
+    classifier.classify.mockResolvedValueOnce({
+      kind: 'failure',
+      error: { stage: 'validation', code: 'unmatched-entity-links', validationReason: 'unmatched-entity-links' },
+    });
     const queue = createClassificationQueue({ repository: repo, classifier, now });
 
     await queue.enqueue('r1');
     await queue.run();
 
-    expect((await repo.getAsset('r1'))?.classificationState).toBe('needs-review');
+    expect((await repo.getAsset('r1'))?.classificationState).toBe('could-not-classify');
     expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'failed', attemptCount: 1 });
     await queue.acceptAsIs('r1');
     expect(await repo.getAsset('r1')).toMatchObject({ acceptedAsIs: true, autoUse: true });
@@ -123,25 +126,27 @@ describe('reference classification queue', () => {
   it('pauses between jobs and resumes the remaining durable work', async () => {
     await repo.putAsset(asset({ id: 'r2' }));
     const queue = createClassificationQueue({ repository: repo, classifier, now });
-    await queue.enqueue('r1');
-    await queue.enqueue('r2');
     classifier.classify.mockImplementation(async () => {
       queue.pause();
-      return classification;
+      return { kind: 'classified', classification };
     });
 
-    await queue.run();
+    await queue.enqueue('r1');
+    await queue.enqueue('r2');
     expect(classifier.classify).toHaveBeenCalledTimes(1);
     expect((await queue.getProgress()).pending).toBe(1);
 
-    await queue.run();
+    await queue.resume();
     expect(classifier.classify).toHaveBeenCalledTimes(2);
     expect((await queue.getProgress()).complete).toBe(2);
   });
 
   it('retries failures and treats reclassify as explicit approval to replace manual metadata', async () => {
     const queue = createClassificationQueue({ repository: repo, classifier, now });
-    classifier.classify.mockRejectedValueOnce(new Error('busy'));
+    classifier.classify.mockResolvedValueOnce({
+      kind: 'failure',
+      error: { stage: 'inference', code: 'busy' },
+    });
     await queue.enqueue('r1');
     await queue.run();
     await queue.retry('r1');
@@ -158,7 +163,7 @@ describe('reference classification queue', () => {
     );
     await queue.reclassify('r1');
     expect(await repo.getAsset('r1')).toMatchObject({
-      classificationState: 'pending',
+      classificationState: 'ready',
       provenance: { metadata: 'local' },
     });
   });
@@ -168,5 +173,54 @@ describe('reference classification queue', () => {
     expect(isAutomaticallyEligible(asset({ classificationState: 'needs-review', acceptedAsIs: true }))).toBe(true);
     expect(isAutomaticallyEligible(asset({ classificationState: 'ready', autoUse: false }))).toBe(false);
     expect(isAutomaticallyEligible(asset())).toBe(false);
+  });
+
+  it('keeps waiting work pending until its retry time and starts retry work immediately', async () => {
+    classifier.classify.mockResolvedValueOnce({
+      kind: 'waiting',
+      reason: 'quota-busy',
+      retryDelayMs: 500,
+    });
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.enqueue('r1');
+    await queue.run();
+
+    expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'pending', retryAt: 600 });
+    expect((await repo.getAsset('r1'))?.classificationState).toBe('pending');
+    expect((await queue.getProgress()).complete).toBe(0);
+
+    await queue.retry('r1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(classifier.classify).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores interrupted running jobs and returns the current failed retry-all count', async () => {
+    await repo.putJob({
+      id: 'classification-r1',
+      assetId: 'r1',
+      worldId: 'w1',
+      status: 'running',
+      attemptCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.resume();
+    expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'complete' });
+    expect(await queue.retryAllFailed()).toBe(0);
+  });
+
+  it('contains a startup recovery failure until IndexedDB is available', async () => {
+    const unavailableRepository = {
+      ...repo,
+      listJobs: vi.fn().mockRejectedValue(new Error('IndexedDB is not available')),
+    };
+
+    createClassificationQueue({ repository: unavailableRepository, classifier, now });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(unavailableRepository.listJobs).toHaveBeenCalledOnce();
   });
 });

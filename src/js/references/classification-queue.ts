@@ -1,5 +1,11 @@
+import type {
+  ClassificationDiagnostic,
+  ClassificationErrorDetails,
+  ClassificationJob,
+  ClassificationOutcome,
+  ReferenceAsset,
+} from './types.js';
 import type { ReferenceRepository } from './repository.js';
-import type { ClassificationJob, ReferenceAsset, ReferenceClassification } from './types.js';
 
 export interface ClassificationProgress {
   total: number;
@@ -14,7 +20,9 @@ export interface ClassificationQueue {
   enqueue(assetId: string): Promise<void>;
   run(): Promise<void>;
   pause(): void;
+  resume(): Promise<void>;
   retry(assetId: string): Promise<void>;
+  retryAllFailed(): Promise<number>;
   acceptAsIs(assetId: string): Promise<void>;
   reclassify(assetId: string): Promise<void>;
   getProgress(): Promise<ClassificationProgress>;
@@ -22,7 +30,7 @@ export interface ClassificationQueue {
 
 export interface ClassificationQueueDependencies {
   repository: ReferenceRepository;
-  classifier: { classify(asset: ReferenceAsset): Promise<ReferenceClassification | null> };
+  classifier: { classify(asset: ReferenceAsset): Promise<ClassificationOutcome> };
   now: () => number;
 }
 
@@ -42,6 +50,17 @@ function pendingJob(asset: ReferenceAsset, now: number, existing?: Classificatio
   };
 }
 
+function diagnostic(asset: ReferenceAsset, error: ClassificationErrorDetails, now: number): ClassificationDiagnostic {
+  return {
+    id: `diagnostic-${asset.id}-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    assetId: asset.id,
+    worldId: asset.worldId,
+    createdAt: now,
+    queueState: error.queueState,
+    error,
+  };
+}
+
 export function createClassificationQueue({
   repository,
   classifier,
@@ -50,41 +69,75 @@ export function createClassificationQueue({
   let paused = false;
   let activeRun: Promise<void> | null = null;
 
+  async function startIfUnpaused(): Promise<void> {
+    if (!paused) await run();
+  }
+
   async function enqueue(assetId: string): Promise<void> {
     const asset = await repository.getAsset(assetId);
     if (!asset) throw new Error(`Unknown reference asset "${assetId}"`);
-    const existing = await repository.getJobByAsset(assetId);
     const updatedAsset: ReferenceAsset = {
       ...asset,
       classificationState: 'pending',
       acceptedAsIs: false,
       updatedAt: now(),
     };
-    await repository.putAssetAndJob(updatedAsset, pendingJob(updatedAsset, now(), existing));
+    await repository.putAssetAndJob(
+      updatedAsset,
+      pendingJob(updatedAsset, now(), await repository.getJobByAsset(assetId)),
+    );
+    await startIfUnpaused();
   }
 
-  async function failJob(asset: ReferenceAsset, job: ClassificationJob, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : 'Local classification did not return valid metadata';
+  async function failJob(
+    asset: ReferenceAsset,
+    job: ClassificationJob,
+    error: ClassificationErrorDetails,
+  ): Promise<void> {
+    const failed: ClassificationJob = {
+      ...job,
+      status: 'failed',
+      retryAt: undefined,
+      lastError: error.message || error.code,
+      updatedAt: now(),
+    };
     await repository.putAssetAndJob(
       {
         ...asset,
-        classificationState: 'needs-review',
+        classificationState: error.code === 'manual-metadata' ? 'needs-review' : 'could-not-classify',
         acceptedAsIs: false,
         updatedAt: now(),
       },
-      {
-        ...job,
-        status: 'failed',
-        lastError: message,
-        updatedAt: now(),
-      },
+      failed,
     );
+    await repository.recordDiagnostic(diagnostic(asset, { ...error, queueState: 'failed' }, now()));
+  }
+
+  async function waitJob(
+    asset: ReferenceAsset,
+    job: ClassificationJob,
+    outcome: Extract<ClassificationOutcome, { kind: 'waiting' }>,
+  ) {
+    const retryAt = now() + outcome.retryDelayMs;
+    const error: ClassificationErrorDetails = {
+      stage: 'inference',
+      code: outcome.reason === 'quota-busy' ? 'busy' : 'plugin-unavailable',
+      mode: 'local',
+      retryDelayMs: outcome.retryDelayMs,
+      queueState: 'pending',
+    };
+    await repository.putAssetAndJob(
+      { ...asset, classificationState: 'pending', updatedAt: now() },
+      { ...job, status: 'pending', retryAt, lastError: undefined, updatedAt: now() },
+    );
+    await repository.recordDiagnostic(diagnostic(asset, error, now()));
   }
 
   async function processJob(job: ClassificationJob): Promise<void> {
     const running: ClassificationJob = {
       ...job,
       status: 'running',
+      retryAt: undefined,
       attemptCount: job.attemptCount + 1,
       lastError: undefined,
       updatedAt: now(),
@@ -101,45 +154,71 @@ export function createClassificationQueue({
       return;
     }
     if (asset.provenance.metadata === 'manual') {
-      await failJob(asset, running, new Error('Manual reference metadata requires explicit reclassification'));
+      await failJob(asset, running, { stage: 'validation', code: 'manual-metadata', mode: 'local' });
       return;
     }
 
+    let outcome: ClassificationOutcome;
     try {
-      const classification = await classifier.classify(asset);
-      if (!classification) {
-        await failJob(asset, running, new Error('Local classification did not return valid metadata'));
-        return;
-      }
-      await repository.putAssetAndJob(
-        {
-          ...asset,
-          ...classification,
-          provenance: { ...asset.provenance, metadata: 'local' },
-          classificationState: 'ready',
-          acceptedAsIs: false,
-          updatedAt: now(),
-        },
-        {
-          ...running,
-          status: 'complete',
-          lastError: undefined,
-          updatedAt: now(),
-        },
-      );
+      outcome = await classifier.classify(asset);
     } catch (error) {
-      await failJob(asset, running, error);
+      outcome = {
+        kind: 'failure',
+        error: {
+          stage: 'inference',
+          code: 'inference-failed',
+          mode: 'local',
+          message: error instanceof Error ? error.message : undefined,
+        },
+      };
+    }
+    if (outcome.kind === 'waiting') {
+      await waitJob(asset, running, outcome);
+      return;
+    }
+    if (outcome.kind === 'failure') {
+      await failJob(asset, running, outcome.error);
+      return;
+    }
+
+    const needsReview = outcome.state === 'needs-review';
+    await repository.putAssetAndJob(
+      {
+        ...asset,
+        ...outcome.classification,
+        provenance: { ...asset.provenance, metadata: 'local' },
+        classificationState: needsReview ? 'needs-review' : 'ready',
+        acceptedAsIs: false,
+        updatedAt: now(),
+      },
+      { ...running, status: 'complete', lastError: undefined, updatedAt: now() },
+    );
+    if (outcome.validationReason) {
+      await repository.recordDiagnostic(
+        diagnostic(
+          asset,
+          {
+            stage: 'validation',
+            code: outcome.validationReason === 'unmatched-entity-links' ? 'unmatched-entity-links' : 'low-confidence',
+            mode: 'local',
+            validationReason: outcome.validationReason,
+            queueState: 'complete',
+          },
+          now(),
+        ),
+      );
     }
   }
 
   async function processPendingJobs(): Promise<void> {
-    const interrupted = (await repository.listJobs()).filter((job) => job.status === 'running');
-    for (const job of interrupted) {
-      await repository.putJob({ ...job, status: 'pending', updatedAt: now() });
+    const jobs = await repository.listJobs();
+    for (const job of jobs.filter((candidate) => candidate.status === 'running')) {
+      await repository.putJob({ ...job, status: 'pending', retryAt: undefined, updatedAt: now() });
     }
-
     while (!paused) {
-      const next = (await repository.listJobs()).find((job) => job.status === 'pending');
+      const next = (await repository.listJobs()).find(
+        (job) => job.status === 'pending' && (job.retryAt === undefined || job.retryAt <= now()),
+      );
       if (!next) return;
       await processJob(next);
     }
@@ -158,18 +237,39 @@ export function createClassificationQueue({
     paused = true;
   }
 
+  async function resume(): Promise<void> {
+    paused = false;
+    await startIfUnpaused();
+  }
+
   async function retry(assetId: string): Promise<void> {
     const asset = await repository.getAsset(assetId);
     if (!asset) throw new Error(`Unknown reference asset "${assetId}"`);
-    const existing = await repository.getJobByAsset(assetId);
     const updatedAsset: ReferenceAsset = {
       ...asset,
-      ...(asset.provenance.metadata === 'manual'
-        ? {}
-        : { classificationState: 'pending' as const, acceptedAsIs: false }),
+      classificationState: 'pending',
+      acceptedAsIs: false,
       updatedAt: now(),
     };
-    await repository.putAssetAndJob(updatedAsset, pendingJob(updatedAsset, now(), existing));
+    await repository.putAssetAndJob(
+      updatedAsset,
+      pendingJob(updatedAsset, now(), await repository.getJobByAsset(assetId)),
+    );
+    await startIfUnpaused();
+  }
+
+  async function retryAllFailed(): Promise<number> {
+    const failed = (await repository.listJobs()).filter((job) => job.status === 'failed');
+    for (const job of failed) {
+      const asset = await repository.getAsset(job.assetId);
+      if (!asset) continue;
+      await repository.putAssetAndJob(
+        { ...asset, classificationState: 'pending', acceptedAsIs: false, updatedAt: now() },
+        pendingJob(asset, now(), job),
+      );
+    }
+    if (failed.length) await startIfUnpaused();
+    return failed.length;
   }
 
   async function acceptAsIs(assetId: string): Promise<void> {
@@ -187,7 +287,6 @@ export function createClassificationQueue({
   async function reclassify(assetId: string): Promise<void> {
     const asset = await repository.getAsset(assetId);
     if (!asset) throw new Error(`Unknown reference asset "${assetId}"`);
-    const existing = await repository.getJobByAsset(assetId);
     const updatedAsset: ReferenceAsset = {
       ...asset,
       classificationState: 'pending',
@@ -195,7 +294,11 @@ export function createClassificationQueue({
       provenance: { ...asset.provenance, metadata: 'local' },
       updatedAt: now(),
     };
-    await repository.putAssetAndJob(updatedAsset, pendingJob(updatedAsset, now(), existing));
+    await repository.putAssetAndJob(
+      updatedAsset,
+      pendingJob(updatedAsset, now(), await repository.getJobByAsset(assetId)),
+    );
+    await startIfUnpaused();
   }
 
   async function getProgress(): Promise<ClassificationProgress> {
@@ -210,5 +313,6 @@ export function createClassificationQueue({
     };
   }
 
-  return { enqueue, run, pause, retry, acceptAsIs, reclassify, getProgress };
+  queueMicrotask(() => void run().catch(() => undefined));
+  return { enqueue, run, pause, resume, retry, retryAllFailed, acceptAsIs, reclassify, getProgress };
 }
