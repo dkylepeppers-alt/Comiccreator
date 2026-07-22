@@ -217,7 +217,13 @@ async function putBatch(writes: readonly (readonly [storeName: string, record: u
   return new Promise((resolve, reject) => {
     const storeNames = [...new Set(writes.map(([storeName]) => storeName))];
     const transaction = db!.transaction(storeNames, 'readwrite');
-    for (const [storeName, record] of writes) transaction.objectStore(storeName).put(record);
+    try {
+      for (const [storeName, record] of writes) transaction.objectStore(storeName).put(record);
+    } catch (error) {
+      transaction.abort();
+      reject(error);
+      return;
+    }
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error || new Error('Backup import transaction aborted'));
