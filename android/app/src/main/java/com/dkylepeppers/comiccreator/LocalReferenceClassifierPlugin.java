@@ -42,7 +42,7 @@ public class LocalReferenceClassifierPlugin extends Plugin {
 
                 @Override
                 public void onFailure(@NonNull Throwable error) {
-                    call.reject("Unable to check the local classifier", error);
+                    call.reject("Unable to check the local classifier", asException(error));
                 }
             },
             ContextCompat.getMainExecutor(getContext())
@@ -75,7 +75,7 @@ public class LocalReferenceClassifierPlugin extends Plugin {
 
                 @Override
                 public void onFailure(@NonNull Throwable error) {
-                    call.reject("Unable to download the local classifier", error);
+                    call.reject("Unable to download the local classifier", asException(error));
                 }
             },
             ContextCompat.getMainExecutor(getContext())
@@ -135,11 +135,18 @@ public class LocalReferenceClassifierPlugin extends Plugin {
 
                 @Override
                 public void onFailure(@NonNull Throwable error) {
-                    call.reject("Local image classification failed", error);
+                    call.reject("Local image classification failed", asException(error));
                 }
             },
             ContextCompat.getMainExecutor(getContext())
         );
+    }
+
+    private static Exception asException(Throwable error) {
+        if (error instanceof Exception) {
+            return (Exception) error;
+        }
+        return new Exception(error);
     }
 
     private static String availabilityName(Integer status) {
