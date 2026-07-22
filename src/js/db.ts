@@ -57,6 +57,8 @@ export interface Comic {
   genre?: string;
   characterIds?: string[];
   worldId?: string;
+  /** Legacy comics are immutable snapshots; only schema version 2 is writable. */
+  referenceSchemaVersion?: 1 | 2;
   /** Persistent per-comic visual continuity ledger. */
   visualContinuity?: ComicVisualContinuity | null;
   createdAt?: number;
@@ -166,6 +168,19 @@ function open(): Promise<IDBDatabase> {
         if (upgradeTx) {
           rewriteStoreRecords(upgradeTx, STORES.characters, normalizeCharacterRecord);
           rewriteStoreRecords(upgradeTx, STORES.worlds, normalizeWorldRecord);
+        }
+      }
+      // v5: comics created before the unified reference system are immutable snapshots.
+      if (e.oldVersion > 0 && e.oldVersion < 5) {
+        const upgradeTx = (e.target as IDBOpenDBRequest).transaction;
+        if (upgradeTx) {
+          rewriteStoreRecords(upgradeTx, STORES.comics, (comic) => ({
+            record:
+              comic?.referenceSchemaVersion == null
+                ? Object.assign({}, comic, { referenceSchemaVersion: 1 })
+                : comic,
+            changed: comic?.referenceSchemaVersion == null,
+          }));
         }
       }
     };
