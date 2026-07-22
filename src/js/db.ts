@@ -217,6 +217,20 @@ async function put(storeName: string, data: any): Promise<IDBValidKey> {
   return promisify(tx(storeName, 'readwrite').put(data));
 }
 
+/** Commit a fully validated import as one all-or-nothing multi-store transaction. */
+async function putBatch(writes: readonly (readonly [storeName: string, record: unknown])[]): Promise<void> {
+  if (writes.length === 0) return;
+  await open();
+  return new Promise((resolve, reject) => {
+    const storeNames = [...new Set(writes.map(([storeName]) => storeName))];
+    const transaction = db!.transaction(storeNames, 'readwrite');
+    for (const [storeName, record] of writes) transaction.objectStore(storeName).put(record);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Backup import transaction aborted'));
+  });
+}
+
 async function del(storeName: string, id: string | null | undefined): Promise<void> {
   if (id == null || id === '') return;
   await open();
@@ -591,6 +605,7 @@ const DB = {
   getAll,
   get,
   put,
+  putBatch,
   del,
   getByIndex,
   uuid,
