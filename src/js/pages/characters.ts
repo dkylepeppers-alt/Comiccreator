@@ -3,10 +3,16 @@ import type { PageModule } from '../utils.js';
 import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
-import type { ReferenceFilter, ReferenceWorkspaceAction } from '../reference-workspace.js';
+import {
+  normalizeReferenceEditorSubject,
+  readReferenceEditorForm,
+  type ReferenceFilter,
+  type ReferenceWorkspaceAction,
+} from '../reference-workspace.js';
 import {
   addUploadedReference,
   fileToDataUrl,
+  openReferenceEditor,
   referenceRepository,
   referenceWorkspace,
 } from '../reference-workspace-runtime.js';
@@ -239,19 +245,53 @@ function setReferenceFilter(filter: ReferenceFilter): void {
   App.refreshPage();
 }
 
-async function runWorkspaceAction(action: ReferenceWorkspaceAction, referenceId?: string): Promise<void> {
-  await referenceWorkspace.handleAction({ action, referenceId });
+async function runWorkspaceAction(
+  action: ReferenceWorkspaceAction,
+  referenceId?: string,
+  worldId = parentWorldId || undefined,
+): Promise<void> {
+  await referenceWorkspace.handleAction({ action, referenceId, worldId });
   App.refreshPage();
 }
 
 async function reviewReference(referenceId: string): Promise<void> {
-  const asset = await referenceRepository.getAsset(referenceId);
-  if (!asset) return;
-  App.showModal(`<div class="modal-title">Review metadata</div>
-    <img class="reference-review-image" src="${escHtml(asset.dataUrl)}" alt="">
-    <p class="reference-label">${escHtml(asset.subjectType || 'Unclassified')} / ${escHtml(asset.use || 'Needs review')}</p>
-    <p class="text-muted">${escHtml(asset.description || 'No description yet')}</p>
-    <div class="modal-actions"><button class="btn btn-secondary" data-action="reclassify-reference" data-args="${escHtml(JSON.stringify([asset.id]))}">Reclassify</button><button class="btn btn-primary" data-action="accept-reference" data-args="${escHtml(JSON.stringify([asset.id]))}">Accept as-is</button></div>`);
+  if (!parentWorldId) return;
+  await openReferenceEditor(parentWorldId, referenceId);
+}
+
+function normalizeReferenceSubject(_referenceId: string, element: HTMLElement): void {
+  const form = element.closest<HTMLElement>('[data-reference-editor]');
+  if (form) normalizeReferenceEditorSubject(form);
+}
+
+async function saveReferenceClassification(referenceId: string, element: HTMLElement, draft = false): Promise<void> {
+  const form = element.closest<HTMLElement>('[data-reference-editor]');
+  if (!form) return;
+  try {
+    await referenceWorkspace.handleAction({
+      action: draft ? 'save-reference-draft' : 'save-reference-classification',
+      referenceId,
+      classification: readReferenceEditorForm(form),
+    });
+    App.toast(draft ? 'Reference draft saved for review' : 'Reference classification saved', 'success');
+    App.refreshPage();
+  } catch (error) {
+    App.toast(error instanceof Error ? error.message : 'Could not save reference classification', 'error');
+  }
+}
+
+async function reclassifyReference(referenceId: string): Promise<void> {
+  const result = await referenceWorkspace.handleAction({ action: 'reclassify-reference', referenceId });
+  if (result?.requiresConfirmation) {
+    if (!window.confirm('Reclassify this reference? This will replace its manual metadata.')) return;
+    await referenceWorkspace.handleAction({ action: 'reclassify-reference', referenceId, confirmed: true });
+  }
+  App.refreshPage();
+}
+
+async function deleteReference(referenceId: string): Promise<void> {
+  if (!window.confirm('Delete this reference? This cannot be undone.')) return;
+  await runWorkspaceAction('delete-reference', referenceId);
 }
 
 async function previewReference(referenceId: string): Promise<void> {
@@ -297,8 +337,14 @@ const CharactersPage: PageModule & Record<string, any> = {
   'unhide-reference': (id) => runWorkspaceAction('unhide-reference', id),
   'accept-reference': (id) => runWorkspaceAction('accept-reference', id),
   'retry-reference': (id) => runWorkspaceAction('retry-reference', id),
-  'reclassify-reference': (id) => runWorkspaceAction('reclassify-reference', id),
+  'reclassify-reference': reclassifyReference,
   'pause-classification': () => runWorkspaceAction('pause-classification'),
+  'resume-classification': () => runWorkspaceAction('resume-classification'),
+  'retry-failed-references': (worldId) => runWorkspaceAction('retry-failed-references', undefined, worldId),
+  'save-reference-classification': (id, element) => saveReferenceClassification(id, element),
+  'save-reference-draft': (id, element) => saveReferenceClassification(id, element, true),
+  'delete-reference': deleteReference,
+  'normalize-reference-subject': normalizeReferenceSubject,
   'set-reference-filter': setReferenceFilter,
   'review-reference': reviewReference,
   'preview-reference': previewReference,

@@ -94,6 +94,17 @@ describe('page-actions delegated dispatch', () => {
     expect(module.updateTag).toHaveBeenCalledWith(2, select);
   });
 
+  it('forwards the changed editor field so shared reference controls can normalize the form in place', () => {
+    module['normalize-reference-subject'] = vi.fn();
+    document.body.innerHTML = `<form data-reference-editor>
+      <select data-action-change="normalize-reference-subject" data-args='["r1"]'><option>character</option></select>
+    </form>`;
+    const select = document.querySelector('select');
+    fire(select, 'change');
+    expect(module['normalize-reference-subject']).toHaveBeenCalledWith('r1', select);
+    expect(select.closest('[data-reference-editor]')).not.toBeNull();
+  });
+
   it('dispatches input events via data-action-input with the element appended', () => {
     module.setSearch = vi.fn();
     document.body.innerHTML = '<input data-action-input="setSearch" value="q">';

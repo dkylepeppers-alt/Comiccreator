@@ -46,6 +46,12 @@ export const referenceWorkspace = createReferenceWorkspace({
   listLocations: (worldId) => referenceRepository.listLocations(worldId),
 });
 
+/** Open the shared editor and place keyboard focus on its first decision. */
+export async function openReferenceEditor(worldId: string, referenceId: string): Promise<void> {
+  App.showModal(await referenceWorkspace.renderEditor({ worldId, referenceId }));
+  document.querySelector<HTMLElement>('#modal-content [autofocus]')?.focus();
+}
+
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

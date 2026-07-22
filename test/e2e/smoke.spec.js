@@ -88,7 +88,7 @@ test.describe('Core navigation', () => {
     await page.locator('[data-action="saveWorld"]').click();
 
     await expect(page.locator('.reference-workspace')).toBeVisible();
-    await expect(page.getByText('Visual evidence')).toBeVisible();
+    await expect(page.getByText('Reference Library')).toBeVisible();
     await expect(page.getByText('World / Locations')).toBeVisible();
     await expect(page.locator('.reference-workspace select')).toHaveCount(0);
   });
