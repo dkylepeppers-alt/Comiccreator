@@ -2,11 +2,7 @@
  * IndexedDB Storage Layer
  * Handles all local persistence for characters, worlds, comics, presets, and settings.
  */
-import type { ImageRef } from './utils.js';
-import { ensureImageIds, normalizeLocationKey } from './utils.js';
 import type { CharacterVisualStateDefaults, ComicVisualContinuity } from './visual-continuity.js';
-import { migrateCharacterReferenceMetadata } from './reference-metadata.js';
-import type { CharacterReferenceImage } from './reference-metadata.js';
 
 export type DefaultVisualStateField = keyof Required<CharacterVisualStateDefaults>;
 
@@ -20,8 +16,8 @@ export interface Character {
   appearance?: string;
   powers?: string;
   imageData?: string;
-  images: CharacterReferenceImage[];
-  primaryImageIndex: number;
+  images?: unknown[];
+  primaryImageIndex?: number;
   /** Stable ID of the single authoritative identity-anchor gallery image. */
   identityAnchorImageId?: string | null;
   /** Canonical identity reference used by schema-v2 panel resolution. */
@@ -41,8 +37,8 @@ export interface World {
   details?: string;
   atmosphere?: string;
   era?: string;
-  images: ImageRef[];
-  primaryImageIndex: number;
+  images?: unknown[];
+  primaryImageIndex?: number;
   /** Stable ID of the default location-anchor gallery image. */
   defaultAnchorImageId?: string | null;
   /** Canonical rendering/style reference used by schema-v2 panel resolution. */
@@ -302,76 +298,12 @@ function rewriteStoreRecords(
   }
 }
 
-/** Pick the anchor image ID for a gallery: primaryImageIndex → first valid → null. */
-function pickAnchorImageId(images: ImageRef[], primaryImageIndex: number | undefined): string | null {
-  const valid = (images || []).filter((img) => img && img.dataUrl);
-  if (valid.length === 0) return null;
-  const primary = typeof primaryImageIndex === 'number' ? (images || [])[primaryImageIndex] : null;
-  if (primary && primary.dataUrl && primary.id) return primary.id;
-  return valid[0].id || null;
-}
-
-/**
- * Fully normalize a character record: legacy imageData migration, stable
- * image IDs, and an explicit identity anchor. Pure — does not persist.
- * Returns { record, changed } so callers know whether to write it back.
- */
 function normalizeCharacterRecord(char: any): { record: any; changed: boolean } {
-  if (!char) return { record: char, changed: false };
-  const migrated = migrateCharacter(char);
-  let changed = migrated !== char;
-  const { images: imagesWithIds, changed: idsChanged } = ensureImageIds(migrated.images);
-  const { images, changed: metadataChanged } = migrateCharacterReferenceMetadata(imagesWithIds);
-  changed = changed || idsChanged || metadataChanged;
-
-  let record = idsChanged || changed ? Object.assign({}, migrated, { images }) : migrated;
-
-  const anchorValid =
-    record.identityAnchorImageId && images.some((img: any) => img?.id === record.identityAnchorImageId && img.dataUrl);
-  if (!anchorValid) {
-    const anchorId = pickAnchorImageId(images, record.primaryImageIndex);
-    if (record.identityAnchorImageId !== anchorId) {
-      record = Object.assign({}, record, { identityAnchorImageId: anchorId });
-      changed = true;
-    }
-  }
-  return { record, changed };
+  return { record: char, changed: false };
 }
 
-/**
- * Fully normalize a world record: legacy string[] migration, stable image
- * IDs, normalized location keys, and an explicit default anchor.
- */
 function normalizeWorldRecord(world: any): { record: any; changed: boolean } {
-  if (!world) return { record: world, changed: false };
-  const migrated = migrateWorld(world);
-  let changed = migrated !== world;
-  let { images, changed: idsChanged } = ensureImageIds(migrated.images);
-  changed = changed || idsChanged;
-
-  // Normalize any user-entered location keys to canonical slug form
-  let keysChanged = false;
-  images = images.map((img: any) => {
-    if (!img || img.locationKey == null) return img;
-    const norm = normalizeLocationKey(img.locationKey) || null;
-    if (norm === img.locationKey) return img;
-    keysChanged = true;
-    return Object.assign({}, img, { locationKey: norm });
-  });
-  changed = changed || keysChanged;
-
-  let record = changed ? Object.assign({}, migrated, { images }) : migrated;
-
-  const anchorValid =
-    record.defaultAnchorImageId && images.some((img: any) => img?.id === record.defaultAnchorImageId && img.dataUrl);
-  if (!anchorValid) {
-    const anchorId = pickAnchorImageId(images, record.primaryImageIndex);
-    if (record.defaultAnchorImageId !== anchorId) {
-      record = Object.assign({}, record, { defaultAnchorImageId: anchorId });
-      changed = true;
-    }
-  }
-  return { record, changed };
+  return { record: world, changed: false };
 }
 
 /**
@@ -419,16 +351,22 @@ async function commitPageAndComic(pageRecord: ComicPage, comicRecord: Comic): Pr
     const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
     const comicsStore = transaction.objectStore(STORES.comics);
     let comicExists = false;
+    let writeError: Error | null = null;
     const existingReq = comicsStore.get(comicRecord.id);
     existingReq.onsuccess = () => {
       if (!existingReq.result) return;
+      if (existingReq.result.referenceSchemaVersion !== 2) {
+        writeError = new Error('This comic is read-only');
+        transaction.abort();
+        return;
+      }
       comicExists = true;
       transaction.objectStore(STORES.pages).put(pageRecord);
       comicsStore.put(comicRecord);
     };
     transaction.oncomplete = () => resolve(comicExists);
     transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+    transaction.onabort = () => reject(writeError || transaction.error || new Error('Transaction aborted'));
   });
 }
 
@@ -446,50 +384,24 @@ async function putPageIfComicExists(pageRecord: ComicPage, comicId: string, touc
     const transaction = db!.transaction([STORES.pages, STORES.comics], 'readwrite');
     const comicsStore = transaction.objectStore(STORES.comics);
     let comicExists = false;
+    let writeError: Error | null = null;
     const existingReq = comicsStore.get(comicId);
     existingReq.onsuccess = () => {
       const comic = existingReq.result;
       if (!comic) return;
+      if (comic.referenceSchemaVersion !== 2) {
+        writeError = new Error('This comic is read-only');
+        transaction.abort();
+        return;
+      }
       comicExists = true;
       transaction.objectStore(STORES.pages).put(pageRecord);
       if (touchComic) comicsStore.put(Object.assign({}, comic, { updatedAt: Date.now() }));
     };
     transaction.oncomplete = () => resolve(comicExists);
     transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+    transaction.onabort = () => reject(writeError || transaction.error || new Error('Transaction aborted'));
   });
-}
-
-/**
- * Migrate a character record from the legacy single-imageData format to
- * the new images[] format.  Safe to call on already-migrated records.
- * Does NOT persist the change — callers should call DB.put() if they wish
- * to store the migration result.
- */
-function migrateCharacter(char: any): any {
-  if (!char) return char;
-  if (Array.isArray(char.images) && char.images.length > 0) return char;
-  const images = char.imageData ? [{ dataUrl: char.imageData, tag: 'default', description: '', embedding: null }] : [];
-  return Object.assign({}, char, { images, primaryImageIndex: 0 });
-}
-
-/**
- * Migrate a world record from the legacy images: string[] format to
- * the new images: [{dataUrl, tag, description}] format.
- * Safe to call on already-migrated records.
- * Does NOT persist the change — callers should call DB.put() if they wish
- * to store the migration result.
- */
-function migrateWorld(world: any): any {
-  if (!world) return world;
-  const images = (world.images || [])
-    .filter((img: any) => img)
-    .map((img: any) =>
-      typeof img === 'string'
-        ? { dataUrl: img, tag: 'establishing', description: '', embedding: null }
-        : Object.assign({ embedding: null }, img),
-    );
-  return Object.assign({}, world, { images, primaryImageIndex: world.primaryImageIndex ?? 0 });
 }
 
 // Seed default presets on first run (idempotent — stable IDs prevent duplicates)
@@ -612,8 +524,6 @@ const DB = {
   getSetting,
   setSetting,
   fileToDataURL,
-  migrateCharacter,
-  migrateWorld,
   normalizeCharacterRecord,
   normalizeWorldRecord,
   deleteComicAndPages,

@@ -1,4 +1,5 @@
 /** Typed, DOM-free schema-v2 backup transfer and legacy conversion. */
+import { parseReferenceClassification } from '../references/schema.js';
 
 export interface BackupRecord {
   readonly id: unknown;
@@ -102,6 +103,127 @@ function isValidCollection(value: unknown): value is readonly BackupRecord[] {
   return Array.isArray(value) && value.every(hasTruthyId);
 }
 
+function isString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function validateCanonical(payload: BackupPayloadV2): void {
+  const uniqueIds = (key: CollectionKey): Set<string> => {
+    const ids = payload[key].map(({ id }) => String(id));
+    if (new Set(ids).size !== ids.length) throw new Error(`Invalid ${key} data`);
+    return new Set(ids);
+  };
+  const worldIds = uniqueIds('worlds');
+  const characterIds = uniqueIds('characters');
+  const locationIds = uniqueIds('locations');
+  const assetIds = uniqueIds('referenceAssets');
+  uniqueIds('classificationJobs');
+  const comicIds = uniqueIds('comics');
+  for (const key of ['pages', 'presets', 'imagePresets'] as const) uniqueIds(key);
+
+  if (payload.worlds.some((item) => !isString(item.name))) throw new Error('Invalid worlds data');
+  const locationWorlds = new Map<string, string>();
+  for (const item of payload.locations) {
+    if (
+      !isString(item.worldId) ||
+      !worldIds.has(item.worldId) ||
+      !isString(item.name) ||
+      !Array.isArray(item.aliases) ||
+      item.aliases.some((alias) => typeof alias !== 'string')
+    ) {
+      throw new Error('Invalid locations data');
+    }
+    locationWorlds.set(String(item.id), item.worldId);
+  }
+  const characterWorlds = new Map<string, string>();
+  for (const item of payload.characters) {
+    if (!isString(item.worldId) || !worldIds.has(item.worldId) || !isString(item.name)) {
+      throw new Error('Invalid characters data');
+    }
+    characterWorlds.set(String(item.id), item.worldId);
+  }
+
+  const classificationStates = new Set(['pending', 'ready', 'needs-review']);
+  const provenanceSources = new Set(['uploaded', 'generated', 'migrated']);
+  const provenanceMetadata = new Set(['local', 'manual', 'accepted']);
+  const assetWorlds = new Map<string, string>();
+  for (const item of payload.referenceAssets) {
+    const provenance = isObject(item.provenance) ? item.provenance : null;
+    if (
+      !isString(item.worldId) ||
+      !worldIds.has(item.worldId) ||
+      !isString(item.dataUrl) ||
+      (item.thumbnailDataUrl !== undefined && typeof item.thumbnailDataUrl !== 'string') ||
+      !Array.isArray(item.characterIds) ||
+      item.characterIds.some(
+        (id) => !isString(id) || !characterIds.has(id) || characterWorlds.get(id) !== item.worldId,
+      ) ||
+      (item.locationId != null &&
+        (!isString(item.locationId) || locationWorlds.get(item.locationId) !== item.worldId)) ||
+      !isObject(item.facets) ||
+      typeof item.description !== 'string' ||
+      !isObject(item.confidence) ||
+      !provenance ||
+      !provenanceSources.has(String(provenance.source)) ||
+      !provenanceMetadata.has(String(provenance.metadata)) ||
+      !classificationStates.has(String(item.classificationState)) ||
+      typeof item.acceptedAsIs !== 'boolean' ||
+      typeof item.autoUse !== 'boolean' ||
+      !isTimestamp(item.createdAt) ||
+      !isTimestamp(item.updatedAt)
+    ) {
+      throw new Error('Invalid referenceAssets data');
+    }
+    const classificationCandidate =
+      item.subjectType === null
+        ? { ...item, subjectType: 'style', use: 'rendering', description: item.description || undefined }
+        : item;
+    if (
+      (item.subjectType === null && item.use !== null) ||
+      !parseReferenceClassification(classificationCandidate, {
+        worldId: item.worldId,
+        characterIds,
+        locationIds,
+      })
+    ) {
+      throw new Error('Invalid referenceAssets data');
+    }
+    assetWorlds.set(String(item.id), item.worldId);
+  }
+  const jobStatuses = new Set(['pending', 'running', 'complete', 'failed']);
+  if (
+    payload.classificationJobs.some(
+      (item) =>
+        !isString(item.assetId) ||
+        !assetIds.has(item.assetId) ||
+        !isString(item.worldId) ||
+        !worldIds.has(item.worldId) ||
+        assetWorlds.get(item.assetId) !== item.worldId ||
+        !jobStatuses.has(String(item.status)) ||
+        !Number.isInteger(item.attemptCount) ||
+        Number(item.attemptCount) < 0 ||
+        (item.lastError !== undefined && typeof item.lastError !== 'string') ||
+        !isTimestamp(item.createdAt) ||
+        !isTimestamp(item.updatedAt),
+    )
+  )
+    throw new Error('Invalid classificationJobs data');
+  if (payload.comics.some((item) => item.referenceSchemaVersion !== 1 && item.referenceSchemaVersion !== 2)) {
+    throw new Error('Invalid comics data');
+  }
+  if (payload.pages.some((item) => !isString(item.comicId) || !comicIds.has(item.comicId))) {
+    throw new Error('Invalid pages data');
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 }
@@ -117,8 +239,11 @@ function cleanValue(value: unknown): unknown {
 }
 
 function cleanEntity(value: BackupRecord): BackupRecord {
-  const { images: _images, imageData: _imageData, primaryImageIndex: _primary, ...rest } = record(cleanValue(value));
-  return rest as BackupRecord;
+  const cleaned = record(cleanValue(value));
+  delete cleaned.images;
+  delete cleaned.imageData;
+  delete cleaned.primaryImageIndex;
+  return cleaned as BackupRecord;
 }
 
 export function parseBackup(text: string): BackupPayload {
@@ -140,7 +265,9 @@ export function parseBackup(text: string): BackupPayload {
       if (!isValidCollection(value)) throw new Error(`Invalid ${key} data`);
       payload[key] = value;
     }
-    return payload as unknown as BackupPayloadV2;
+    const canonical = payload as unknown as BackupPayloadV2;
+    validateCanonical(canonical);
+    return canonical;
   }
 
   const payload: MutableLegacyPayload = {};

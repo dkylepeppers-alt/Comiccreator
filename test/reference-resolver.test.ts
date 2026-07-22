@@ -161,10 +161,7 @@ describe('panel reference resolver', () => {
   it('returns a capacity error instead of dropping mandatory references', () => {
     const result = resolvePanelReferences({
       request: request({ characterIds: ['mara', 'theo'] }),
-      assets: [
-        asset({ id: 'mara', characterIds: ['mara'] }),
-        asset({ id: 'theo', characterIds: ['theo'] }),
-      ],
+      assets: [asset({ id: 'mara', characterIds: ['mara'] }), asset({ id: 'theo', characterIds: ['theo'] })],
       budget: 1,
     });
 
@@ -184,5 +181,24 @@ describe('panel reference resolver', () => {
     expect(result.manifest.map((item) => item.role)).toEqual(['identity', 'previous-frame']);
     expect(result.manifest[1]).toMatchObject({ sourcePageId: 'p1', sourcePanelIndex: 3 });
     expect(result.dataUrls).toEqual(['data:image/png;base64,r1', 'previous']);
+  });
+
+  it('resolves an exact prop asset instead of reporting every prop missing', () => {
+    const result = resolvePanelReferences({
+      request: request({ propNames: ['signal lamp'] }),
+      assets: [
+        asset({
+          id: 'lamp',
+          subjectType: 'prop',
+          use: 'design',
+          characterIds: [],
+          description: 'signal lamp',
+        }),
+      ],
+      budget: 1,
+    });
+
+    expect(result.manifest).toContainEqual(expect.objectContaining({ role: 'prop', imageId: 'lamp' }));
+    expect(result.missing).toEqual([]);
   });
 });

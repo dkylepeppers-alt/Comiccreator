@@ -16,15 +16,8 @@ export interface ImageRef {
   tag?: string;
   description?: string;
   dataUrl?: string;
-  locationKey?: string | null;
-  referenceKey?: string | null;
-  referenceClassifications?: {
-    schemaVersion: 1;
-    viewAngle: 'front' | 'side' | 'back' | 'three-quarter' | 'multiple' | 'unspecified';
-    framing: 'close-up' | 'medium' | 'full-body' | 'character-sheet' | 'unspecified';
-    activity: 'neutral' | 'action' | 'expression' | 'interaction' | 'unspecified';
-    context: 'isolated' | 'in-world' | 'unspecified';
-  };
+  placeId?: string | null;
+  variantId?: string | null;
 }
 
 /** Generate a stable unique ID for gallery images and other records. */
@@ -59,7 +52,7 @@ export function ensureImageIds(images: ImageRef[] | null | undefined): { images:
  * Normalize a user-entered location key: trim, lowercase, spaces → dashes,
  * strip characters outside [a-z0-9-]. Returns '' for empty input.
  */
-export function normalizeLocationKey(key: string | null | undefined): string {
+export function slugifyName(key: string | null | undefined): string {
   if (!key) return '';
   return String(key)
     .trim()

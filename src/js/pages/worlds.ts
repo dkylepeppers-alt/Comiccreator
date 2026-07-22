@@ -1,13 +1,12 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml, normalizeLocationKey } from '../utils.js';
+import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
 import type { ReferenceFilter, ReferenceWorkspaceAction } from '../reference-workspace.js';
 import {
   addUploadedReference,
   fileToDataUrl,
-  referenceClassificationQueue,
   referenceRepository,
   referenceWorkspace,
 } from '../reference-workspace-runtime.js';
@@ -173,7 +172,7 @@ async function saveLocation(): Promise<void> {
   if (!editingId) return;
   const name = document.getElementById('location-name')?.value.trim();
   if (!name) return App.toast('Location name is required', 'error');
-  let id = normalizeLocationKey(name);
+  let id = slugifyName(name);
   const existing = await referenceRepository.listLocations(editingId);
   if (existing.some((location) => location.id === id)) id = `${id}-${existing.length + 1}`;
   await referenceRepository.putLocation({
@@ -253,7 +252,7 @@ async function exportWorld(id: string): Promise<void> {
   const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `world-${normalizeLocationKey(world.name) || id}.json`;
+  anchor.download = `world-${slugifyName(world.name) || id}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

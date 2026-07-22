@@ -98,12 +98,13 @@ describe('parseBackup', () => {
     const payload = parseBackup(
       JSON.stringify({
         schemaVersion: 2,
-        characters: [{ id: 'c1' }],
+        worlds: [{ id: 'w1', name: 'Atlas' }],
+        characters: [{ id: 'c1', worldId: 'w1', name: 'Mara' }],
         exportedAt: '2026-01-01T00:00:00.000Z',
         unknown: true,
       }),
     );
-    expect(payload.characters).toEqual([{ id: 'c1' }]);
+    expect(payload.characters).toEqual([{ id: 'c1', worldId: 'w1', name: 'Mara' }]);
     expect(payload.exportedAt).toBe('2026-01-01T00:00:00.000Z');
     expect(payload.schemaVersion).toBe(2);
     expect((payload as Record<string, unknown>).unknown).toBeUndefined();
@@ -312,5 +313,72 @@ describe('schema-v2 backups', () => {
 
     await expect(importBackup(payload, dependencies)).rejects.toThrow('parent world');
     expect(dependencies.putBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed canonical records before the import transaction', () => {
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          schemaVersion: 2,
+          worlds: [{ id: 'w1', name: 'Atlas' }],
+          referenceAssets: [{ id: 'r1', worldId: 'missing', dataUrl: 'data:image/png;base64,x' }],
+        }),
+      ),
+    ).toThrow('Invalid referenceAssets data');
+  });
+
+  it.each([
+    ['an in-progress asset state', { classificationState: 'running' }, 'w1'],
+    ['an incomplete asset', { provenance: undefined }, 'w1'],
+    ['a cross-world location link', { locationId: 'l2' }, 'w1'],
+    ['a cross-world job link', {}, 'w2'],
+  ])('rejects %s', (_label, assetOverride, jobWorldId) => {
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          schemaVersion: 2,
+          worlds: [
+            { id: 'w1', name: 'Atlas' },
+            { id: 'w2', name: 'Elsewhere' },
+          ],
+          locations: [
+            { id: 'l1', worldId: 'w1', name: 'Yard', aliases: [] },
+            { id: 'l2', worldId: 'w2', name: 'Tower', aliases: [] },
+          ],
+          referenceAssets: [
+            {
+              id: 'r1',
+              worldId: 'w1',
+              dataUrl: 'data:image/png;base64,x',
+              subjectType: null,
+              use: null,
+              characterIds: [],
+              locationId: null,
+              facets: {},
+              description: '',
+              confidence: {},
+              provenance: { source: 'uploaded', metadata: 'local' },
+              classificationState: 'pending',
+              acceptedAsIs: false,
+              autoUse: true,
+              createdAt: 1,
+              updatedAt: 1,
+              ...assetOverride,
+            },
+          ],
+          classificationJobs: [
+            {
+              id: 'j1',
+              assetId: 'r1',
+              worldId: jobWorldId,
+              status: 'pending',
+              attemptCount: 0,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/Invalid (referenceAssets|classificationJobs) data/);
   });
 });

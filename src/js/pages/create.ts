@@ -50,8 +50,6 @@ let state: any = {
   pages: [],
   pageIds: [], // DB ids parallel to pages[], used for re-roll / undo
   conversationHistory: [],
-  referenceImages: [], // world ref images [{dataUrl, label, type}]
-  characterImagesByName: {}, // name → images[] from multi-image gallery
   characters: [],
   world: null, // full world record (normalized) for anchored generation
   plannerMode: false, // true when this comic uses the structured planner + continuity pipeline
@@ -195,7 +193,7 @@ async function renderSetup() {
     ? allCharacters.filter((character) => (character.worldId || character.linkedWorldId) === state.selectedWorld)
     : [];
   const worlds = await DB.getAll(DB.STORES.worlds);
-  const plannerEnabled = await DB.getSetting('useStructuredPlanner', true);
+  const plannerEnabled = true;
   const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
   const imagePresets = dedupeByNameLatest(await DB.getAll(DB.STORES.imagePresets));
   const hasDraft =
@@ -747,7 +745,7 @@ async function renderResume(comicId: string): Promise<string> {
   state.visualContinuity = comic.visualContinuity || null;
   state.readOnly = isComicReadOnly(comic);
 
-  // Restore character data and reference images for continued generation
+  // Restore character and world data for continued generation.
   state.characters = [];
   for (const cid of state.selectedCharacters) {
     const c = await DB.get(DB.STORES.characters, cid);
@@ -765,40 +763,6 @@ async function renderResume(comicId: string): Promise<string> {
     comic.visualContinuity = state.visualContinuity;
     await DB.put(DB.STORES.comics, comic);
   }
-
-  const useRefImages = await DB.getSetting('useRefImages', true);
-  const refImages = [];
-  const charImagesByName = {};
-  if (useRefImages) {
-    for (const c of state.characters) {
-      const migrated = DB.migrateCharacter(c);
-      const images = migrated.images || [];
-      if (images.length > 0) {
-        charImagesByName[c.name] = { images, primaryImageIndex: migrated.primaryImageIndex ?? 0 };
-        // Also add primary image to legacy refImages for backward compat
-        const primary = images[migrated.primaryImageIndex ?? 0] || images[0];
-        if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
-      }
-    }
-    if (state.selectedWorld) {
-      const world = await DB.get(DB.STORES.worlds, state.selectedWorld);
-      if (world) {
-        const migratedWorld = DB.migrateWorld(world);
-        for (const img of migratedWorld.images || []) {
-          if (img?.dataUrl)
-            refImages.push({
-              dataUrl: img.dataUrl,
-              label: world.name,
-              tag: img.tag || '',
-              description: img.description || '',
-              type: 'world',
-            });
-        }
-      }
-    }
-  }
-  state.referenceImages = refImages;
-  state.characterImagesByName = charImagesByName;
 
   return renderReading();
 }
@@ -976,37 +940,6 @@ async function startGenerating() {
   }
   state.world = world;
 
-  // Collect reference images for image-to-image generation
-  const useRefImages = await DB.getSetting('useRefImages', true);
-  const refImages = [];
-  const charImagesByName = {};
-  if (useRefImages) {
-    for (const c of characters) {
-      const migrated = DB.migrateCharacter(c);
-      const images = migrated.images || [];
-      if (images.length > 0) {
-        charImagesByName[c.name] = { images, primaryImageIndex: migrated.primaryImageIndex ?? 0 };
-        const primary = images[migrated.primaryImageIndex ?? 0] || images[0];
-        if (primary?.dataUrl) refImages.push({ dataUrl: primary.dataUrl, label: c.name, type: 'character' });
-      }
-    }
-    if (world) {
-      const migratedWorld = DB.migrateWorld(world);
-      for (const img of migratedWorld.images || []) {
-        if (img?.dataUrl)
-          refImages.push({
-            dataUrl: img.dataUrl,
-            label: world.name,
-            tag: img.tag || '',
-            description: img.description || '',
-            type: 'world',
-          });
-      }
-    }
-  }
-  state.referenceImages = refImages;
-  state.characterImagesByName = charImagesByName;
-
   let presetData = null;
   if (state.selectedPreset) {
     presetData = await DB.get(DB.STORES.presets, state.selectedPreset);
@@ -1038,7 +971,7 @@ async function startGenerating() {
 
   // Structured planner + anchored continuity pipeline (default). The legacy
   // free-prose imagePrompt pipeline remains as a compatibility path.
-  state.plannerMode = await DB.getSetting('useStructuredPlanner', true);
+  state.plannerMode = true;
 
   let systemPrompt;
   if (state.plannerMode) {
@@ -1944,8 +1877,6 @@ function resetState() {
     pages: [],
     pageIds: [],
     conversationHistory: [],
-    referenceImages: [],
-    characterImagesByName: {},
     characters: [],
     world: null,
     plannerMode: false,

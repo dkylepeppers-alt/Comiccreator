@@ -154,9 +154,7 @@ describe('legacy reference migration execution', () => {
     expect(state.worlds[0].images).toEqual([]);
     expect(state.characters[0].images).toEqual([]);
     expect(state.comics[0].referenceSchemaVersion).toBe(1);
-    expect(state.events.indexOf('asset:legacy-world-w1-world-image')).toBeLessThan(
-      state.events.indexOf('world:w1'),
-    );
+    expect(state.events.indexOf('asset:legacy-world-w1-world-image')).toBeLessThan(state.events.indexOf('world:w1'));
     expect(state.dependencies.saveProgress).toHaveBeenCalledTimes(2);
   });
 
@@ -174,6 +172,27 @@ describe('legacy reference migration execution', () => {
       'Choose one parent world for character "mara"',
     );
     expect(state.assets.size).toBe(0);
+  });
+
+  it('migrates legacy imageData and persists ownership for image-less characters', async () => {
+    const state = migrationState();
+    state.characters[0].images = [];
+    (state.characters[0] as any).imageData = 'data:image/png;base64,SINGLE';
+    state.characters.push({ id: 'theo', name: 'Theo', images: [] } as any);
+    state.comics[0].characterIds.push('theo');
+    const plan = planLegacyMigration({
+      worlds: state.worlds,
+      characters: state.characters,
+      comics: state.comics,
+    });
+
+    await runLegacyMigration(plan, {}, state.dependencies);
+
+    expect([...state.assets.values()]).toContainEqual(
+      expect.objectContaining({ dataUrl: 'data:image/png;base64,SINGLE', characterIds: ['mara'] }),
+    );
+    expect(state.characters.find((character) => character.id === 'mara')).not.toHaveProperty('imageData');
+    expect(state.characters.find((character) => character.id === 'theo')?.worldId).toBe('w1');
   });
 
   it('resumes after interruption without duplicating or losing image bytes', async () => {

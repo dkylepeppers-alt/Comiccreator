@@ -18,13 +18,9 @@ export interface PlannerManifest {
     role?: string;
     description?: string;
     powers?: string;
-    /** @deprecated Kept only until legacy create-page wiring is removed. */
-    references?: Array<{ key: string; description?: string }>;
   }>;
   world?: { id?: string; name: string; description?: string; details?: string; atmosphere?: string } | null;
   locations?: Array<{ id: string; name: string; description?: string }>;
-  /** @deprecated Kept only until legacy create-page wiring is removed. */
-  locationKeys?: string[];
   customSystemPrompt?: string | null;
   panelCount?: string;
 }

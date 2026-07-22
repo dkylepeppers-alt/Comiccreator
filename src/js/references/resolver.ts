@@ -110,7 +110,7 @@ function scoreCandidate(
   asset: ReferenceAsset,
   desiredUse: ReferenceUse | null,
   requestedFacets: ReferenceFacets,
-  preferenceKeys: readonly string[],
+  preferenceIds: readonly string[],
   preferredReferenceIds: Record<string, string>,
   pinnedReferenceIds: Record<string, string>,
 ): CandidateScore {
@@ -120,7 +120,7 @@ function scoreCandidate(
     desiredUse && asset.use === desiredUse ? 1 : 0,
     facets.matching,
     -facets.conflicts.length,
-    preferenceScore(asset.id, preferenceKeys, preferredReferenceIds, pinnedReferenceIds),
+    preferenceScore(asset.id, preferenceIds, preferredReferenceIds, pinnedReferenceIds),
     asset.id,
   ];
 }
@@ -176,7 +176,7 @@ export function resolvePanelReferences(input: ResolvePanelReferencesInput): Refe
     role: SelectedReference['role'],
     id: string,
     desiredUse: ReferenceUse | null,
-    preferenceKeys: readonly string[],
+    preferenceIds: readonly string[],
     matches: (asset: ReferenceAsset) => boolean,
   ): void {
     if (selected.some((selection) => selection.role === role && matches(selection.asset))) return;
@@ -185,8 +185,8 @@ export function resolvePanelReferences(input: ResolvePanelReferencesInput): Refe
     );
     candidates.sort((left, right) =>
       compareCandidateScores(
-        scoreCandidate(left, desiredUse, request.facets, preferenceKeys, preferredReferenceIds, pinnedReferenceIds),
-        scoreCandidate(right, desiredUse, request.facets, preferenceKeys, preferredReferenceIds, pinnedReferenceIds),
+        scoreCandidate(left, desiredUse, request.facets, preferenceIds, preferredReferenceIds, pinnedReferenceIds),
+        scoreCandidate(right, desiredUse, request.facets, preferenceIds, preferredReferenceIds, pinnedReferenceIds),
       ),
     );
     const chosen = candidates[0];
@@ -256,9 +256,15 @@ export function resolvePanelReferences(input: ResolvePanelReferencesInput): Refe
   }
 
   for (const propName of [...new Set(request.propNames)]) {
-    if (!selected.some((selection) => selection.role === 'prop' && selection.label === propName)) {
-      missing.push({ role: 'prop', id: propName });
-    }
+    addRequirement(
+      'prop',
+      propName,
+      'design',
+      [propName, 'prop'],
+      (asset) =>
+        asset.subjectType === 'prop' &&
+        (asset.description.trim() === propName || asset.facets.heldProps?.includes(propName) === true),
+    );
   }
 
   const styleReferenceId = pinnedReferenceIds.style || preferredReferenceIds.style;

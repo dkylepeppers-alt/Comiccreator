@@ -50,7 +50,6 @@ async function render() {
   const enrichImagePrompts = await DB.getSetting('enrichImagePrompts', false);
   const negativePrompt = await DB.getSetting('negativePrompt', '');
   const updateRepo = await DB.getSetting('updateRepo', DEFAULT_UPDATE_REPO);
-  const useStructuredPlanner = await DB.getSetting('useStructuredPlanner', true);
   const enableSequentialPages = await DB.getSetting('enableSequentialPages', false);
   const singleImageModel = await DB.getSetting('singleImageModel', '');
   const storedCompanionMode = await DB.getSetting('singleImageCompanionMode', null);
@@ -206,14 +205,6 @@ async function render() {
             AI-Picked Panel Sizes
           </label>
           <div class="form-hint">Let the AI choose a different image size/ratio for each panel based on scene composition. The image size above is used as the fallback when the AI does not specify one. Only works when the model supports multiple sizes. <strong>Legacy pipeline only:</strong> comics using the structured planner generate every panel at the single page-wide size above (sequential page requests require one shared size); panel layout varies via composition instead.</div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" style="display:flex;align-items:center;gap:8px;">
-            <input type="checkbox" id="set-structuredplanner" ${useStructuredPlanner ? 'checked' : ''} style="width:auto;">
-            Structured Planner + Anchored Continuity (new comics)
-          </label>
-          <div class="form-hint">The story model plans structured visual facts against exact character IDs, and the app compiles image prompts from identity anchors and a persistent wardrobe ledger. Disable to use the legacy free-prose prompt pipeline. Appearance-text repetition and gallery ref-selection modes above only apply to the legacy pipeline.</div>
         </div>
 
         <div class="form-group">
@@ -983,7 +974,6 @@ async function save() {
   await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
   await DB.setSetting('dynamicImageSizes', document.getElementById('set-dynamicsizes').checked);
   await DB.setSetting('enrichImagePrompts', document.getElementById('set-enrichprompts').checked);
-  await DB.setSetting('useStructuredPlanner', document.getElementById('set-structuredplanner').checked);
   await DB.setSetting('enableSequentialPages', document.getElementById('set-sequentialpages').checked);
   await DB.setSetting('singleImageCompanionMode', document.getElementById('set-companionmode').value);
   await DB.setSetting('singleImageModel', document.getElementById('set-singleimgmodel').value.trim());

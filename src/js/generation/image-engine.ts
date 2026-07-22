@@ -21,7 +21,7 @@ import { PROMPT_VERSION } from '../visual-continuity.js';
 import { sanitizeImagePrompt } from '../utils.js';
 import { createReferenceRepository } from '../references/repository.js';
 import { resolvePanelReferences } from '../references/resolver.js';
-import type { PanelReferenceRequest, ReferenceManifestItem } from '../references/types.js';
+import type { PanelReferenceRequest } from '../references/types.js';
 import { runContinuityGeneration } from './continuity/orchestrator.js';
 import type { CreateState, GenerationContext } from './types.js';
 import type { GenerateImagesOptions, GeneratedImage, ImageApiProgressEvent, LabeledRef } from '../api.js';

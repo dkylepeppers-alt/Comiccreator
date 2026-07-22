@@ -21,6 +21,7 @@ export interface LegacyWorldRecord extends Record<string, unknown> {
 export interface LegacyCharacterRecord extends Record<string, unknown> {
   id: string;
   worldId?: string;
+  imageData?: string;
   images?: Array<LegacyImageRecord | string | null | undefined>;
 }
 
@@ -33,7 +34,7 @@ export interface LegacyComicRecord extends Record<string, unknown> {
 
 export interface LegacyMigrationInput {
   worlds: Array<Pick<LegacyWorldRecord, 'id' | 'images'>>;
-  characters: Array<Pick<LegacyCharacterRecord, 'id' | 'images'>>;
+  characters: Array<Pick<LegacyCharacterRecord, 'id' | 'images' | 'imageData'>>;
   comics: Array<Pick<LegacyComicRecord, 'id' | 'worldId' | 'characterIds'>>;
 }
 
@@ -105,7 +106,15 @@ export function planLegacyMigration(input: LegacyMigrationInput): LegacyMigratio
     assignments,
     unresolved,
     worldImageCount: imageCount(input.worlds),
-    characterImageCount: imageCount(input.characters),
+    characterImageCount:
+      imageCount(input.characters) +
+      input.characters.filter(
+        (character) =>
+          typeof (character as LegacyCharacterRecord).imageData === 'string' &&
+          !(character.images || []).some(
+            (image) => preparedImage(image)?.dataUrl === (character as LegacyCharacterRecord).imageData,
+          ),
+      ).length,
   };
 }
 
@@ -148,7 +157,16 @@ async function ensureCharacterImageIds(
   const prepared: LegacyCharacterRecord[] = [];
   for (const character of characters) {
     let changed = false;
-    const images = (character.images || []).map((source) => {
+    const sources = [...(character.images || [])];
+    if (
+      typeof character.imageData === 'string' &&
+      character.imageData &&
+      !sources.some((source) => preparedImage(source)?.dataUrl === character.imageData)
+    ) {
+      sources.push({ dataUrl: character.imageData });
+      changed = true;
+    }
+    const images = sources.map((source) => {
       const image = preparedImage(source);
       if (!image || image.id) return source;
       changed = true;
@@ -286,7 +304,8 @@ export async function runLegacyMigration(
         dependencies.now(),
       );
       await preserveAssetBeforeRemoval(asset, dependencies);
-      const { imageData: _legacyImageData, ...withoutImageData } = character;
+      const withoutImageData = { ...character };
+      delete withoutImageData.imageData;
       character = {
         ...withoutImageData,
         worldId,
@@ -302,6 +321,9 @@ export async function runLegacyMigration(
         updatedAt: dependencies.now(),
       });
     }
+    const cleaned = { ...character, worldId, images: character.images || [] };
+    delete cleaned.imageData;
+    await dependencies.putCharacter(cleaned);
   }
 
   for (const comic of await dependencies.listComics()) {

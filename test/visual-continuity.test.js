@@ -22,7 +22,7 @@ const mara = {
   appearance: 'tall, wiry, cropped black hair',
   images: [
     { id: 'img-a', dataUrl: 'data:image/png;base64,AAA', tag: 'default' },
-    { id: 'img-b', dataUrl: 'data:image/png;base64,BBB', tag: 'alternate-outfit', referenceKey: 'battle-armor' },
+    { id: 'img-b', dataUrl: 'data:image/png;base64,BBB', tag: 'alternate-outfit' },
   ],
   primaryImageIndex: 1,
   identityAnchorImageId: 'img-a',

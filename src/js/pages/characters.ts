@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { PageModule } from '../utils.js';
-import { escHtml, normalizeLocationKey } from '../utils.js';
+import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
 import type { ReferenceFilter, ReferenceWorkspaceAction } from '../reference-workspace.js';
@@ -269,7 +269,7 @@ async function exportCharacter(id: string): Promise<void> {
   const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `character-${normalizeLocationKey(character.name) || id}.json`;
+  anchor.download = `character-${slugifyName(character.name) || id}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
