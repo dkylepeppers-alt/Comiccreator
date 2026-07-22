@@ -63,7 +63,13 @@ function rosterFrom(input: ClassificationInput) {
 
 export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): LocalReferenceClassifier {
   return {
-    getAvailability: () => plugin.getAvailability(),
+    getAvailability: async () => {
+      try {
+        return await plugin.getAvailability();
+      } catch {
+        return { status: 'unavailable' };
+      }
+    },
     download: () => plugin.download(),
     classify: async (input) => {
       try {

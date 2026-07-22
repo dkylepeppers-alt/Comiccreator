@@ -71,9 +71,7 @@ describe('local reference classifier', () => {
       download: vi.fn(),
     };
     const unavailableClassifier = createLocalReferenceClassifier(unavailablePlugin);
-    expect(
-      await unavailableClassifier.classify({ asset, world, characters: [], locations: [] }),
-    ).toBeNull();
+    expect(await unavailableClassifier.classify({ asset, world, characters: [], locations: [] })).toBeNull();
     expect(unavailablePlugin.classify).not.toHaveBeenCalled();
 
     const invalidClassifier = createLocalReferenceClassifier({
@@ -95,5 +93,15 @@ describe('local reference classifier', () => {
     await expect(classifier.getAvailability()).resolves.toEqual({ status: 'downloadable' });
     await classifier.download();
     expect(plugin.download).toHaveBeenCalledOnce();
+  });
+
+  it('reports unavailable when the native plugin is not implemented', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn(),
+      getAvailability: vi.fn().mockRejectedValue(new Error('plugin is not implemented on web')),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.getAvailability()).resolves.toEqual({ status: 'unavailable' });
   });
 });

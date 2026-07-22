@@ -1,9 +1,4 @@
-import type {
-  ReferenceClassification,
-  ReferenceFacets,
-  ReferenceSubjectType,
-  ReferenceUse,
-} from './types.js';
+import type { ReferenceClassification, ReferenceFacets, ReferenceSubjectType, ReferenceUse } from './types.js';
 
 export interface ReferenceRoster {
   worldId: string;
@@ -179,10 +174,7 @@ function parseConfidence(value: unknown): ReferenceClassification['confidence'] 
   return confidence;
 }
 
-export function parseReferenceClassification(
-  value: unknown,
-  roster: ReferenceRoster,
-): ReferenceClassification | null {
+export function parseReferenceClassification(value: unknown, roster: ReferenceRoster): ReferenceClassification | null {
   if (!isRecord(value)) return null;
   const subjectType = value.subjectType;
   const use = value.use;
@@ -200,7 +192,10 @@ export function parseReferenceClassification(
   if (characterIds.some((id) => !roster.characterIds.has(id))) return null;
 
   const locationId = value.locationId === undefined || value.locationId === null ? null : cleanString(value.locationId);
-  if ((value.locationId !== undefined && value.locationId !== null && !locationId) || (locationId && !roster.locationIds.has(locationId))) {
+  if (
+    (value.locationId !== undefined && value.locationId !== null && !locationId) ||
+    (locationId && !roster.locationIds.has(locationId))
+  ) {
     return null;
   }
 
@@ -257,10 +252,7 @@ function facetLabel(classification: ReferenceClassification): string | null {
   return facets.framing || facets.appearanceState || facets.lighting || null;
 }
 
-export function formatReferenceLabel(
-  classification: ReferenceClassification,
-  labels: ReferenceLabels,
-): string {
+export function formatReferenceLabel(classification: ReferenceClassification, labels: ReferenceLabels): string {
   let entityLabel = '';
   if (classification.subjectType === 'location') {
     const locationId = classification.locationId || '';
@@ -269,12 +261,7 @@ export function formatReferenceLabel(
     entityLabel = classification.characterIds.map((id) => labels.characterNames[id] || id).join(' + ');
   }
 
-  return [
-    titleCase(classification.subjectType),
-    entityLabel,
-    titleCase(classification.use),
-    facetLabel(classification),
-  ]
+  return [titleCase(classification.subjectType), entityLabel, titleCase(classification.use), facetLabel(classification)]
     .filter((part): part is string => Boolean(part))
     .map(titleCase)
     .join(' / ');

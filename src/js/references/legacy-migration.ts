@@ -130,7 +130,9 @@ async function ensureWorldImageIds(
       const image = preparedImage(source);
       if (!image || image.id) return source;
       changed = true;
-      return typeof source === 'string' ? { id: dependencies.newId(), dataUrl: source } : { ...source, id: dependencies.newId() };
+      return typeof source === 'string'
+        ? { id: dependencies.newId(), dataUrl: source }
+        : { ...source, id: dependencies.newId() };
     });
     const record = changed ? { ...world, images } : world;
     if (changed) await dependencies.putWorld(record);
@@ -150,7 +152,9 @@ async function ensureCharacterImageIds(
       const image = preparedImage(source);
       if (!image || image.id) return source;
       changed = true;
-      return typeof source === 'string' ? { id: dependencies.newId(), dataUrl: source } : { ...source, id: dependencies.newId() };
+      return typeof source === 'string'
+        ? { id: dependencies.newId(), dataUrl: source }
+        : { ...source, id: dependencies.newId() };
     });
     const record = changed ? { ...character, images } : character;
     if (changed) await dependencies.putCharacter(record);

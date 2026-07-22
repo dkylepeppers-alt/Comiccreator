@@ -30,13 +30,7 @@ export interface ReferenceFacets {
     | 'establishing'
     | 'detail';
   cameraElevation?: 'eye-level' | 'high' | 'low' | 'overhead' | 'aerial' | 'ground-level';
-  viewDirection?:
-    | 'front'
-    | 'three-quarter-front'
-    | 'left-profile'
-    | 'right-profile'
-    | 'three-quarter-rear'
-    | 'rear';
+  viewDirection?: 'front' | 'three-quarter-front' | 'left-profile' | 'right-profile' | 'three-quarter-rear' | 'rear';
   identityCoverage?: 'face' | 'upper-body' | 'full-body';
   spaceType?: 'interior' | 'exterior' | 'threshold';
   timeOfDay?: 'dawn' | 'morning' | 'midday' | 'afternoon' | 'dusk' | 'night';

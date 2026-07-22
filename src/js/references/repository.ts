@@ -1,12 +1,7 @@
 import DB from '../db.js';
 import type { ClassificationJob, ReferenceAsset, WorldLocation } from './types.js';
 
-export type ReferenceStoreName =
-  | 'characters'
-  | 'worlds'
-  | 'locations'
-  | 'referenceAssets'
-  | 'classificationJobs';
+export type ReferenceStoreName = 'characters' | 'worlds' | 'locations' | 'referenceAssets' | 'classificationJobs';
 
 export interface ReferenceTransaction {
   get<T>(storeName: ReferenceStoreName, id: string): Promise<T | undefined>;
@@ -122,19 +117,14 @@ async function clearPreferredReference(
   storeName: 'characters' | 'worlds' | 'locations',
   referenceId: string,
 ): Promise<void> {
-  const records = await transaction.getAll<
-    PreferredCharacterRecord | PreferredWorldRecord | WorldLocation
-  >(storeName);
+  const records = await transaction.getAll<PreferredCharacterRecord | PreferredWorldRecord | WorldLocation>(storeName);
   for (const record of records) {
     if (
       storeName === 'characters' &&
       (record as PreferredCharacterRecord).preferredIdentityReferenceId === referenceId
     ) {
       await transaction.put(storeName, { ...record, preferredIdentityReferenceId: null });
-    } else if (
-      storeName === 'worlds' &&
-      (record as PreferredWorldRecord).preferredStyleReferenceId === referenceId
-    ) {
+    } else if (storeName === 'worlds' && (record as PreferredWorldRecord).preferredStyleReferenceId === referenceId) {
       await transaction.put(storeName, { ...record, preferredStyleReferenceId: null });
     } else if (storeName === 'locations' && (record as WorldLocation).preferredReferenceId === referenceId) {
       await transaction.put(storeName, { ...record, preferredReferenceId: null });
@@ -179,7 +169,8 @@ export function createReferenceRepository(
         const asset = await transaction.get<ReferenceAsset>('referenceAssets', id);
         if (!asset || !asset.characterIds.includes(characterId)) return;
         const characterIds = asset.characterIds.filter((candidate) => candidate !== characterId);
-        const needsReview = asset.subjectType === 'interaction' || (asset.subjectType === 'character' && characterIds.length === 0);
+        const needsReview =
+          asset.subjectType === 'interaction' || (asset.subjectType === 'character' && characterIds.length === 0);
         await transaction.put('referenceAssets', {
           ...asset,
           characterIds,

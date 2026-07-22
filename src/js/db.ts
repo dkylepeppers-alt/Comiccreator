@@ -176,9 +176,7 @@ function open(): Promise<IDBDatabase> {
         if (upgradeTx) {
           rewriteStoreRecords(upgradeTx, STORES.comics, (comic) => ({
             record:
-              comic?.referenceSchemaVersion == null
-                ? Object.assign({}, comic, { referenceSchemaVersion: 1 })
-                : comic,
+              comic?.referenceSchemaVersion == null ? Object.assign({}, comic, { referenceSchemaVersion: 1 }) : comic,
             changed: comic?.referenceSchemaVersion == null,
           }));
         }

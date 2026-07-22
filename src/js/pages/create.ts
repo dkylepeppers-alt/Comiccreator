@@ -183,7 +183,10 @@ async function render(param?: string | null): Promise<string> {
 }
 
 async function renderSetup() {
-  const characters = await DB.getAll(DB.STORES.characters);
+  const allCharacters = await DB.getAll(DB.STORES.characters);
+  const characters = state.selectedWorld
+    ? allCharacters.filter((character) => (character.worldId || character.linkedWorldId) === state.selectedWorld)
+    : [];
   const worlds = await DB.getAll(DB.STORES.worlds);
   const plannerEnabled = await DB.getSetting('useStructuredPlanner', true);
   const presets = dedupeByNameLatest(await DB.getAll(DB.STORES.presets));
@@ -232,12 +235,14 @@ async function renderSetup() {
       <div class="card">
         <h3 class="card-title mb-sm">2. Select Characters</h3>
         ${
-          characters.length === 0
-            ? `
-          <p class="text-sm text-muted mb-sm">No characters created yet.</p>
-          <button class="btn btn-sm btn-secondary" data-navigate="characters" data-param="new">Create Character</button>
+          !state.selectedWorld
+            ? '<p class="text-sm text-muted">Choose a world first. Character choices come from that world.</p>'
+            : characters.length === 0
+              ? `
+          <p class="text-sm text-muted mb-sm">No characters belong to this world yet.</p>
+          <button class="btn btn-sm btn-secondary" data-navigate="characters" data-param="new:${escHtml(state.selectedWorld)}">Create Character</button>
         `
-            : `
+              : `
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
             ${characters
               .map(
@@ -256,7 +261,7 @@ async function renderSetup() {
 
       <!-- Step 3: World -->
       <div class="card">
-        <h3 class="card-title mb-sm">3. Select World (optional)</h3>
+        <h3 class="card-title mb-sm">3. Select World</h3>
         ${
           worlds.length === 0
             ? `
@@ -265,7 +270,6 @@ async function renderSetup() {
         `
             : `
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            <div class="chip ${!state.selectedWorld ? 'active' : ''}" data-action="selectWorld" data-args="[null]">None</div>
             ${worlds
               .map(
                 (w) => `
@@ -887,8 +891,15 @@ function toggleCharacter(id: string): void {
   App.refreshPage();
 }
 
-function selectWorld(id: string): void {
+async function selectWorld(id: string): Promise<void> {
   state.selectedWorld = id;
+  const characters = await DB.getAll(DB.STORES.characters);
+  const allowedIds = new Set(
+    characters
+      .filter((character) => (character.worldId || character.linkedWorldId) === id)
+      .map((character) => character.id),
+  );
+  state.selectedCharacters = state.selectedCharacters.filter((characterId) => allowedIds.has(characterId));
   scheduleDraftSave();
   App.refreshPage();
 }
