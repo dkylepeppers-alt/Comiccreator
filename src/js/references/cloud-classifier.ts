@@ -24,10 +24,10 @@ export interface CloudReferenceClassifier {
 function transientWait(error: unknown): ClassificationOutcome | null {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
   if (/\b429\b|rate.?limit|too many requests|quota/.test(message)) {
-    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: 30_000 };
+    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: 30_000, mode: 'cloud' };
   }
   if (/\b50[0234]\b|timeout|timed out|network|fetch failed/.test(message)) {
-    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: 15_000 };
+    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: 15_000, mode: 'cloud' };
   }
   return null;
 }
@@ -50,7 +50,7 @@ export function createCloudReferenceClassifier(dependencies: CloudClassifierDepe
     getAvailability,
     classify: async (input): Promise<ClassificationOutcome> => {
       if ((await getAvailability()).status !== 'available') {
-        return { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000 };
+        return { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000, mode: 'cloud' };
       }
       let text: string | null;
       try {
@@ -62,7 +62,7 @@ export function createCloudReferenceClassifier(dependencies: CloudClassifierDepe
       }
       // A null body means the caller declined the request (no key, or a non-vision model),
       // which is a configuration state rather than a bad classification.
-      if (text === null) return { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000 };
+      if (text === null) return { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000, mode: 'cloud' };
       if (typeof text !== 'string') {
         return { kind: 'failure', error: { stage: 'decode', code: 'decode-failed', mode: 'cloud' } };
       }

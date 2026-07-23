@@ -24,8 +24,8 @@ export interface LocalReferenceClassifier {
 
 function waiting(status: LocalClassifierStatus): ClassificationOutcome {
   return status === 'downloadable' || status === 'downloading'
-    ? { kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000 }
-    : { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000 };
+    ? { kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000, mode: 'local' }
+    : { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000, mode: 'local' };
 }
 
 function nativeErrorDetails(error: unknown): {
@@ -52,7 +52,7 @@ function nativeErrorDetails(error: unknown): {
 function runtimeWaiting(error: unknown): ClassificationOutcome | null {
   const details = nativeErrorDetails(error);
   if (details.code === 'background-use-blocked' || details.nativeCode === 30) {
-    return { kind: 'waiting', reason: 'app-background', retryDelayMs: details.retryDelayMs ?? 15_000 };
+    return { kind: 'waiting', reason: 'app-background', retryDelayMs: details.retryDelayMs ?? 15_000, mode: 'local' };
   }
   if (
     details.code === 'busy' ||
@@ -60,12 +60,14 @@ function runtimeWaiting(error: unknown): ClassificationOutcome | null {
     details.nativeCode === 9 ||
     details.nativeCode === 27
   ) {
-    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: details.retryDelayMs ?? 30_000 };
+    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: details.retryDelayMs ?? 30_000, mode: 'local' };
   }
   const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (message.includes('background')) return { kind: 'waiting', reason: 'app-background', retryDelayMs: 15_000 };
+  if (message.includes('background')) {
+    return { kind: 'waiting', reason: 'app-background', retryDelayMs: 15_000, mode: 'local' };
+  }
   if (message.includes('quota') || message.includes('busy')) {
-    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: 30_000 };
+    return { kind: 'waiting', reason: 'quota-busy', retryDelayMs: 30_000, mode: 'local' };
   }
   return null;
 }

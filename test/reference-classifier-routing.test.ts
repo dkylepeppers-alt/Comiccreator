@@ -100,7 +100,11 @@ describe('cloud reference classifier', () => {
     const classifier = createCloudReferenceClassifier({ classifyImage, isConfigured: async () => false });
 
     expect(await classifier.getAvailability()).toEqual({ status: 'unavailable' });
-    expect(await classifier.classify(input)).toMatchObject({ kind: 'waiting', reason: 'model-unavailable' });
+    expect(await classifier.classify(input)).toMatchObject({
+      kind: 'waiting',
+      reason: 'model-unavailable',
+      mode: 'cloud',
+    });
     expect(classifyImage).not.toHaveBeenCalled();
   });
 
@@ -112,7 +116,7 @@ describe('cloud reference classifier', () => {
       isConfigured: async () => true,
     });
 
-    expect(await classifier.classify(input)).toMatchObject({ kind: 'waiting', reason: 'quota-busy' });
+    expect(await classifier.classify(input)).toMatchObject({ kind: 'waiting', reason: 'quota-busy', mode: 'cloud' });
   });
 });
 
@@ -152,7 +156,7 @@ describe('classifier router', () => {
     const local = stubBackend({ status: 'unavailable' });
     const router = createClassifierRouter({ cloud, local, getOrder: async () => 'local' });
 
-    expect(await router.classify(input)).toMatchObject({ kind: 'waiting' });
+    expect(await router.classify(input)).toMatchObject({ kind: 'waiting', mode: 'local' });
     expect(cloud.classify).not.toHaveBeenCalled();
   });
 
@@ -161,7 +165,7 @@ describe('classifier router', () => {
     const local = stubBackend({ status: 'unavailable' });
     const router = createClassifierRouter({ cloud, local, getOrder: async () => 'cloud' });
 
-    expect(await router.classify(input)).toMatchObject({ kind: 'waiting', reason: 'model-unavailable' });
+    expect(await router.classify(input)).toMatchObject({ kind: 'waiting', reason: 'model-unavailable', mode: 'cloud' });
   });
 
   it('retries on the other backend when the preferred one fails mid-inference', async () => {

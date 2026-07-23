@@ -129,7 +129,13 @@ export type ClassificationOutcome =
       /** Which backend produced this, recorded on the asset so review can show provenance. */
       backend?: 'cloud' | 'local';
     }
-  | { kind: 'waiting'; reason: ClassificationWaitingReason; retryDelayMs: number }
+  | {
+      kind: 'waiting';
+      reason: ClassificationWaitingReason;
+      retryDelayMs: number;
+      /** Which backend produced this wait, so availability and quota diagnostics name the right one. */
+      mode?: 'local' | 'cloud';
+    }
   | { kind: 'failure'; error: ClassificationErrorDetails };
 
 export interface ClassificationDiagnostic {

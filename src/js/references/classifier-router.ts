@@ -35,10 +35,10 @@ function isTerminalFailure(outcome: ClassificationOutcome): boolean {
   return outcome.kind === 'failure' && (outcome.error.stage === 'parse' || outcome.error.stage === 'validation');
 }
 
-function waitingFor(status: string): ClassificationOutcome {
+function waitingFor(backend: ClassifierBackendName, status: string): ClassificationOutcome {
   return status === 'downloadable' || status === 'downloading'
-    ? { kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000 }
-    : { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000 };
+    ? { kind: 'waiting', reason: 'model-downloading', retryDelayMs: 30_000, mode: backend }
+    : { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000, mode: backend };
 }
 
 /**
@@ -60,7 +60,7 @@ export function createClassifierRouter(dependencies: ClassifierRouterDependencie
           status = 'unavailable';
         }
         if (status !== 'available') {
-          deferred = deferred ?? waitingFor(status);
+          deferred = deferred ?? waitingFor(name, status);
           continue;
         }
 

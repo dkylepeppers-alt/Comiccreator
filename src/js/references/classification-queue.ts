@@ -153,7 +153,7 @@ export function createClassificationQueue({
     const error: ClassificationErrorDetails = {
       stage: 'inference',
       code: outcome.reason === 'quota-busy' ? 'busy' : 'plugin-unavailable',
-      mode: 'local',
+      mode: outcome.mode ?? 'local',
       retryDelayMs: outcome.retryDelayMs,
       queueState: 'pending',
     };

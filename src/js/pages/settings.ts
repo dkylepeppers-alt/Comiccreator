@@ -1047,6 +1047,7 @@ async function save() {
   const repoInput = document.getElementById('set-update-repo');
   if (repoInput) await DB.setSetting('updateRepo', repoInput.value.trim() || DEFAULT_UPDATE_REPO);
 
+  await refreshCloudClassifierStatus();
   App.toast('Settings saved!', 'success');
 }
 
