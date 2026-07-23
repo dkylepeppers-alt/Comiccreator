@@ -99,6 +99,7 @@ export function createCloudReferenceClassifier(dependencies: CloudClassifierDepe
         classification: validated.classification,
         state: validated.state,
         validationReason: validated.validationReason,
+        backend: 'cloud',
       };
     },
   };

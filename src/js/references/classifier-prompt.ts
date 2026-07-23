@@ -46,7 +46,7 @@ const EXAMPLE_RESPONSE = JSON.stringify({
   locationId: '<roster location id or null>',
   facets: { framing: 'full-body', viewDirection: 'front', identityCoverage: 'full-body', spaceType: 'exterior' },
   description: 'One concise sentence describing only what is visible.',
-  confidence: { subject: 0.9, links: 0.8, use: 0.9, facets: 0.7 },
+  confidence: { subject: 0.94, links: 0.91, use: 0.93, facets: 0.9 },
 });
 
 /**
@@ -78,9 +78,10 @@ export function buildClassificationPrompt(input: ClassificationInput): string {
     '- locationId: one roster location ID, or null when none is visibly supported.',
     '- facets: include only facets you can actually see, each set to exactly one allowed value.',
     '- description: one concise sentence describing only what is visible.',
-    '- confidence: subject, links, use, and facets as numbers between 0 and 1.',
+    '- confidence: your own certainty for subject, links, use, and facets, each a number between 0 and 1.',
     `Answer in exactly this form, with real values substituted: ${EXAMPLE_RESPONSE}`,
     'Choose one concrete value per field. Never copy an option list, a placeholder, or a field description into your answer.',
+    'The example values above are illustrative only — report the confidence you actually have, not the numbers shown.',
   ].join('\n');
 }
 

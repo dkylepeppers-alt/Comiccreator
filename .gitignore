@@ -11,3 +11,6 @@ dropdown-panel-preview.png
 
 # Live smoke-probe image cache
 .smoke-cache/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

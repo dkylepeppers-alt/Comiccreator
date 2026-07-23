@@ -138,6 +138,7 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
           classification: validated.classification,
           state: validated.state,
           validationReason: validated.validationReason,
+          backend: 'local',
         };
       } catch (error) {
         const wait = runtimeWaiting(error);

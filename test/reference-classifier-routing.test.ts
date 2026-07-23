@@ -62,6 +62,28 @@ describe('cloud reference classifier', () => {
     expect(result).toMatchObject({ kind: 'classified', classification: { characterIds: ['mara'] } });
   });
 
+  it('records which backend answered so provenance survives onto the asset', async () => {
+    const classifier = createCloudReferenceClassifier({
+      classifyImage: async () => validJson,
+      isConfigured: async () => true,
+    });
+
+    expect(await classifier.classify(input)).toMatchObject({ kind: 'classified', backend: 'cloud' });
+  });
+
+  it('reports confidence high enough to reach ready when the model is certain', async () => {
+    // The prompt ships a worked example; if its confidence values sit below the 0.75
+    // review threshold, models copy them and every classification lands in needs-review.
+    const prompt = buildClassificationPrompt(input);
+    const example = JSON.parse(prompt.slice(prompt.indexOf('{"subjectType"')).split('\n')[0]);
+    for (const [field, value] of Object.entries(example.confidence)) {
+      expect(
+        Number(value),
+        `example confidence.${field} must not sit below the review threshold`,
+      ).toBeGreaterThanOrEqual(0.75);
+    }
+  });
+
   it('tags its diagnostics as cloud so review can tell the backends apart', async () => {
     const classifier = createCloudReferenceClassifier({
       classifyImage: async () => 'not json at all',

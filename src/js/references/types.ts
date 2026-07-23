@@ -79,7 +79,7 @@ export interface ReferenceAsset {
   proposedLocationName?: string | null;
   provenance: {
     source: 'uploaded' | 'generated' | 'migrated';
-    metadata: 'local' | 'manual' | 'accepted';
+    metadata: 'cloud' | 'local' | 'manual' | 'accepted';
   };
   classificationState: ClassificationState;
   acceptedAsIs: boolean;
@@ -126,6 +126,8 @@ export type ClassificationOutcome =
       classification: ReferenceClassificationDraft;
       state?: Extract<ClassificationState, 'ready' | 'needs-review'>;
       validationReason?: string;
+      /** Which backend produced this, recorded on the asset so review can show provenance. */
+      backend?: 'cloud' | 'local';
     }
   | { kind: 'waiting'; reason: ClassificationWaitingReason; retryDelayMs: number }
   | { kind: 'failure'; error: ClassificationErrorDetails };
