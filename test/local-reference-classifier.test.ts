@@ -188,6 +188,31 @@ describe('local reference classifier', () => {
     });
   });
 
+  it('keeps a multimodal result reviewable when the model chooses an incompatible use or no roster link', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({
+        text: JSON.stringify({
+          subjectType: 'character',
+          use: 'establishing',
+          characterIds: [],
+          locationId: null,
+          facets: { framing: 'medium' },
+          description: 'A person is visible in the uploaded image.',
+          confidence: { subject: 0.9, links: 0.2, use: 0.8, facets: 0.8 },
+        }),
+        mode: 'structured' as const,
+      }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'classified',
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+    });
+  });
+
   it('extracts a fenced JSON object surrounded by model prose', async () => {
     const classifier = createLocalReferenceClassifier({
       classify: vi.fn().mockResolvedValue({ text: `Here is the result:\n\`\`\`json\n${validJson}\n\`\`\`` }),

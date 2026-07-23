@@ -25,6 +25,21 @@ const SUBJECT_USES: Readonly<Record<ReferenceSubjectType, ReadonlySet<ReferenceU
   prop: new Set(['design', 'state']),
   style: new Set(['rendering']),
 };
+const ALL_USES = new Set<ReferenceUse>([
+  'identity',
+  'appearance',
+  'expression',
+  'pose',
+  'action',
+  'establishing',
+  'spatial',
+  'landmark',
+  'detail',
+  'relationship',
+  'design',
+  'state',
+  'rendering',
+]);
 
 const FRAMINGS = new Set<NonNullable<ReferenceFacets['framing']>>([
   'extreme-close-up',
@@ -199,7 +214,7 @@ export function parseReferenceClassificationDraft(value: unknown): ReferenceClas
     typeof subjectType !== 'string' ||
     !SUBJECT_TYPES.has(subjectType as ReferenceSubjectType) ||
     typeof use !== 'string' ||
-    !SUBJECT_USES[subjectType as ReferenceSubjectType].has(use as ReferenceUse)
+    !ALL_USES.has(use as ReferenceUse)
   ) {
     return null;
   }
@@ -211,10 +226,6 @@ export function parseReferenceClassificationDraft(value: unknown): ReferenceClas
   if (candidate.locationId !== undefined && candidate.locationId !== null && !locationId) {
     return null;
   }
-
-  if (subjectType === 'character' && characterIds.length === 0) return null;
-  if (subjectType === 'interaction' && characterIds.length < 2) return null;
-  if (subjectType === 'location' && !locationId) return null;
 
   const characterIdSet = new Set(characterIds);
   const facets = parseFacets(candidate.facets, characterIdSet);
@@ -288,10 +299,13 @@ export function validateReferenceClassificationDraft(
     (draft.subjectType === 'location' && hasMatchedLocation) ||
     draft.subjectType === 'prop' ||
     draft.subjectType === 'style';
+  const subjectUseCompatible = SUBJECT_USES[draft.subjectType].has(draft.use);
   const confidenceFields = ['subject', 'links', 'use', 'facets'] as const;
   const hasLowConfidence = confidenceFields.some((field) => (draft.confidence[field] || 0) < 0.75);
   if (hasUnmatchedLinks) return { state: 'needs-review', classification, validationReason: 'unmatched-entity-links' };
-  if (!subjectSatisfied) return { state: 'needs-review', classification, validationReason: 'subject-requirements' };
+  if (!subjectSatisfied || !subjectUseCompatible) {
+    return { state: 'needs-review', classification, validationReason: 'subject-requirements' };
+  }
   if (hasLowConfidence) return { state: 'needs-review', classification, validationReason: 'low-confidence' };
   return { state: 'ready', classification };
 }
