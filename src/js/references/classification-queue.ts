@@ -77,7 +77,7 @@ export function createClassificationQueue({
   now,
   timer = {
     setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
-    clearTimeout: globalThis.clearTimeout,
+    clearTimeout: (handle) => globalThis.clearTimeout(handle as number),
   },
 }: ClassificationQueueDependencies): ClassificationQueue {
   let paused = false;
