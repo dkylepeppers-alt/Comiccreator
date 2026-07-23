@@ -854,6 +854,60 @@ async function generateImageCaption(
 }
 
 /**
+ * Resolve the model used for reference classification and report whether it can run.
+ * Shares the caption model setting, since both need a vision-capable model.
+ */
+async function getClassificationModel(): Promise<{ model: string; usable: boolean }> {
+  const apiKey = await getApiKey();
+  const model = (await DB.getSetting('captionModel', '')) || (await getModel());
+  if (!apiKey) return { model, usable: false };
+  try {
+    const modelInfo = (await fetchTextModels()).find((m) => m.id === model);
+    // Only gate on explicit capability data; unknown models are still attempted.
+    if (modelInfo && modelInfo.supports_vision === false) return { model, usable: false };
+  } catch {
+    /* ignore cache errors — attempt classification anyway */
+  }
+  return { model, usable: true };
+}
+
+/** True when an API key is set and the resolved classification model supports vision. */
+async function canClassifyReferenceImages(): Promise<boolean> {
+  return (await getClassificationModel()).usable;
+}
+
+/**
+ * Classify a reference image with a vision-capable model and return the raw response text.
+ * Parsing and schema validation belong to the caller (`references/cloud-classifier.ts`),
+ * so this stays a thin transport. Returns null when no usable model is configured.
+ * Errors are thrown, not swallowed, so the classifier can distinguish a rate limit from
+ * a bad answer.
+ */
+async function classifyReferenceImage(dataUrl: string, prompt: string): Promise<string | null> {
+  const { model, usable } = await getClassificationModel();
+  if (!usable) return null;
+
+  // Compress before sending to avoid 413 payloads on large camera photos.
+  const compressedUrl = await compressDataUrl(dataUrl, 512, 0.75);
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content:
+        'You are a precise visual classifier for a comic book creator. Reply with one raw JSON object and nothing else.',
+    },
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: compressedUrl } },
+        { type: 'text', text: prompt },
+      ],
+    },
+  ];
+  const response = await chatCompletion(messages, { model, maxTokens: 600, temperature: 0.1 });
+  return response?.trim() || null;
+}
+
+/**
  * Reference variation definitions for AI-generated reference images.
  * Each entry defines the tag, prompt template, and description for a variation.
  * Character templates are reference-image-centric — the model should derive
@@ -1103,6 +1157,8 @@ const API = {
   generateImages,
   enrichImagePrompt,
   generateImageCaption,
+  classifyReferenceImage,
+  canClassifyReferenceImages,
   buildSystemPrompt,
   buildPlannerSystemPrompt,
   parseComicResponse,

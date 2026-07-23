@@ -107,7 +107,7 @@ export type ReferenceClassificationDraft = ReferenceClassification;
 export interface ClassificationErrorDetails {
   stage: ClassificationStage;
   code: ClassificationErrorCode;
-  mode?: 'local';
+  mode?: 'local' | 'cloud';
   message?: string;
   retryDelayMs?: number;
   /** Allowlisted ML Kit code for local diagnostics; native messages are never retained. */
