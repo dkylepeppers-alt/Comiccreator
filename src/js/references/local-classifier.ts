@@ -175,6 +175,7 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
         if (typeof response.text !== 'string') {
           return { kind: 'failure', error: { stage: 'decode', code: 'decode-failed', mode: 'local' } };
         }
+        const nativeMode = response.mode === 'structured' || response.mode === 'text' ? response.mode : undefined;
         const raw = extractJsonObject(response.text);
         if (!raw) {
           const rawOutputExcerpt = safeDiagnosticExcerpt(response.text);
@@ -184,12 +185,25 @@ export function createLocalReferenceClassifier(plugin: NativeClassifierPlugin): 
               stage: 'parse',
               code: 'invalid-json',
               mode: 'local',
+              ...(nativeMode ? { nativeMode } : {}),
               ...(rawOutputExcerpt ? { rawOutputExcerpt } : {}),
             },
           };
         }
         const draft = parseReferenceClassificationDraft(raw);
-        if (!draft) return { kind: 'failure', error: { stage: 'validation', code: 'invalid-schema', mode: 'local' } };
+        if (!draft) {
+          const rawOutputExcerpt = safeDiagnosticExcerpt(response.text);
+          return {
+            kind: 'failure',
+            error: {
+              stage: 'validation',
+              code: 'invalid-schema',
+              mode: 'local',
+              ...(nativeMode ? { nativeMode } : {}),
+              ...(rawOutputExcerpt ? { rawOutputExcerpt } : {}),
+            },
+          };
+        }
         const validated = validateReferenceClassificationDraft(draft, rosterFrom(input));
         return {
           kind: 'classified',

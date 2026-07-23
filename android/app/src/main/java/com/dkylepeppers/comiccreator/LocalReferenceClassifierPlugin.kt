@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val MAX_IMAGE_EDGE = 1536
@@ -280,7 +281,8 @@ class LocalReferenceClassifierPlugin : Plugin() {
 private fun ReferenceClassificationOutput.toJson(): JSONObject = JSONObject().apply {
     put("subjectType", subjectType)
     put("use", use)
-    put("characterIds", characterIds)
+    // Android's JSONObject stringifies raw Lists, so wrap in a JSONArray to emit a real JSON array.
+    put("characterIds", JSONArray(characterIds))
     put("locationId", locationId ?: JSONObject.NULL)
     put("facets", facets.toJson())
     put("description", description)
