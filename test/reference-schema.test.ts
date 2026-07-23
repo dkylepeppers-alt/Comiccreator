@@ -203,6 +203,68 @@ describe('reference classification schema', () => {
     });
   });
 
+  it('keeps subject/link requirements as review conditions instead of schema failures', () => {
+    // An honest "no roster entity matches" answer must parse and land in review;
+    // a terminal invalid-schema here made unknown characters unclassifiable forever.
+    const unlinkedCharacter = parseReferenceClassificationDraft({
+      subjectType: 'character',
+      use: 'identity',
+      characterIds: [],
+      locationId: null,
+      facets: {},
+      description: 'An unknown swordsman.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+      proposedCharacterNames: ['Swordsman'],
+    });
+    expect(unlinkedCharacter).not.toBeNull();
+    expect(validateReferenceClassificationDraft(unlinkedCharacter!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+      classification: { proposedCharacterNames: ['Swordsman'] },
+    });
+
+    const unlinkedLocation = parseReferenceClassificationDraft({
+      subjectType: 'location',
+      use: 'establishing',
+      characterIds: [],
+      locationId: null,
+      facets: {},
+      description: 'A ruined tower.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+    });
+    expect(validateReferenceClassificationDraft(unlinkedLocation!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+    });
+
+    const soloInteraction = parseReferenceClassificationDraft({
+      subjectType: 'interaction',
+      use: 'relationship',
+      characterIds: ['mara'],
+      locationId: null,
+      facets: {},
+      description: 'Mara reaches toward someone off-frame.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+    });
+    expect(validateReferenceClassificationDraft(soloInteraction!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+    });
+
+    // The strict import-path parser still refuses to promote these to usable records.
+    expect(
+      parseReferenceClassification(
+        {
+          subjectType: 'character',
+          use: 'identity',
+          characterIds: [],
+          facets: {},
+        },
+        roster,
+      ),
+    ).toBeNull();
+  });
+
   it('drops unmatched screen-position keys while preserving only an entity proposal', () => {
     const draft = parseReferenceClassificationDraft({
       subjectType: 'interaction',

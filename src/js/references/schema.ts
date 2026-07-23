@@ -212,10 +212,11 @@ export function parseReferenceClassificationDraft(value: unknown): ReferenceClas
     return null;
   }
 
-  if (subjectType === 'character' && characterIds.length === 0) return null;
-  if (subjectType === 'interaction' && characterIds.length < 2) return null;
-  if (subjectType === 'location' && !locationId) return null;
-
+  // Subject/link requirements (a character image needs a character link, an
+  // interaction needs two, a location needs a location) are review conditions,
+  // not schema violations: an honest "this character is not in the roster yet"
+  // answer must land in needs-review via validateReferenceClassificationDraft,
+  // not die here as a terminal invalid-schema failure.
   const characterIdSet = new Set(characterIds);
   const facets = parseFacets(candidate.facets, characterIdSet);
   const confidence = parseConfidence(candidate.confidence);

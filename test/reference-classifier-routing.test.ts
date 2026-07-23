@@ -108,6 +108,56 @@ describe('cloud reference classifier', () => {
     expect(classifyImage).not.toHaveBeenCalled();
   });
 
+  it('asks the model for unmatched-entity proposals in the shared prompt', () => {
+    const prompt = buildClassificationPrompt(input);
+    expect(prompt).toContain('proposedCharacterNames');
+    expect(prompt).toContain('proposedLocationName');
+  });
+
+  it('routes an unmatched character into needs-review with a proposal instead of a terminal failure', async () => {
+    // A fresh world has no roster; the prompt tells the model to answer with an
+    // empty characterIds array, which must reach review — not die as invalid-schema.
+    const classifier = createCloudReferenceClassifier({
+      classifyImage: async () =>
+        JSON.stringify({
+          subjectType: 'character',
+          use: 'identity',
+          characterIds: [],
+          locationId: null,
+          facets: { framing: 'full-body' },
+          description: 'A red-coated woman in a courtyard.',
+          confidence: { subject: 0.95, links: 0.9, use: 0.9, facets: 0.9 },
+          proposedCharacterNames: ['Red-coated woman'],
+          proposedLocationName: null,
+        }),
+      isConfigured: async () => true,
+    });
+
+    const result = await classifier.classify({ asset, world, characters: [], locations: [] });
+
+    expect(result).toMatchObject({
+      kind: 'classified',
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+      classification: { characterIds: [], proposedCharacterNames: ['Red-coated woman'] },
+    });
+  });
+
+  it('fails visibly on an empty model reply instead of waiting forever', async () => {
+    // '' is what the transport returns when a reasoning model exhausts its token
+    // budget before emitting the JSON. It must surface as a parse failure, not be
+    // mistaken for "not configured" and silently retried every 60 seconds.
+    const classifier = createCloudReferenceClassifier({
+      classifyImage: async () => '',
+      isConfigured: async () => true,
+    });
+
+    expect(await classifier.classify(input)).toMatchObject({
+      kind: 'failure',
+      error: { stage: 'parse', code: 'invalid-json', mode: 'cloud' },
+    });
+  });
+
   it('treats a rate-limited response as a retryable wait, not a failure', async () => {
     const classifier = createCloudReferenceClassifier({
       classifyImage: async () => {

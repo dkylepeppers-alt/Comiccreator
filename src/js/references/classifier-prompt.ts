@@ -47,6 +47,8 @@ const EXAMPLE_RESPONSE = JSON.stringify({
   facets: { framing: 'full-body', viewDirection: 'front', identityCoverage: 'full-body', spaceType: 'exterior' },
   description: 'One concise sentence describing only what is visible.',
   confidence: { subject: 0.94, links: 0.91, use: 0.93, facets: 0.9 },
+  proposedCharacterNames: [],
+  proposedLocationName: null,
 });
 
 /**
@@ -79,6 +81,8 @@ export function buildClassificationPrompt(input: ClassificationInput): string {
     '- facets: include only facets you can actually see, each set to exactly one allowed value.',
     '- description: one concise sentence describing only what is visible.',
     '- confidence: your own certainty for subject, links, use, and facets, each a number between 0 and 1.',
+    '- proposedCharacterNames: short names for clearly visible characters that match no roster ID, or [] when none.',
+    '- proposedLocationName: a short name for a clearly visible location that matches no roster ID, or null.',
     `Answer in exactly this form, with real values substituted: ${EXAMPLE_RESPONSE}`,
     'Choose one concrete value per field. Never copy an option list, a placeholder, or a field description into your answer.',
     'The example values above are illustrative only — report the confidence you actually have, not the numbers shown.',
