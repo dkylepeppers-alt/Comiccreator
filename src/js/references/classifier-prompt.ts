@@ -35,16 +35,49 @@ const FACET_VOCABULARY = {
 } as const;
 
 /**
+ * Free-text facets the schema accepts alongside the controlled vocabulary. The panel
+ * resolver matches on these, so the model must know they exist — before they were
+ * listed here, no backend ever returned them and every classification arrived with
+ * only two or three facets filled in.
+ */
+const FREE_TEXT_FACET_GUIDE = {
+  appearanceState: 'outfit or physical-state variant, e.g. "travel-worn red coat"',
+  expression: 'facial expression',
+  pose: 'body pose',
+  activity: 'what the subject is doing',
+  lighting: 'light quality and direction',
+  interactionType: 'kind of interaction between characters',
+  spatialArrangement: 'how multiple subjects are arranged',
+  visibility: 'occlusion or partial-visibility notes',
+  weather: 'visible weather',
+  season: 'visible season',
+  physicalContact: 'physical contact between characters',
+} as const;
+
+/**
  * A fully-formed answer, so the model has a concrete target to imitate. Live probing
  * showed models otherwise echo an inline `"a|b|c"` option list back as a literal value,
  * which fails schema validation for an image they actually classified correctly.
+ * The facet set here is deliberately rich: models mirror the example's coverage, and
+ * a sparse example yields sparse classifications.
  */
 const EXAMPLE_RESPONSE = JSON.stringify({
   subjectType: 'character',
   use: 'identity',
   characterIds: ['<roster character id>'],
   locationId: '<roster location id or null>',
-  facets: { framing: 'full-body', viewDirection: 'front', identityCoverage: 'full-body', spaceType: 'exterior' },
+  facets: {
+    framing: 'full-body',
+    cameraElevation: 'eye-level',
+    viewDirection: 'front',
+    identityCoverage: 'full-body',
+    spaceType: 'exterior',
+    appearanceState: 'clean travel coat',
+    expression: 'calm',
+    pose: 'standing relaxed',
+    activity: 'standing still',
+    lighting: 'even daylight',
+  },
   description: 'One concise sentence describing only what is visible.',
   confidence: { subject: 0.94, links: 0.91, use: 0.93, facets: 0.9 },
   proposedCharacterNames: [],
@@ -72,13 +105,16 @@ export function buildClassificationPrompt(input: ClassificationInput): string {
     'Return one raw JSON object only. No Markdown, no commentary, and never invent IDs.',
     `Roster: ${JSON.stringify(roster)}`,
     `Allowed subject/use pairs: ${JSON.stringify(SUBJECT_SCHEMA)}`,
-    `Allowed facet values: ${JSON.stringify(FACET_VOCABULARY)}`,
+    `Controlled facets (choose exactly one listed value): ${JSON.stringify(FACET_VOCABULARY)}`,
+    `Free-text facets (a short literal phrase from the image): ${JSON.stringify(FREE_TEXT_FACET_GUIDE)}`,
     'Fields:',
     '- subjectType: exactly one key from the allowed subject/use pairs.',
     '- use: exactly one value listed under that subjectType.',
     '- characterIds: roster character IDs visibly present, or [] when none are.',
     '- locationId: one roster location ID, or null when none is visibly supported.',
-    '- facets: include only facets you can actually see, each set to exactly one allowed value.',
+    '- facets: report every controlled and free-text facet the image visibly supports — a clear reference image ' +
+      'typically supports five to ten. Also allowed: heldProps (array of visibly held or carried items) and ' +
+      'screenPositions (object mapping a roster character ID to left/center/right). Omit facets with no visible evidence.',
     '- description: one concise sentence describing only what is visible.',
     '- confidence: your own certainty for subject, links, use, and facets, each a number between 0 and 1.',
     '- proposedCharacterNames: short names for clearly visible characters that match no roster ID, or [] when none.',

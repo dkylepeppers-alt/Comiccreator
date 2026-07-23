@@ -117,28 +117,38 @@ describe('reference classification schema', () => {
     ).toBeNull();
   });
 
-  it('rejects malformed optional facet collections', () => {
-    expect(
-      parseReferenceClassification(
-        {
-          subjectType: 'character',
-          use: 'action',
-          characterIds: ['mara'],
-          facets: { heldProps: ['sword', 3] },
+  it('drops malformed facet entries without failing the whole classification', () => {
+    // Facets are enrichment: one bad key or value must cost that facet, not the asset.
+    const value = parseReferenceClassification(
+      {
+        subjectType: 'character',
+        use: 'action',
+        characterIds: ['mara'],
+        facets: {
+          heldProps: ['sword', 3, ' sword '],
+          framing: 'not-a-framing',
+          viewDirection: 'front',
+          expression: '   ',
+          pose: 'mid-swing',
+          madeUpFacet: 'ignored',
         },
-        roster,
-      ),
-    ).toBeNull();
+        confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+      },
+      roster,
+    );
+
+    expect(value?.facets).toEqual({ viewDirection: 'front', pose: 'mid-swing', heldProps: ['sword'] });
     expect(
       parseReferenceClassification(
         {
           subjectType: 'interaction',
           use: 'spatial',
           characterIds: ['mara', 'theo'],
-          facets: { screenPositions: { mara: 'left', ghost: 'right' } },
+          facets: {},
         },
         roster,
       ),
+      'incompatible subject/use pairs are still structural failures',
     ).toBeNull();
   });
 

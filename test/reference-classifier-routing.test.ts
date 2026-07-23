@@ -114,6 +114,31 @@ describe('cloud reference classifier', () => {
     expect(prompt).toContain('proposedLocationName');
   });
 
+  it('teaches the model the full facet vocabulary with a rich worked example', () => {
+    // The editor exposes free-text facets (expression, pose, lighting, …); until the
+    // prompt named them, no model could ever return more than the six controlled
+    // facets, and real classifications arrived with only two or three filled in.
+    const prompt = buildClassificationPrompt(input);
+    for (const facet of [
+      'appearanceState',
+      'expression',
+      'pose',
+      'activity',
+      'lighting',
+      'interactionType',
+      'spatialArrangement',
+      'heldProps',
+      'screenPositions',
+    ]) {
+      expect(prompt, `prompt must name the ${facet} facet`).toContain(facet);
+    }
+    const example = JSON.parse(prompt.slice(prompt.indexOf('{"subjectType"')).split('\n')[0]);
+    expect(
+      Object.keys(example.facets).length,
+      'the worked example drives facet coverage — models mirror its density',
+    ).toBeGreaterThanOrEqual(8);
+  });
+
   it('routes an unmatched character into needs-review with a proposal instead of a terminal failure', async () => {
     // A fresh world has no roster; the prompt tells the model to answer with an
     // empty characterIds array, which must reach review — not die as invalid-schema.
