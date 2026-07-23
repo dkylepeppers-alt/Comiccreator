@@ -204,8 +204,39 @@ it('captures classifier evidence across the model matrix', { timeout: 600_000 },
     report.push(evidence);
   }
 
+  // Fresh-world scenario: the same image with an EMPTY roster, as when a user
+  // uploads a character image before creating any characters. The prompt tells
+  // the model to answer `characterIds: []` when no roster ID is visible, but the
+  // draft parser rejects subjectType 'character' with empty characterIds as a
+  // terminal invalid-schema failure — this run shows what really happens.
+  {
+    const model = MODELS[0];
+    const evidence: ModelEvidence = { model: `${model} (empty roster)` };
+    let rawText = '';
+    const classifier = createCloudReferenceClassifier({
+      isConfigured: async () => true,
+      classifyImage: async (imageDataUrl, prompt) => {
+        const text = await callLikeTheApp(model, imageDataUrl, prompt, evidence);
+        rawText = typeof text === 'string' ? text : '';
+        return text;
+      },
+    });
+    try {
+      const outcome = await classifier.classify({ asset: asset(dataUrl), world, characters: [], locations: [] });
+      evidence.appExtractedText = rawText || null;
+      evidence.outcome = outcome;
+    } catch (error) {
+      evidence.appTransportThrow = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+    console.log(`\n===== model: ${model} — EMPTY ROSTER =====`);
+    console.log(`http: ${evidence.httpStatus} finish_reason: ${JSON.stringify(evidence.finishReason)}`);
+    console.log(`raw text the app would parse:\n${rawText || '(empty)'}`);
+    console.log(`outcome: ${JSON.stringify(evidence.outcome, null, 2)}`);
+    report.push(evidence);
+  }
+
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(REPORT_PATH, JSON.stringify(report, null, 2));
-  // Evidence-gathering probe: assert only that every model produced a record.
-  expect(report).toHaveLength(MODELS.length);
+  // Evidence-gathering probe: assert only that every scenario produced a record.
+  expect(report).toHaveLength(MODELS.length + 1);
 });
