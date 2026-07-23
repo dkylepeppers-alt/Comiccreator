@@ -1,4 +1,11 @@
-import type { ReferenceClassification, ReferenceFacets, ReferenceSubjectType, ReferenceUse } from './types.js';
+import { z } from 'zod/mini';
+import type {
+  ReferenceClassification,
+  ReferenceClassificationDraft,
+  ReferenceFacets,
+  ReferenceSubjectType,
+  ReferenceUse,
+} from './types.js';
 
 export interface ReferenceRoster {
   worldId: string;
@@ -107,11 +114,7 @@ function cleanString(value: unknown): string | null {
   return cleaned || null;
 }
 
-function parseFacets(
-  value: unknown,
-  characterIds: ReadonlySet<string>,
-  roster: ReferenceRoster,
-): ReferenceFacets | null {
+function parseFacets(value: unknown, characterIds: ReadonlySet<string>): ReferenceFacets | null {
   if (!isRecord(value) || Object.keys(value).some((key) => !FACET_FIELDS.has(key as keyof ReferenceFacets))) {
     return null;
   }
@@ -154,7 +157,7 @@ function parseFacets(
     const screenPositions: Record<string, string> = {};
     for (const [characterId, position] of Object.entries(value.screenPositions)) {
       const cleaned = cleanString(position);
-      if (!roster.characterIds.has(characterId) || !characterIds.has(characterId) || !cleaned) return null;
+      if (!characterIds.has(characterId) || !cleaned) return null;
       screenPositions[characterId] = cleaned;
     }
     facets.screenPositions = screenPositions;
@@ -174,10 +177,24 @@ function parseConfidence(value: unknown): ReferenceClassification['confidence'] 
   return confidence;
 }
 
-export function parseReferenceClassification(value: unknown, roster: ReferenceRoster): ReferenceClassification | null {
-  if (!isRecord(value)) return null;
-  const subjectType = value.subjectType;
-  const use = value.use;
+const rawDraftSchema = z.object({
+  subjectType: z.string(),
+  use: z.string(),
+  characterIds: z.array(z.string()),
+  locationId: z.optional(z.union([z.string(), z.null()])),
+  facets: z.record(z.string(), z.unknown()),
+  description: z.optional(z.string()),
+  confidence: z.optional(z.record(z.string(), z.number())),
+  proposedCharacterNames: z.optional(z.array(z.string())),
+  proposedLocationName: z.optional(z.union([z.string(), z.null()])),
+});
+
+export function parseReferenceClassificationDraft(value: unknown): ReferenceClassificationDraft | null {
+  const parsed = rawDraftSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const candidate = parsed.data;
+  const subjectType = candidate.subjectType;
+  const use = candidate.use;
   if (
     typeof subjectType !== 'string' ||
     !SUBJECT_TYPES.has(subjectType as ReferenceSubjectType) ||
@@ -187,15 +204,11 @@ export function parseReferenceClassification(value: unknown, roster: ReferenceRo
     return null;
   }
 
-  if (!Array.isArray(value.characterIds) || value.characterIds.some((id) => typeof id !== 'string')) return null;
-  const characterIds = [...new Set(value.characterIds.map((id) => id.trim()).filter(Boolean))];
-  if (characterIds.some((id) => !roster.characterIds.has(id))) return null;
+  const characterIds = [...new Set(candidate.characterIds.map((id) => id.trim()).filter(Boolean))];
 
-  const locationId = value.locationId === undefined || value.locationId === null ? null : cleanString(value.locationId);
-  if (
-    (value.locationId !== undefined && value.locationId !== null && !locationId) ||
-    (locationId && !roster.locationIds.has(locationId))
-  ) {
+  const locationId =
+    candidate.locationId === undefined || candidate.locationId === null ? null : cleanString(candidate.locationId);
+  if (candidate.locationId !== undefined && candidate.locationId !== null && !locationId) {
     return null;
   }
 
@@ -204,16 +217,26 @@ export function parseReferenceClassification(value: unknown, roster: ReferenceRo
   if (subjectType === 'location' && !locationId) return null;
 
   const characterIdSet = new Set(characterIds);
-  const facets = parseFacets(value.facets, characterIdSet, roster);
-  const confidence = parseConfidence(value.confidence);
+  const facets = parseFacets(candidate.facets, characterIdSet);
+  const confidence = parseConfidence(candidate.confidence);
   if (!facets || !confidence) return null;
 
   let description = '';
-  if (value.description !== undefined) {
-    const cleaned = cleanString(value.description);
+  if (candidate.description !== undefined) {
+    const cleaned = cleanString(candidate.description);
     if (!cleaned) return null;
     description = cleaned;
   }
+
+  const proposedCharacterNames = [
+    ...new Set((candidate.proposedCharacterNames || []).map(cleanString).filter(Boolean)),
+  ] as string[];
+  const proposedLocationName =
+    candidate.proposedLocationName === undefined || candidate.proposedLocationName === null
+      ? null
+      : cleanString(candidate.proposedLocationName);
+  if (candidate.proposedLocationName !== undefined && candidate.proposedLocationName !== null && !proposedLocationName)
+    return null;
 
   return {
     subjectType: subjectType as ReferenceSubjectType,
@@ -223,7 +246,63 @@ export function parseReferenceClassification(value: unknown, roster: ReferenceRo
     facets,
     description,
     confidence,
+    proposedCharacterNames,
+    proposedLocationName,
   };
+}
+
+export interface ValidatedReferenceClassification {
+  state: 'ready' | 'needs-review';
+  classification: ReferenceClassification;
+  validationReason?: 'unmatched-entity-links' | 'low-confidence' | 'subject-requirements';
+}
+
+export function validateReferenceClassificationDraft(
+  draft: ReferenceClassificationDraft,
+  roster: ReferenceRoster,
+): ValidatedReferenceClassification {
+  const matchedCharacterIds = draft.characterIds.filter((id) => roster.characterIds.has(id));
+  const unmatchedCharacterNames = draft.characterIds.filter((id) => !roster.characterIds.has(id));
+  const hasMatchedLocation = draft.locationId !== null && roster.locationIds.has(draft.locationId);
+  const unmatchedLocationName = draft.locationId && !hasMatchedLocation ? draft.locationId : null;
+  const classification: ReferenceClassification = {
+    ...draft,
+    characterIds: matchedCharacterIds,
+    locationId: hasMatchedLocation ? draft.locationId : null,
+    facets:
+      draft.facets.screenPositions === undefined
+        ? draft.facets
+        : {
+            ...draft.facets,
+            screenPositions: Object.fromEntries(
+              Object.entries(draft.facets.screenPositions).filter(([id]) => matchedCharacterIds.includes(id)),
+            ),
+          },
+    proposedCharacterNames: [...new Set([...(draft.proposedCharacterNames || []), ...unmatchedCharacterNames])],
+    proposedLocationName: draft.proposedLocationName || unmatchedLocationName,
+  };
+  const hasUnmatchedLinks = unmatchedCharacterNames.length > 0 || Boolean(unmatchedLocationName);
+  const subjectSatisfied =
+    (draft.subjectType === 'character' && matchedCharacterIds.length >= 1) ||
+    (draft.subjectType === 'interaction' && matchedCharacterIds.length >= 2) ||
+    (draft.subjectType === 'location' && hasMatchedLocation) ||
+    draft.subjectType === 'prop' ||
+    draft.subjectType === 'style';
+  const confidenceFields = ['subject', 'links', 'use', 'facets'] as const;
+  const hasLowConfidence = confidenceFields.some((field) => (draft.confidence[field] || 0) < 0.75);
+  if (hasUnmatchedLinks) return { state: 'needs-review', classification, validationReason: 'unmatched-entity-links' };
+  if (!subjectSatisfied) return { state: 'needs-review', classification, validationReason: 'subject-requirements' };
+  if (hasLowConfidence) return { state: 'needs-review', classification, validationReason: 'low-confidence' };
+  return { state: 'ready', classification };
+}
+
+export function parseReferenceClassification(value: unknown, roster: ReferenceRoster): ReferenceClassification | null {
+  const draft = parseReferenceClassificationDraft(value);
+  if (!draft) return null;
+  const validated = validateReferenceClassificationDraft(draft, roster);
+  return ['unmatched-entity-links', 'subject-requirements'].includes(validated.validationReason || '')
+    ? null
+    : validated.classification;
 }
 
 function titleCase(value: string): string {

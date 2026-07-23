@@ -61,17 +61,20 @@ describe('local reference classifier', () => {
       }),
     );
     expect(plugin.classify.mock.calls[0][0].prompt).toContain('"id":"yard"');
-    expect(result?.characterIds).toEqual(['mara']);
+    expect(result).toMatchObject({ kind: 'classified', classification: { characterIds: ['mara'] } });
   });
 
-  it('returns null for unsupported devices or invalid JSON', async () => {
+  it('returns typed waiting and failure outcomes rather than null', async () => {
     const unavailablePlugin = {
       classify: vi.fn(),
       getAvailability: vi.fn().mockResolvedValue({ status: 'unavailable' as const }),
       download: vi.fn(),
     };
     const unavailableClassifier = createLocalReferenceClassifier(unavailablePlugin);
-    expect(await unavailableClassifier.classify({ asset, world, characters: [], locations: [] })).toBeNull();
+    expect(await unavailableClassifier.classify({ asset, world, characters: [], locations: [] })).toMatchObject({
+      kind: 'waiting',
+      reason: 'model-unavailable',
+    });
     expect(unavailablePlugin.classify).not.toHaveBeenCalled();
 
     const invalidClassifier = createLocalReferenceClassifier({
@@ -79,7 +82,136 @@ describe('local reference classifier', () => {
       getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
       classify: vi.fn().mockResolvedValue({ text: 'not json' }),
     });
-    expect(await invalidClassifier.classify({ asset, world, characters: [], locations: [] })).toBeNull();
+    expect(await invalidClassifier.classify({ asset, world, characters: [], locations: [] })).toMatchObject({
+      kind: 'failure',
+      error: { stage: 'parse', code: 'invalid-json' },
+    });
+  });
+
+  it('retains only a bounded safe raw-output excerpt for parse failures', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: 'not valid json' }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+    const echoedPromptClassifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: 'Roster: Castle world description: hidden' }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+    const multibyteClassifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: '😀'.repeat(5_000) }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toMatchObject({
+      kind: 'failure',
+      error: { rawOutputExcerpt: 'not valid json' },
+    });
+    const echoed = await echoedPromptClassifier.classify({ asset, world, characters: [], locations: [] });
+    expect(echoed).toMatchObject({ kind: 'failure' });
+    expect((echoed as any).error).not.toHaveProperty('rawOutputExcerpt');
+    const multibyte = await multibyteClassifier.classify({ asset, world, characters: [], locations: [] });
+    expect(new TextEncoder().encode((multibyte as any).error.rawOutputExcerpt).byteLength).toBe(16 * 1024);
+  });
+
+  it('uses generic diagnostic details when the native plugin throws sensitive text', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockRejectedValue(new Error('prompt=private roster=secret world description=hidden')),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    const result = await classifier.classify({ asset, world, characters: [], locations: [] });
+    expect(result).toMatchObject({ kind: 'failure', error: { stage: 'inference', code: 'inference-failed' } });
+    expect((result as any).error).not.toHaveProperty('message');
+  });
+
+  it('uses typed native retry details for busy and background conditions', async () => {
+    const busy = Object.assign(new Error('native details must not be parsed'), {
+      code: 'busy',
+      data: { nativeCode: 9, retryDelayMs: 45_000, mode: 'structured' },
+    });
+    const background = Object.assign(new Error('native details must not be parsed'), {
+      code: 'background-use-blocked',
+      data: { nativeCode: 30, retryDelayMs: 20_000, mode: 'text' },
+    });
+    const plugin = {
+      classify: vi.fn().mockRejectedValueOnce(busy).mockRejectedValueOnce(background),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    };
+    const classifier = createLocalReferenceClassifier(plugin);
+
+    await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toEqual({
+      kind: 'waiting',
+      reason: 'quota-busy',
+      retryDelayMs: 45_000,
+    });
+    await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toEqual({
+      kind: 'waiting',
+      reason: 'app-background',
+      retryDelayMs: 20_000,
+    });
+  });
+
+  it('retains safe native mode and error-code data without retaining native messages', async () => {
+    const nativeFailure = Object.assign(new Error('private prompt and roster'), {
+      code: 'request-too-large',
+      data: { nativeCode: 12, mode: 'structured' },
+    });
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockRejectedValue(nativeFailure),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    const result = await classifier.classify({ asset, world, characters: [], locations: [] });
+    expect(result).toMatchObject({
+      kind: 'failure',
+      error: { stage: 'inference', code: 'inference-failed', nativeCode: 12, nativeMode: 'structured' },
+    });
+    expect((result as any).error).not.toHaveProperty('message');
+  });
+
+  it('accepts the native structured-output mode with validated JSON', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: validJson, mode: 'structured' as const }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'classified',
+      classification: { subjectType: 'character' },
+    });
+  });
+
+  it('extracts a fenced JSON object surrounded by model prose', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: `Here is the result:\n\`\`\`json\n${validJson}\n\`\`\`` }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'classified',
+      classification: { subjectType: 'character' },
+    });
+  });
+
+  it('reports an undecodable native response as a decode failure', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: 42 }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'failure',
+      error: { stage: 'decode', code: 'decode-failed' },
+    });
   });
 
   it('exposes availability and download without a remote fallback', async () => {

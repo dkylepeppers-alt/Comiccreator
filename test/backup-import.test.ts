@@ -217,8 +217,8 @@ describe('importBackup', () => {
   });
 });
 
-describe('schema-v2 backups', () => {
-  it('exports only canonical schema-version-2 collections', async () => {
+describe('canonical backups', () => {
+  it('exports only canonical schema-version-3 collections', async () => {
     const records: Record<string, unknown[]> = {
       worlds: [{ id: 'w1', name: 'Atlas', images: [{ dataUrl: 'old', embedding: [1] }] }],
       locations: [{ id: 'l1', worldId: 'w1', name: 'Yard', aliases: [] }],
@@ -236,10 +236,11 @@ describe('schema-v2 backups', () => {
 
     const payload = await buildBackup(dependencies, new Date('2026-07-22T00:00:00.000Z'));
 
-    expect(payload.schemaVersion).toBe(2);
+    expect(payload.schemaVersion).toBe(3);
     expect(payload.referenceAssets).toEqual(records.referenceAssets);
     expect(payload.locations).toEqual(records.locations);
     expect(JSON.stringify(payload)).not.toMatch(/embedding|referenceKey|locationKey|"tag"|"images"/);
+    expect(dependencies.getAll).not.toHaveBeenCalledWith('classificationDiagnostics');
   });
 
   it('converts an unversioned backup before atomically writing canonical stores', async () => {
@@ -298,6 +299,55 @@ describe('schema-v2 backups', () => {
         }),
       ),
     ).toThrow('Invalid referenceAssets data');
+  });
+
+  it('accepts recoverable classification state and queued retry timestamps', () => {
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          schemaVersion: 2,
+          worlds: [{ id: 'w1', name: 'Atlas' }],
+          locations: [],
+          characters: [],
+          referenceAssets: [
+            {
+              id: 'r1',
+              worldId: 'w1',
+              dataUrl: 'data:image/png;base64,x',
+              subjectType: null,
+              use: null,
+              characterIds: [],
+              locationId: null,
+              facets: {},
+              description: '',
+              confidence: {},
+              provenance: { source: 'uploaded', metadata: 'local' },
+              classificationState: 'could-not-classify',
+              acceptedAsIs: false,
+              autoUse: true,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          classificationJobs: [
+            {
+              id: 'j1',
+              assetId: 'r1',
+              worldId: 'w1',
+              status: 'pending',
+              attemptCount: 1,
+              retryAt: 25,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          comics: [],
+          pages: [],
+          presets: [],
+          imagePresets: [],
+        }),
+      ),
+    ).not.toThrow();
   });
 
   it.each([

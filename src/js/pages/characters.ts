@@ -3,10 +3,20 @@ import type { PageModule } from '../utils.js';
 import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
-import type { ReferenceFilter, ReferenceWorkspaceAction } from '../reference-workspace.js';
+import { buildCharacterExport, commitCharacterImport, planCharacterImport } from '../character-transfer.js';
+import { localReferenceClassifier } from '../references/local-classifier.js';
+import {
+  normalizeReferenceEditorSubject,
+  readReferenceEditorForm,
+  type ReferenceFilter,
+  type ReferenceWorkspaceAction,
+} from '../reference-workspace.js';
 import {
   addUploadedReference,
+  closeReferenceEditor,
   fileToDataUrl,
+  openReferenceEditor,
+  referenceClassificationQueue,
   referenceRepository,
   referenceWorkspace,
 } from '../reference-workspace-runtime.js';
@@ -14,6 +24,7 @@ import {
 let editingId: string | null = null;
 let parentWorldId: string | null = null;
 let referenceFilter: ReferenceFilter = 'all';
+let pendingCharacterImport: unknown | null = null;
 
 async function render(param?: string | null): Promise<string> {
   if (!param) {
@@ -47,6 +58,11 @@ async function renderList(): Promise<string> {
   return `<div class="slide-up">
     <div class="section-header">
       <div><h2 class="section-title">Character Builder</h2><p class="text-muted">Characters live inside a world and share its reference archive.</p></div>
+      ${
+        worlds.length
+          ? `<button class="btn btn-secondary" data-action="importCharacter">Import character</button><input type="file" id="character-import-input" class="hidden" accept="application/json,.json" data-action-change="previewCharacterImport">`
+          : ''
+      }
     </div>
     ${
       groups.length
@@ -239,19 +255,53 @@ function setReferenceFilter(filter: ReferenceFilter): void {
   App.refreshPage();
 }
 
-async function runWorkspaceAction(action: ReferenceWorkspaceAction, referenceId?: string): Promise<void> {
-  await referenceWorkspace.handleAction({ action, referenceId });
+async function runWorkspaceAction(
+  action: ReferenceWorkspaceAction,
+  referenceId?: string,
+  worldId = parentWorldId || undefined,
+): Promise<void> {
+  await referenceWorkspace.handleAction({ action, referenceId, worldId });
   App.refreshPage();
 }
 
 async function reviewReference(referenceId: string): Promise<void> {
-  const asset = await referenceRepository.getAsset(referenceId);
-  if (!asset) return;
-  App.showModal(`<div class="modal-title">Review metadata</div>
-    <img class="reference-review-image" src="${escHtml(asset.dataUrl)}" alt="">
-    <p class="reference-label">${escHtml(asset.subjectType || 'Unclassified')} / ${escHtml(asset.use || 'Needs review')}</p>
-    <p class="text-muted">${escHtml(asset.description || 'No description yet')}</p>
-    <div class="modal-actions"><button class="btn btn-secondary" data-action="reclassify-reference" data-args="${escHtml(JSON.stringify([asset.id]))}">Reclassify</button><button class="btn btn-primary" data-action="accept-reference" data-args="${escHtml(JSON.stringify([asset.id]))}">Accept as-is</button></div>`);
+  if (!parentWorldId) return;
+  await openReferenceEditor(parentWorldId, referenceId);
+}
+
+function normalizeReferenceSubject(_referenceId: string, element: HTMLElement): void {
+  const form = element.closest<HTMLElement>('[data-reference-editor]');
+  if (form) normalizeReferenceEditorSubject(form);
+}
+
+async function saveReferenceClassification(referenceId: string, element: HTMLElement, draft = false): Promise<void> {
+  const form = element.closest<HTMLElement>('[data-reference-editor]');
+  if (!form) return;
+  try {
+    await referenceWorkspace.handleAction({
+      action: draft ? 'save-reference-draft' : 'save-reference-classification',
+      referenceId,
+      classification: readReferenceEditorForm(form),
+    });
+    App.toast(draft ? 'Reference draft saved for review' : 'Reference classification saved', 'success');
+    App.refreshPage();
+  } catch (error) {
+    App.toast(error instanceof Error ? error.message : 'Could not save reference classification', 'error');
+  }
+}
+
+async function reclassifyReference(referenceId: string): Promise<void> {
+  const result = await referenceWorkspace.handleAction({ action: 'reclassify-reference', referenceId });
+  if (result?.requiresConfirmation) {
+    if (!window.confirm('Reclassify this reference? This will replace its manual metadata.')) return;
+    await referenceWorkspace.handleAction({ action: 'reclassify-reference', referenceId, confirmed: true });
+  }
+  App.refreshPage();
+}
+
+async function deleteReference(referenceId: string): Promise<void> {
+  if (!window.confirm('Delete this reference? This cannot be undone.')) return;
+  await runWorkspaceAction('delete-reference', referenceId);
 }
 
 async function previewReference(referenceId: string): Promise<void> {
@@ -265,13 +315,94 @@ async function previewReference(referenceId: string): Promise<void> {
 async function exportCharacter(id: string): Promise<void> {
   const character = await DB.get(DB.STORES.characters, id);
   if (!character) return;
-  const payload = JSON.stringify({ schemaVersion: 2, character }, null, 2);
+  const references = (await DB.getAll(DB.STORES.referenceAssets)).filter((asset) => asset.characterIds?.includes(id));
+  const payload = JSON.stringify(buildCharacterExport(character, references), null, 2);
   const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = `character-${slugifyName(character.name) || id}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function importCharacter(): void {
+  document.getElementById('character-import-input')?.click();
+}
+
+function readTextFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read the character export'));
+    reader.readAsText(file);
+  });
+}
+
+async function importPlan(worldId: string) {
+  if (!pendingCharacterImport) throw new Error('Choose a character export first');
+  const [characters, references] = await Promise.all([
+    DB.getAll(DB.STORES.characters),
+    DB.getAll(DB.STORES.referenceAssets),
+  ]);
+  return planCharacterImport(pendingCharacterImport, {
+    worldId,
+    existingCharacterIds: characters.map((character) => character.id),
+    existingReferenceIds: references.map((reference) => reference.id),
+    newId: () => DB.uuid(),
+    now: Date.now(),
+  });
+}
+
+async function previewCharacterImport(input: HTMLInputElement): Promise<void> {
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    pendingCharacterImport = JSON.parse(await readTextFile(file));
+    const worlds = await DB.getAll(DB.STORES.worlds);
+    if (!worlds.length) throw new Error('Create a destination world before importing a character');
+    const plan = await importPlan(worlds[0].id);
+    const conflicts = plan.preview.idConflicts.length ? plan.preview.idConflicts.join(', ') : 'None';
+    App.showModal(`<section class="card" data-character-import-preview>
+      <h2>Import character</h2>
+      <p><strong>${escHtml(plan.preview.name)}</strong> — ${plan.preview.validImageCount} valid image${plan.preview.validImageCount === 1 ? '' : 's'}; ${plan.preview.malformedImageCount} malformed skipped.</p>
+      <p class="text-muted">ID conflicts: ${escHtml(conflicts)}. Colliding IDs will be replaced without overwriting existing records.</p>
+      <div class="form-group"><label class="form-label" for="character-import-world">Destination world</label><select id="character-import-world">${worlds.map((world) => `<option value="${escHtml(world.id)}">${escHtml(world.name)}</option>`).join('')}</select></div>
+      <button class="btn btn-primary" data-action="confirmCharacterImport">Import character</button>
+      <button class="btn btn-secondary" data-action="cancelCharacterImport">Cancel</button>
+    </section>`);
+  } catch (error) {
+    pendingCharacterImport = null;
+    App.toast(error instanceof Error ? error.message : 'Could not parse the character export', 'error');
+  }
+}
+
+function cancelCharacterImport(): void {
+  pendingCharacterImport = null;
+  App.hideModal();
+}
+
+async function confirmCharacterImport(): Promise<void> {
+  const worldId = (document.getElementById('character-import-world') as HTMLSelectElement | null)?.value;
+  if (!worldId) return App.toast('Choose a destination world first', 'error');
+  let plan;
+  try {
+    plan = await importPlan(worldId);
+    await commitCharacterImport(plan, { putBatch: DB.putBatch });
+  } catch (error) {
+    App.toast(error instanceof Error ? error.message : 'Could not import the character', 'error');
+    return;
+  }
+  pendingCharacterImport = null;
+  App.hideModal();
+  App.toast(`Imported ${plan.preview.name}`, 'success');
+  App.refreshPage();
+  try {
+    if ((await localReferenceClassifier.getAvailability()).status === 'available')
+      void referenceClassificationQueue.run();
+  } catch {
+    // The committed import remains successful; model availability is best-effort and explicit.
+  }
 }
 
 async function deleteCharacter(id: string, name: string): Promise<void> {
@@ -297,13 +428,24 @@ const CharactersPage: PageModule & Record<string, any> = {
   'unhide-reference': (id) => runWorkspaceAction('unhide-reference', id),
   'accept-reference': (id) => runWorkspaceAction('accept-reference', id),
   'retry-reference': (id) => runWorkspaceAction('retry-reference', id),
-  'reclassify-reference': (id) => runWorkspaceAction('reclassify-reference', id),
+  'reclassify-reference': reclassifyReference,
   'pause-classification': () => runWorkspaceAction('pause-classification'),
+  'resume-classification': () => runWorkspaceAction('resume-classification'),
+  'retry-failed-references': (worldId) => runWorkspaceAction('retry-failed-references', undefined, worldId),
+  'save-reference-classification': (id, element) => saveReferenceClassification(id, element),
+  'save-reference-draft': (id, element) => saveReferenceClassification(id, element, true),
+  'delete-reference': deleteReference,
+  'close-reference-editor': closeReferenceEditor,
+  'normalize-reference-subject': normalizeReferenceSubject,
   'set-reference-filter': setReferenceFilter,
   'review-reference': reviewReference,
   'preview-reference': previewReference,
   'upload-reference': uploadReference,
   'generate-reference': generateReference,
+  importCharacter,
+  previewCharacterImport,
+  confirmCharacterImport,
+  cancelCharacterImport,
   exportCharacter,
   deleteCharacter,
 };

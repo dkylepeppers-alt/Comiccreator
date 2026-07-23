@@ -1,0 +1,413 @@
+import { describe, expect, it, vi } from 'vitest';
+import { buildCharacterExport, commitCharacterImport, planCharacterImport } from '../src/js/character-transfer.js';
+
+describe('character transfer planning', () => {
+  it('accepts a wrapped current export and creates canonical pending references', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 2,
+        character: {
+          id: 'mara',
+          name: 'Mara',
+          description: 'A courier',
+          imageData: 'data:image/png;base64,TUFSQQ==',
+        },
+      },
+      {
+        worldId: 'atlas',
+        existingCharacterIds: [],
+        existingReferenceIds: [],
+        newId: (() => {
+          let index = 0;
+          return () => `new-${++index}`;
+        })(),
+        now: 100,
+      },
+    );
+
+    expect(plan.preview).toEqual({
+      name: 'Mara',
+      worldId: 'atlas',
+      validImageCount: 1,
+      malformedImageCount: 0,
+      idConflicts: [],
+    });
+    expect(plan.character).toMatchObject({
+      id: 'mara',
+      worldId: 'atlas',
+      linkedWorldId: 'atlas',
+      name: 'Mara',
+      preferredIdentityReferenceId: 'new-1',
+    });
+    expect(plan.references).toEqual([
+      expect.objectContaining({
+        id: 'new-1',
+        worldId: 'atlas',
+        characterIds: ['mara'],
+        dataUrl: 'data:image/png;base64,TUFSQQ==',
+        classificationState: 'pending',
+      }),
+    ]);
+    expect(plan.jobs).toEqual([
+      expect.objectContaining({ id: 'classification-new-1', assetId: 'new-1', worldId: 'atlas', status: 'pending' }),
+    ]);
+  });
+
+  it('accepts bare legacy records, skips malformed images, and deduplicates byte-identical data', () => {
+    const plan = planCharacterImport(
+      {
+        id: 'theo',
+        name: 'Theo',
+        description: 'A pilot',
+        imageData: 'data:image/png;base64,VEhFTw==',
+        images: [{ dataUrl: 'data:image/png;base64,VE hF\nTw==' }, { dataUrl: 'not-an-image' }, { nope: true }],
+        tags: ['old'],
+        referenceKey: 'front',
+        embedding: [1, 2],
+        classificationState: 'ready',
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'reference-1', now: 100 },
+    );
+
+    expect(plan.preview).toMatchObject({ validImageCount: 1, malformedImageCount: 2 });
+    expect(plan.references).toHaveLength(1);
+    expect(plan.character).not.toHaveProperty('imageData');
+    expect(plan.character).not.toHaveProperty('images');
+    expect(JSON.stringify(plan.character)).not.toMatch(/tags|referenceKey|embedding|classificationState/);
+  });
+
+  it('deduplicates byte-identical images even when their data URL media types differ', () => {
+    const plan = planCharacterImport(
+      {
+        name: 'Mara',
+        images: ['data:image/png;base64,TUFSQQ==', 'data:image/jpeg;base64,TUFSQQ=='],
+      },
+      {
+        worldId: 'atlas',
+        existingCharacterIds: [],
+        existingReferenceIds: [],
+        newId: (() => {
+          let index = 0;
+          return () => `r${++index}`;
+        })(),
+        now: 100,
+      },
+    );
+
+    expect(plan.references).toHaveLength(1);
+  });
+
+  it('skips image data URLs with invalid base64 payloads', () => {
+    const plan = planCharacterImport(
+      { name: 'Mara', images: ['data:image/png;base64,a'] },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'r1', now: 100 },
+    );
+
+    expect(plan.preview).toMatchObject({ validImageCount: 0, malformedImageCount: 1 });
+  });
+
+  it('remaps colliding character and canonical reference IDs without overwriting either record', () => {
+    const ids = ['mara-imported', 'portrait-imported'];
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'portrait' },
+        references: [
+          {
+            id: 'portrait',
+            worldId: 'old-world',
+            dataUrl: 'data:image/png;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            subjectType: 'character',
+            use: 'identity',
+            classificationState: 'ready',
+          },
+        ],
+      },
+      {
+        worldId: 'atlas',
+        existingCharacterIds: ['mara'],
+        existingReferenceIds: ['portrait'],
+        newId: () => ids.shift()!,
+        now: 100,
+      },
+    );
+
+    expect(plan.preview.idConflicts).toEqual(['mara', 'portrait']);
+    expect(plan.character).toMatchObject({ id: 'mara-imported', preferredIdentityReferenceId: 'portrait-imported' });
+    expect(plan.references).toEqual([
+      expect.objectContaining({ id: 'portrait-imported', characterIds: ['mara-imported'] }),
+    ]);
+  });
+
+  it('commits every canonical record in one batch only after planning succeeds', async () => {
+    const putBatch = vi.fn().mockResolvedValue(undefined);
+    const plan = planCharacterImport(
+      { id: 'mara', name: 'Mara', imageData: 'data:image/png;base64,TUFSQQ==' },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'r1', now: 100 },
+    );
+
+    await commitCharacterImport(plan, { putBatch });
+
+    expect(putBatch).toHaveBeenCalledTimes(1);
+    expect(putBatch).toHaveBeenCalledWith([
+      ['characters', plan.character],
+      ['referenceAssets', plan.references[0]],
+      ['classificationJobs', plan.jobs[0]],
+    ]);
+  });
+
+  it('exports schema v3 with canonical character references and supports lossless re-import', () => {
+    const exported = buildCharacterExport(
+      { id: 'mara', worldId: 'atlas', name: 'Mara', preferredIdentityReferenceId: 'portrait' },
+      [
+        {
+          id: 'portrait',
+          worldId: 'atlas',
+          dataUrl: 'data:image/png;base64,TUFSQQ==',
+          characterIds: ['mara'],
+          subjectType: 'character',
+          use: 'identity',
+        },
+      ],
+    );
+
+    expect(exported).toMatchObject({ schemaVersion: 3, character: { id: 'mara' }, references: [{ id: 'portrait' }] });
+    const imported = planCharacterImport(exported, {
+      worldId: 'new-atlas',
+      existingCharacterIds: [],
+      existingReferenceIds: [],
+      newId: () => 'unused',
+      now: 100,
+    });
+    expect(imported.character).toMatchObject({ preferredIdentityReferenceId: 'portrait' });
+    expect(imported.references).toEqual([
+      expect.objectContaining({ id: 'portrait', dataUrl: 'data:image/png;base64,TUFSQQ==' }),
+    ]);
+  });
+
+  it('preserves schema-v3 manual reference metadata while remapping canonical relationships', () => {
+    const exported = buildCharacterExport(
+      {
+        id: 'mara',
+        name: 'Mara',
+        preferredIdentityReferenceId: 'manual-portrait',
+        identityAnchorImageId: 'manual-portrait',
+      },
+      [
+        {
+          id: 'manual-portrait',
+          worldId: 'old-world',
+          dataUrl: 'data:image/png;base64,TUFSQQ==',
+          thumbnailDataUrl: 'data:image/png;base64,VEhVTUI=',
+          subjectType: 'character',
+          use: 'appearance',
+          characterIds: ['mara'],
+          locationId: null,
+          facets: { framing: 'medium' },
+          description: 'Manual portrait',
+          confidence: { subject: 0.4 },
+          proposedCharacterNames: ['Mara'],
+          proposedLocationName: null,
+          provenance: { source: 'uploaded', metadata: 'manual' },
+          classificationState: 'ready',
+          acceptedAsIs: true,
+          autoUse: false,
+          classificationVersion: 7,
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
+    );
+    const imported = planCharacterImport(exported, {
+      worldId: 'new-world',
+      existingCharacterIds: ['mara'],
+      existingReferenceIds: ['manual-portrait'],
+      newId: (() => {
+        const ids = ['mara-copy', 'portrait-copy'];
+        return () => ids.shift()!;
+      })(),
+      now: 100,
+    });
+
+    expect(imported.character).toMatchObject({
+      id: 'mara-copy',
+      worldId: 'new-world',
+      preferredIdentityReferenceId: 'portrait-copy',
+      identityAnchorImageId: 'portrait-copy',
+    });
+    expect(imported.references).toEqual([
+      expect.objectContaining({
+        id: 'portrait-copy',
+        worldId: 'new-world',
+        characterIds: ['mara-copy'],
+        subjectType: 'character',
+        use: 'appearance',
+        facets: { framing: 'medium' },
+        description: 'Manual portrait',
+        confidence: { subject: 0.4 },
+        provenance: { source: 'uploaded', metadata: 'manual' },
+        classificationState: 'ready',
+        acceptedAsIs: true,
+        autoUse: false,
+        classificationVersion: 7,
+        createdAt: 10,
+        updatedAt: 20,
+      }),
+    ]);
+  });
+
+  it('reserves incoming IDs before minting and remaps duplicate incoming IDs', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'duplicate' },
+        references: [
+          { id: 'duplicate', dataUrl: 'data:image/png;base64,QUFBQQ==', characterIds: ['mara'] },
+          { id: 'duplicate', dataUrl: 'data:image/png;base64,QkJCQg==', characterIds: ['mara'] },
+          { id: 'reserved-later', dataUrl: 'data:image/png;base64,Q0NDQw==', characterIds: ['mara'] },
+        ],
+      },
+      {
+        worldId: 'atlas',
+        existingCharacterIds: [],
+        existingReferenceIds: [],
+        newId: (() => {
+          const ids = ['reserved-later', 'minted-duplicate'];
+          return () => ids.shift()!;
+        })(),
+        now: 100,
+      },
+    );
+
+    expect(plan.references.map((reference) => reference.id)).toEqual([
+      'duplicate',
+      'minted-duplicate',
+      'reserved-later',
+    ]);
+    expect(new Set(plan.references.map((reference) => reference.id)).size).toBe(3);
+    expect(plan.character.preferredIdentityReferenceId).toBe('duplicate');
+  });
+
+  it('maps a later byte-deduplicated identity alias to its surviving reference', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'later-duplicate' },
+        references: [
+          { id: 'other', dataUrl: 'data:image/png;base64,T1RIRVI=', characterIds: ['mara'] },
+          { id: 'survivor', dataUrl: 'data:image/png;base64,TUFSQQ==', characterIds: ['mara'] },
+          { id: 'later-duplicate', dataUrl: 'data:image/jpeg;base64,TUFSQQ==', characterIds: ['mara'] },
+        ],
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+
+    expect(plan.references.map((reference) => reference.id)).toEqual(['other', 'survivor']);
+    expect(plan.character.preferredIdentityReferenceId).toBe('survivor');
+  });
+
+  it('keeps later authoritative manual metadata when byte dedupe merges canonical references', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'manual-copy' },
+        references: [
+          {
+            id: 'local-copy',
+            dataUrl: 'data:image/png;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            provenance: { source: 'uploaded', metadata: 'local' },
+            classificationState: 'pending',
+            description: 'Queued local copy',
+          },
+          {
+            id: 'manual-copy',
+            dataUrl: 'data:image/jpeg;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            provenance: { source: 'uploaded', metadata: 'manual' },
+            classificationState: 'ready',
+            acceptedAsIs: true,
+            autoUse: false,
+            description: 'Authoritative manual copy',
+            facets: { framing: 'medium' },
+          },
+        ],
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+
+    expect(plan.references).toEqual([
+      expect.objectContaining({
+        id: 'local-copy',
+        provenance: { source: 'uploaded', metadata: 'manual' },
+        classificationState: 'ready',
+        acceptedAsIs: true,
+        autoUse: false,
+        description: 'Authoritative manual copy',
+        facets: { framing: 'medium' },
+      }),
+    ]);
+    expect(plan.character.preferredIdentityReferenceId).toBe('local-copy');
+  });
+
+  it('canonicalizes malformed accepted character and reference fields before planning writes', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: {
+          id: 'mara',
+          name: 'Mara',
+          role: 'hero',
+          description: 42,
+          defaultVisualState: {
+            wardrobeDescription: 'blue coat',
+            carriedItems: ['satchel', 7],
+            injuries: 'not-an-array',
+          },
+          defaultVisualStateSources: { wardrobeDescription: 'manual', carriedItems: 'invalid' },
+        },
+        references: [
+          {
+            id: 'portrait',
+            dataUrl: 'data:image/png;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            subjectType: 'not-a-subject',
+            use: 'not-a-use',
+            facets: { framing: 'not-a-frame', heldProps: ['satchel', 9], screenPositions: { mara: 4 } },
+            description: 9,
+            confidence: { subject: 'high', links: 1.2, use: 0.8 },
+            proposedCharacterNames: ['Mara', 4],
+            proposedLocationName: 9,
+            provenance: { source: 'remote', metadata: 'manual' },
+            classificationState: 'unknown',
+            acceptedAsIs: 'yes',
+            autoUse: 0,
+            classificationVersion: -1,
+          },
+        ],
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+
+    expect(plan.character).toMatchObject({ role: 'hero', defaultVisualState: { carriedItems: ['satchel'] } });
+    expect(plan.character).not.toHaveProperty('description');
+    expect(plan.character.defaultVisualState).not.toHaveProperty('injuries');
+    expect(plan.character.defaultVisualStateSources).toEqual({ wardrobeDescription: 'manual' });
+    expect(plan.references).toEqual([
+      expect.objectContaining({
+        subjectType: 'character',
+        use: 'identity',
+        facets: { heldProps: ['satchel'] },
+        description: '',
+        confidence: { use: 0.8 },
+        proposedCharacterNames: ['Mara'],
+        provenance: { source: 'migrated', metadata: 'local' },
+        classificationState: 'pending',
+        acceptedAsIs: false,
+        autoUse: true,
+      }),
+    ]);
+    expect(plan.references[0]).not.toHaveProperty('classificationVersion');
+  });
+});

@@ -1,7 +1,9 @@
 import DB from '../db.js';
-import type { ClassificationJob, ReferenceAsset, WorldLocation } from './types.js';
+import { safeDiagnosticExcerpt } from './diagnostic-privacy.js';
+import type { ClassificationDiagnostic, ClassificationJob, ReferenceAsset, WorldLocation } from './types.js';
 
-export type ReferenceStoreName = 'characters' | 'worlds' | 'locations' | 'referenceAssets' | 'classificationJobs';
+export type ReferenceStoreName =
+  'characters' | 'worlds' | 'locations' | 'referenceAssets' | 'classificationJobs' | 'classificationDiagnostics';
 
 export interface ReferenceTransaction {
   get<T>(storeName: ReferenceStoreName, id: string): Promise<T | undefined>;
@@ -31,6 +33,15 @@ export interface ReferenceRepository {
   listJobs(): Promise<ClassificationJob[]>;
   putJob(job: ClassificationJob): Promise<void>;
   putAssetAndJob(asset: ReferenceAsset, job: ClassificationJob): Promise<void>;
+  claimPendingJobIfCurrent(job: ClassificationJob, running: ClassificationJob): Promise<ReferenceAsset | undefined>;
+  finalizeAssetAndJobIfCurrent(
+    snapshot: ReferenceAsset,
+    asset: ReferenceAsset,
+    job: ClassificationJob,
+    diagnostic?: ClassificationDiagnostic,
+  ): Promise<boolean>;
+  recordDiagnostic(diagnostic: ClassificationDiagnostic): Promise<void>;
+  listDiagnostics(assetId?: string): Promise<ClassificationDiagnostic[]>;
   listLocations(worldId: string): Promise<WorldLocation[]>;
   putLocation(location: WorldLocation): Promise<void>;
 }
@@ -109,7 +120,47 @@ function stableRecords<T extends { id: string }>(records: T[]): T[] {
 }
 
 function normalizeAsset(asset: ReferenceAsset): ReferenceAsset {
-  return { ...asset, characterIds: [...new Set(asset.characterIds)] };
+  return {
+    ...asset,
+    characterIds: [...new Set(asset.characterIds)],
+    proposedCharacterNames: [...new Set(asset.proposedCharacterNames || [])],
+    proposedLocationName: asset.proposedLocationName || null,
+  };
+}
+
+const DIAGNOSTIC_MAX_COUNT = 500;
+const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): ClassificationDiagnostic {
+  const { stage, code, mode, retryDelayMs, validationReason, queueState, rawOutputExcerpt } = diagnostic.error;
+  const safeExcerpt = safeDiagnosticExcerpt(rawOutputExcerpt);
+  return {
+    id: diagnostic.id,
+    assetId: diagnostic.assetId,
+    worldId: diagnostic.worldId,
+    createdAt: diagnostic.createdAt,
+    ...(diagnostic.queueState ? { queueState: diagnostic.queueState } : {}),
+    error: {
+      stage,
+      code,
+      ...(mode ? { mode } : {}),
+      ...(retryDelayMs === undefined ? {} : { retryDelayMs }),
+      ...(validationReason ? { validationReason } : {}),
+      ...(queueState ? { queueState } : {}),
+      ...(safeExcerpt ? { rawOutputExcerpt: safeExcerpt } : {}),
+    },
+  };
+}
+
+async function pruneDiagnostics(transaction: ReferenceTransaction): Promise<void> {
+  const cutoff = Date.now() - DIAGNOSTIC_MAX_AGE_MS;
+  const existing = await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics');
+  const expired = existing.filter((diagnostic) => diagnostic.createdAt < cutoff);
+  const retained = existing
+    .filter((diagnostic) => diagnostic.createdAt >= cutoff)
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+  const overflow = retained.slice(0, Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT));
+  for (const stale of [...expired, ...overflow]) await transaction.delete('classificationDiagnostics', stale.id);
 }
 
 async function clearPreferredReference(
@@ -185,13 +236,21 @@ export function createReferenceRepository(
 
     deleteAsset: (id) =>
       dependencies.transaction(
-        ['referenceAssets', 'characters', 'worlds', 'locations'],
+        ['referenceAssets', 'classificationJobs', 'classificationDiagnostics', 'characters', 'worlds', 'locations'],
         'readwrite',
         async (transaction) => {
           await clearPreferredReference(transaction, 'characters', id);
           await clearPreferredReference(transaction, 'worlds', id);
           await clearPreferredReference(transaction, 'locations', id);
           await transaction.delete('referenceAssets', id);
+          const jobs = await transaction.getAllByIndex<ClassificationJob>('classificationJobs', 'assetId', id);
+          for (const job of jobs) await transaction.delete('classificationJobs', job.id);
+          const diagnostics = await transaction.getAllByIndex<ClassificationDiagnostic>(
+            'classificationDiagnostics',
+            'assetId',
+            id,
+          );
+          for (const item of diagnostics) await transaction.delete('classificationDiagnostics', item.id);
         },
       ),
 
@@ -215,6 +274,74 @@ export function createReferenceRepository(
       dependencies.transaction(['referenceAssets', 'classificationJobs'], 'readwrite', async (transaction) => {
         await transaction.put('referenceAssets', normalizeAsset(asset));
         await transaction.put('classificationJobs', job);
+      }),
+
+    claimPendingJobIfCurrent: (job, running) =>
+      dependencies.transaction(['referenceAssets', 'classificationJobs'], 'readwrite', async (transaction) => {
+        const [asset, currentJob] = await Promise.all([
+          transaction.get<ReferenceAsset>('referenceAssets', job.assetId),
+          transaction.get<ClassificationJob>('classificationJobs', job.id),
+        ]);
+        if (
+          !asset ||
+          asset.provenance.metadata === 'manual' ||
+          asset.classificationState !== 'pending' ||
+          asset.classificationVersion !== job.assetVersion ||
+          !currentJob ||
+          currentJob.assetId !== job.assetId ||
+          currentJob.worldId !== job.worldId ||
+          currentJob.status !== 'pending' ||
+          currentJob.updatedAt !== job.updatedAt ||
+          currentJob.assetVersion !== job.assetVersion
+        ) {
+          return undefined;
+        }
+        await transaction.put('classificationJobs', running);
+        return asset;
+      }),
+
+    finalizeAssetAndJobIfCurrent: (snapshot, asset, job, diagnostic) =>
+      dependencies.transaction(
+        ['referenceAssets', 'classificationJobs', 'classificationDiagnostics'],
+        'readwrite',
+        async (transaction) => {
+          const current = await transaction.get<ReferenceAsset>('referenceAssets', snapshot.id);
+          if (
+            !current ||
+            current.provenance.metadata === 'manual' ||
+            current.updatedAt !== snapshot.updatedAt ||
+            current.classificationVersion !== snapshot.classificationVersion
+          ) {
+            return false;
+          }
+          await transaction.put('referenceAssets', normalizeAsset(asset));
+          await transaction.put('classificationJobs', job);
+          if (diagnostic) await transaction.put('classificationDiagnostics', sanitizeDiagnostic(diagnostic));
+          if (diagnostic) await pruneDiagnostics(transaction);
+          return true;
+        },
+      ),
+
+    recordDiagnostic: (item) =>
+      dependencies.transaction(['classificationDiagnostics'], 'readwrite', async (transaction) => {
+        await transaction.put('classificationDiagnostics', sanitizeDiagnostic(item));
+        await pruneDiagnostics(transaction);
+      }),
+
+    listDiagnostics: (assetId) =>
+      dependencies.transaction(['classificationDiagnostics'], 'readwrite', async (transaction) => {
+        const cutoff = Date.now() - DIAGNOSTIC_MAX_AGE_MS;
+        const all = await transaction.getAll<ClassificationDiagnostic>('classificationDiagnostics');
+        const retained = all
+          .filter((diagnostic) => diagnostic.createdAt >= cutoff)
+          .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+        const removed = [
+          ...all.filter((diagnostic) => diagnostic.createdAt < cutoff),
+          ...retained.slice(0, Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT)),
+        ];
+        for (const diagnostic of removed) await transaction.delete('classificationDiagnostics', diagnostic.id);
+        const visible = retained.slice(Math.max(0, retained.length - DIAGNOSTIC_MAX_COUNT));
+        return stableRecords(assetId ? visible.filter((diagnostic) => diagnostic.assetId === assetId) : visible);
       }),
 
     listLocations: (worldId) =>

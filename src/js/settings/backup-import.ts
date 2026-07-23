@@ -42,7 +42,12 @@ export interface BackupPayloadV2 {
   readonly exportedAt: string;
 }
 
-export type BackupPayload = LegacyBackupPayload | BackupPayloadV2;
+export interface BackupPayloadV3 extends Omit<BackupPayloadV2, 'schemaVersion'> {
+  readonly schemaVersion: 3;
+}
+
+type CanonicalBackupPayload = BackupPayloadV2 | BackupPayloadV3;
+export type BackupPayload = LegacyBackupPayload | CanonicalBackupPayload;
 type MutableLegacyPayload = { -readonly [K in keyof LegacyBackupPayload]?: LegacyBackupPayload[K] };
 export type BackupWrite = readonly [storeName: string, record: unknown];
 
@@ -67,7 +72,7 @@ export interface BackupImportDependencies {
   readonly now?: () => number;
 }
 
-const V2_COLLECTIONS: readonly CollectionKey[] = [
+const CANONICAL_COLLECTIONS: readonly CollectionKey[] = [
   'worlds',
   'locations',
   'characters',
@@ -86,6 +91,7 @@ const FORBIDDEN_FIELDS = new Set([
   'referenceKey',
   'locationKey',
   'referenceClassifications',
+  'rawOutputExcerpt',
   'tag',
 ]);
 
@@ -109,7 +115,7 @@ function isTimestamp(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function validateCanonical(payload: BackupPayloadV2): void {
+function validateCanonical(payload: CanonicalBackupPayload): void {
   const uniqueIds = (key: CollectionKey): Set<string> => {
     const ids = payload[key].map(({ id }) => String(id));
     if (new Set(ids).size !== ids.length) throw new Error(`Invalid ${key} data`);
@@ -145,7 +151,7 @@ function validateCanonical(payload: BackupPayloadV2): void {
     characterWorlds.set(String(item.id), item.worldId);
   }
 
-  const classificationStates = new Set(['pending', 'ready', 'needs-review']);
+  const classificationStates = new Set(['pending', 'ready', 'needs-review', 'could-not-classify']);
   const provenanceSources = new Set(['uploaded', 'generated', 'migrated']);
   const provenanceMetadata = new Set(['local', 'manual', 'accepted']);
   const assetWorlds = new Map<string, string>();
@@ -205,6 +211,7 @@ function validateCanonical(payload: BackupPayloadV2): void {
         !Number.isInteger(item.attemptCount) ||
         Number(item.attemptCount) < 0 ||
         (item.lastError !== undefined && typeof item.lastError !== 'string') ||
+        (item.retryAt !== undefined && !isTimestamp(item.retryAt)) ||
         !isTimestamp(item.createdAt) ||
         !isTimestamp(item.updatedAt),
     )
@@ -245,21 +252,21 @@ export function parseBackup(text: string): BackupPayload {
   if (parsed === null) throw new Error('Invalid backup file: root is null');
   const root = record(parsed);
   const schemaVersion = root.schemaVersion;
-  if (schemaVersion !== undefined && schemaVersion !== 2) {
+  if (schemaVersion !== undefined && schemaVersion !== 2 && schemaVersion !== 3) {
     throw new Error(`Unsupported backup schema version "${String(schemaVersion)}"`);
   }
 
-  if (schemaVersion === 2) {
+  if (schemaVersion === 2 || schemaVersion === 3) {
     const payload: Record<string, unknown> = {
-      schemaVersion: 2,
+      schemaVersion,
       exportedAt: typeof root.exportedAt === 'string' ? root.exportedAt : '',
     };
-    for (const key of V2_COLLECTIONS) {
+    for (const key of CANONICAL_COLLECTIONS) {
       const value = root[key] ?? [];
       if (!isValidCollection(value)) throw new Error(`Invalid ${key} data`);
       payload[key] = value;
     }
-    const canonical = payload as unknown as BackupPayloadV2;
+    const canonical = payload as unknown as CanonicalBackupPayload;
     validateCanonical(canonical);
     return canonical;
   }
@@ -337,7 +344,7 @@ function migratedAsset(
   };
 }
 
-export function convertLegacyBackup(payload: LegacyBackupPayload, now = Date.now()): BackupPayloadV2 {
+export function convertLegacyBackup(payload: LegacyBackupPayload, now = Date.now()): BackupPayloadV3 {
   const worlds = payload.worlds || [];
   const characters = payload.characters || [];
   const comics = payload.comics || [];
@@ -381,7 +388,7 @@ export function convertLegacyBackup(payload: LegacyBackupPayload, now = Date.now
   });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     worlds: worlds.map(cleanEntity),
     locations: [],
     characters: migratedCharacters,
@@ -400,7 +407,7 @@ export function convertLegacyBackup(payload: LegacyBackupPayload, now = Date.now
 export async function buildBackup(
   dependencies: BackupImportDependencies,
   exportedAt = new Date(),
-): Promise<BackupPayloadV2> {
+): Promise<BackupPayloadV3> {
   if (!dependencies.getAll) throw new Error('Backup export requires getAll');
   const read = async (key: CollectionKey): Promise<BackupRecord[]> =>
     (await dependencies.getAll!(dependencies.stores[key])).map((value) =>
@@ -409,7 +416,7 @@ export async function buildBackup(
         : (cleanValue(value) as BackupRecord),
     );
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     worlds: await read('worlds'),
     locations: await read('locations'),
     characters: await read('characters'),
@@ -423,16 +430,16 @@ export async function buildBackup(
   };
 }
 
-function isV2(payload: BackupPayload): payload is BackupPayloadV2 {
-  return payload.schemaVersion === 2;
+function isCanonical(payload: BackupPayload): payload is CanonicalBackupPayload {
+  return payload.schemaVersion === 2 || payload.schemaVersion === 3;
 }
 
-function backupWrites(payload: BackupPayloadV2, dependencies: BackupImportDependencies): BackupWrite[] {
-  return V2_COLLECTIONS.flatMap((key) => payload[key].map((item) => [dependencies.stores[key], item] as const));
+function backupWrites(payload: CanonicalBackupPayload, dependencies: BackupImportDependencies): BackupWrite[] {
+  return CANONICAL_COLLECTIONS.flatMap((key) => payload[key].map((item) => [dependencies.stores[key], item] as const));
 }
 
 export async function importBackup(payload: BackupPayload, dependencies: BackupImportDependencies): Promise<void> {
-  const canonical = isV2(payload) ? payload : convertLegacyBackup(payload, dependencies.now?.());
+  const canonical = isCanonical(payload) ? payload : convertLegacyBackup(payload, dependencies.now?.());
   const writes = backupWrites(canonical, dependencies);
   if (dependencies.putBatch) {
     await dependencies.putBatch(writes);

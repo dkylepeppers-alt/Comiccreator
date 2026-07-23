@@ -12,7 +12,12 @@ export const referenceClassificationQueue = createClassificationQueue({
   classifier: {
     classify: async (asset) => {
       const world = await DB.get(DB.STORES.worlds, asset.worldId);
-      if (!world) return null;
+      if (!world) {
+        return {
+          kind: 'failure' as const,
+          error: { stage: 'validation' as const, code: 'missing-asset' as const, mode: 'local' as const },
+        };
+      }
       const characters = (await DB.getAll(DB.STORES.characters))
         .filter((character) => (character.worldId || character.linkedWorldId) === asset.worldId)
         .map(({ id, name, appearance }) => ({ id, name, appearance }));
@@ -40,6 +45,58 @@ export const referenceWorkspace = createReferenceWorkspace({
       .map(({ id, name }) => ({ id, name })),
   listLocations: (worldId) => referenceRepository.listLocations(worldId),
 });
+
+interface QueueLifecycle {
+  run(): Promise<void>;
+  pause(): void;
+  resume(): Promise<void>;
+}
+
+interface VisibilityTarget extends EventTarget {
+  visibilityState: string;
+}
+
+/** Start recovery after DB initialization and suspend local inference whenever the app is hidden. */
+export function installReferenceQueueLifecycle(
+  queue: QueueLifecycle = referenceClassificationQueue,
+  documentTarget: VisibilityTarget = document,
+): () => void {
+  const containFailure = (operation: Promise<void>) => void operation.catch(() => undefined);
+  const handleVisibility = () => {
+    if (documentTarget.visibilityState === 'visible') containFailure(queue.resume());
+    else queue.pause();
+  };
+  documentTarget.addEventListener('visibilitychange', handleVisibility);
+  if (documentTarget.visibilityState === 'visible') containFailure(queue.run());
+  else queue.pause();
+  return () => documentTarget.removeEventListener('visibilitychange', handleVisibility);
+}
+
+let referenceEditorRestoreFocus: HTMLElement | null = null;
+let referenceEditorEscapeListenerAttached = false;
+
+export function closeReferenceEditor(): void {
+  App.hideModal();
+  referenceEditorRestoreFocus?.focus();
+  referenceEditorRestoreFocus = null;
+}
+
+function handleReferenceEditorEscape(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !document.querySelector('#modal-content [data-reference-editor]')) return;
+  event.preventDefault();
+  closeReferenceEditor();
+}
+
+/** Open the shared editor and place keyboard focus on its first decision. */
+export async function openReferenceEditor(worldId: string, referenceId: string): Promise<void> {
+  referenceEditorRestoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  App.showModal(await referenceWorkspace.renderEditor({ worldId, referenceId }));
+  if (!referenceEditorEscapeListenerAttached) {
+    document.addEventListener('keydown', handleReferenceEditorEscape);
+    referenceEditorEscapeListenerAttached = true;
+  }
+  document.querySelector<HTMLElement>('#modal-content [autofocus]')?.focus();
+}
 
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

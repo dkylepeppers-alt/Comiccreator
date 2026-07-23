@@ -2052,6 +2052,55 @@ textarea:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.reference-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.reference-editor-header,
+.reference-editor-actions,
+.reference-progress-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.reference-editor .reference-review-image {
+  margin: 0 auto;
+}
+
+.reference-facets {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 0;
+  padding: 12px;
+}
+
+.reference-facets legend {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  padding: 0 5px;
+}
+
+.reference-editor-provenance {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.reference-editor-provenance dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.reference-editor-provenance dd {
+  color: var(--text-primary);
+  margin: 3px 0 0;
+}
+
 .world-record-card,
 .character-record-card {
   border-top: 3px solid var(--reference-cyan);
@@ -2073,9 +2122,16 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+.reference-editor .btn:focus-visible,
+.reference-progress .btn:focus-visible {
+  outline: 3px solid rgba(53, 208, 186, 0.5);
+  outline-offset: 2px;
+}
+
 @media (max-width: 720px) {
   .reference-hierarchy,
-  .reference-form-grid {
+  .reference-form-grid,
+  .reference-editor-provenance {
     grid-template-columns: 1fr;
   }
 
@@ -2090,6 +2146,11 @@ textarea:focus-visible {
 
   .reference-inline-create {
     grid-template-columns: 1fr;
+  }
+
+  .reference-editor .btn-sm,
+  .reference-progress .btn-sm {
+    min-height: 44px;
   }
 
   .section-header {

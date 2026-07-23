@@ -95,12 +95,30 @@ describe('reference repository', () => {
     memory.put('worlds', { id: 'w1', preferredStyleReferenceId: 'r1' });
     memory.put('locations', { id: 'yard', worldId: 'w1', preferredReferenceId: 'r1' });
     await repo.putAsset(asset());
+    await repo.putJob({
+      id: 'classification-r1',
+      assetId: 'r1',
+      worldId: 'w1',
+      status: 'failed',
+      attemptCount: 1,
+      createdAt: 10,
+      updatedAt: 10,
+    });
+    await repo.recordDiagnostic({
+      id: 'diagnostic-r1',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: { stage: 'inference', code: 'inference-failed' },
+    });
 
     await repo.setAutoUse('r1', false);
     expect((await repo.getAsset('r1'))?.autoUse).toBe(false);
 
     await repo.deleteAsset('r1');
     expect(await repo.getAsset('r1')).toBeUndefined();
+    expect(await repo.getJobByAsset('r1')).toBeUndefined();
+    expect(await repo.listDiagnostics('r1')).toEqual([]);
     expect(memory.getCharacter('mara')?.preferredIdentityReferenceId).toBeNull();
     expect(memory.get<Record<string, unknown>>('worlds', 'w1')?.preferredStyleReferenceId).toBeNull();
     expect(memory.get<WorldLocation>('locations', 'yard')?.preferredReferenceId).toBeNull();
@@ -140,5 +158,113 @@ describe('reference repository', () => {
     await repo.putLocation(location);
     expect(await repo.listLocations('w1')).toEqual([location]);
     expect((await repo.listJobs()).map((item) => item.id)).toEqual(['j1']);
+  });
+
+  it('stores allowlisted diagnostic fields with global retention and expiry', async () => {
+    const current = Date.now();
+    for (let index = 0; index < 501; index += 1) {
+      await repo.recordDiagnostic({
+        id: `d${index}`,
+        assetId: `r${index}`,
+        worldId: 'w1',
+        createdAt: current + index,
+        error: {
+          stage: 'parse',
+          code: 'invalid-json',
+          mode: 'local',
+          message: 'prompt=data:image/png;base64,secret-token',
+          rawOutputExcerpt: 'Roster: secret world description',
+        },
+      } as any);
+    }
+    await repo.recordDiagnostic({
+      id: 'expired',
+      assetId: 'old',
+      worldId: 'w1',
+      createdAt: current - 7 * 24 * 60 * 60 * 1000 - 1,
+      error: { stage: 'parse', code: 'invalid-json' },
+    });
+
+    const diagnostics = await repo.listDiagnostics();
+    expect(diagnostics).toHaveLength(500);
+    expect(diagnostics.map((item) => item.id)).not.toContain('expired');
+    expect(diagnostics[0]?.error.message).toBeUndefined();
+    expect((diagnostics[0]?.error as any).rawOutputExcerpt).toBeUndefined();
+  });
+
+  it('retains the newest diagnostics by timestamp rather than diagnostic ID', async () => {
+    const error = { stage: 'parse' as const, code: 'invalid-json' as const };
+    const current = Date.now();
+    for (let index = 1; index <= 49; index += 1) {
+      await repo.recordDiagnostic({
+        id: `middle-${index}`,
+        assetId: 'r1',
+        worldId: 'w1',
+        createdAt: current + index,
+        error,
+      });
+    }
+    await repo.recordDiagnostic({ id: 'z-oldest', assetId: 'r1', worldId: 'w1', createdAt: current, error });
+    await repo.recordDiagnostic({ id: 'a-newest', assetId: 'r1', worldId: 'w1', createdAt: current + 100, error });
+    for (let index = 1; index <= 450; index += 1) {
+      await repo.recordDiagnostic({
+        id: `other-${index}`,
+        assetId: `other-${index}`,
+        worldId: 'w1',
+        createdAt: current + 200 + index,
+        error,
+      });
+    }
+
+    expect((await repo.listDiagnostics('r1')).map((item) => item.id)).toEqual(expect.arrayContaining(['a-newest']));
+    expect((await repo.listDiagnostics('r1')).map((item) => item.id)).not.toContain('z-oldest');
+  });
+
+  it('retains a bounded non-sensitive parse excerpt', async () => {
+    const multibyteExcerpt = '😀'.repeat(5_000);
+    await repo.recordDiagnostic({
+      id: 'safe-parse',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: { stage: 'parse', code: 'invalid-json', rawOutputExcerpt: multibyteExcerpt },
+    });
+
+    expect(new TextEncoder().encode((await repo.listDiagnostics('r1'))[0]?.error.rawOutputExcerpt).byteLength).toBe(
+      16 * 1024,
+    );
+  });
+
+  it('prunes expired diagnostics during reads even when no new diagnostic is written', async () => {
+    memory.put('classificationDiagnostics', {
+      id: 'stale',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000 - 1,
+      error: { stage: 'parse', code: 'invalid-json' },
+    });
+
+    expect(await repo.listDiagnostics('r1')).toEqual([]);
+    expect(memory.get('classificationDiagnostics', 'stale')).toBeUndefined();
+  });
+
+  it('reconstructs diagnostics from allowlisted top-level fields', async () => {
+    await repo.recordDiagnostic({
+      id: 'allowlisted',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: { stage: 'parse', code: 'invalid-json' },
+      prompt: 'secret prompt',
+      image: 'data:image/png;base64,secret',
+      worldDescription: 'secret world',
+      roster: ['secret'],
+    } as any);
+
+    const diagnostic = (await repo.listDiagnostics('r1'))[0] as Record<string, unknown>;
+    expect(diagnostic).not.toHaveProperty('prompt');
+    expect(diagnostic).not.toHaveProperty('image');
+    expect(diagnostic).not.toHaveProperty('worldDescription');
+    expect(diagnostic).not.toHaveProperty('roster');
   });
 });

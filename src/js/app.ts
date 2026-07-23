@@ -9,6 +9,7 @@ import LibraryPage from './pages/library.js';
 import PresetsPage from './pages/presets.js';
 import ImagePresetsPage from './pages/image-presets.js';
 import SettingsPage from './pages/settings.js';
+import { installReferenceQueueLifecycle } from './reference-workspace-runtime.js';
 
 export type { PageModule };
 
@@ -44,6 +45,7 @@ async function init() {
   await DB.open();
   await DB.seedDefaults();
   await DB.dedupePresets();
+  installReferenceQueueLifecycle();
 
   // Set up navigation
   setupNavigation();

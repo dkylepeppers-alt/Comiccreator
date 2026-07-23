@@ -1,4 +1,6 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'com.google.devtools.ksp'
 
 // Version comes from the repo root package.json (kept current by the
 // post-merge auto-bump), so the APK always matches the web app version.
@@ -63,7 +65,8 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
-    implementation "com.google.mlkit:genai-prompt:1.0.0-beta2"
+    implementation "com.google.mlkit:genai-prompt:1.0.0-beta4"
+    ksp "com.google.mlkit:genai-schema-compiler:1.0.0-alpha1"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
