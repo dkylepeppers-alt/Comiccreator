@@ -21,10 +21,12 @@ vi.mock('../src/js/reference-workspace-runtime.js', () => ({
   addUploadedReference: vi.fn(),
   closeReferenceEditor: vi.fn(),
   fileToDataUrl: vi.fn(),
+  openGenerateReferenceDialog: vi.fn(),
   openReferenceEditor: vi.fn(),
   referenceClassificationQueue: queue,
   referenceRepository: { getAsset: vi.fn(), listByCharacter: vi.fn() },
   referenceWorkspace: { handleAction: vi.fn(), render: vi.fn() },
+  submitGenerateReference: vi.fn(),
 }));
 
 import CharactersPage from '../src/js/pages/characters.js';

@@ -2,7 +2,6 @@
 import type { PageModule } from '../utils.js';
 import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
-import API from '../api.js';
 import {
   normalizeReferenceEditorSubject,
   readReferenceEditorForm,
@@ -13,9 +12,11 @@ import {
   addUploadedReference,
   closeReferenceEditor,
   fileToDataUrl,
+  openGenerateReferenceDialog,
   openReferenceEditor,
   referenceRepository,
   referenceWorkspace,
+  submitGenerateReference,
 } from '../reference-workspace-runtime.js';
 
 let editingId: string | null = null;
@@ -212,13 +213,7 @@ async function handleReferenceUpload(input: HTMLInputElement): Promise<void> {
 
 async function generateReference(): Promise<void> {
   if (!editingId) return;
-  const promptText = window.prompt('Describe the world reference to generate');
-  if (!promptText?.trim()) return;
-  const dataUrl = await API.generateRefVariation(null, promptText.trim(), {});
-  if (!dataUrl) return App.toast('Reference generation failed', 'error');
-  await addUploadedReference({ worldId: editingId, dataUrl, source: 'generated' });
-  App.toast('Generated reference added', 'success');
-  App.refreshPage();
+  await openGenerateReferenceDialog({ worldId: editingId });
 }
 
 function setReferenceFilter(filter: ReferenceFilter): void {
@@ -334,6 +329,7 @@ const WorldsPage: PageModule & Record<string, any> = {
   'preview-reference': previewReference,
   'upload-reference': uploadReference,
   'generate-reference': generateReference,
+  'submit-generate-reference': submitGenerateReference,
   exportWorld,
   deleteWorld,
 };

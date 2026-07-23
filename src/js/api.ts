@@ -1116,7 +1116,7 @@ const CHARACTER_WORLD_VARIATIONS: RefVariation[] = [
  * @returns {Promise<string|null>} - The generated image as a data URL, or null on failure
  */
 async function generateRefVariation(
-  sourceDataUrl: string,
+  sourceDataUrl: string | null,
   prompt: string,
   options: RefVariationOptions = {},
 ): Promise<string | null> {
