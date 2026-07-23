@@ -15,6 +15,40 @@ const SUBJECT_SCHEMA = {
   style: ['rendering'],
 } as const;
 
+const FACET_VOCABULARY = {
+  framing: [
+    'extreme-close-up',
+    'close-up',
+    'medium-close-up',
+    'medium',
+    'three-quarter',
+    'full-body',
+    'wide',
+    'establishing',
+    'detail',
+  ],
+  cameraElevation: ['eye-level', 'high', 'low', 'overhead', 'aerial', 'ground-level'],
+  viewDirection: ['front', 'three-quarter-front', 'left-profile', 'right-profile', 'three-quarter-rear', 'rear'],
+  identityCoverage: ['face', 'upper-body', 'full-body'],
+  spaceType: ['interior', 'exterior', 'threshold'],
+  timeOfDay: ['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'],
+} as const;
+
+/**
+ * A fully-formed answer, so the model has a concrete target to imitate. Live probing
+ * showed models otherwise echo an inline `"a|b|c"` option list back as a literal value,
+ * which fails schema validation for an image they actually classified correctly.
+ */
+const EXAMPLE_RESPONSE = JSON.stringify({
+  subjectType: 'character',
+  use: 'identity',
+  characterIds: ['<roster character id>'],
+  locationId: '<roster location id or null>',
+  facets: { framing: 'full-body', viewDirection: 'front', identityCoverage: 'full-body', spaceType: 'exterior' },
+  description: 'One concise sentence describing only what is visible.',
+  confidence: { subject: 0.9, links: 0.8, use: 0.9, facets: 0.7 },
+});
+
 /**
  * The single classification prompt. Both the cloud and on-device backends send this
  * verbatim so their outputs are directly comparable and validated identically.
@@ -33,11 +67,20 @@ export function buildClassificationPrompt(input: ClassificationInput): string {
   };
   return [
     'Classify the supplied comic reference image using only visible evidence and the stable-ID roster below.',
-    'Return one raw JSON object only. Do not use Markdown or invent IDs.',
+    'Return one raw JSON object only. No Markdown, no commentary, and never invent IDs.',
     `Roster: ${JSON.stringify(roster)}`,
     `Allowed subject/use pairs: ${JSON.stringify(SUBJECT_SCHEMA)}`,
-    'Shape: {"subjectType":"character|location|interaction|prop|style","use":"allowed use for subject","characterIds":["stable IDs"],"locationId":"stable ID or null","facets":{"framing":"extreme-close-up|close-up|medium-close-up|medium|three-quarter|full-body|wide|establishing|detail","cameraElevation":"eye-level|high|low|overhead|aerial|ground-level","viewDirection":"front|three-quarter-front|left-profile|right-profile|three-quarter-rear|rear","identityCoverage":"face|upper-body|full-body","spaceType":"interior|exterior|threshold","timeOfDay":"dawn|morning|midday|afternoon|dusk|night"},"description":"concise visible description","confidence":{"subject":0.0,"links":0.0,"use":0.0,"facets":0.0}}',
-    'Omit unknown optional facets. Use an empty characterIds array or null locationId when no roster link is visibly supported.',
+    `Allowed facet values: ${JSON.stringify(FACET_VOCABULARY)}`,
+    'Fields:',
+    '- subjectType: exactly one key from the allowed subject/use pairs.',
+    '- use: exactly one value listed under that subjectType.',
+    '- characterIds: roster character IDs visibly present, or [] when none are.',
+    '- locationId: one roster location ID, or null when none is visibly supported.',
+    '- facets: include only facets you can actually see, each set to exactly one allowed value.',
+    '- description: one concise sentence describing only what is visible.',
+    '- confidence: subject, links, use, and facets as numbers between 0 and 1.',
+    `Answer in exactly this form, with real values substituted: ${EXAMPLE_RESPONSE}`,
+    'Choose one concrete value per field. Never copy an option list, a placeholder, or a field description into your answer.',
   ].join('\n');
 }
 
