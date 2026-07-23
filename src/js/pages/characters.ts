@@ -158,7 +158,7 @@ async function renderEditor(): Promise<string> {
     </section>
     ${
       editingId
-        ? `<input type="file" id="reference-upload-input" class="hidden" accept="image/*" data-action-change="handleReferenceUpload">${workspaceHtml}`
+        ? `<input type="file" id="reference-upload-input" class="hidden" accept="image/*" multiple data-action-change="handleReferenceUpload">${workspaceHtml}`
         : `<section class="card reference-save-first"><strong>Save the character to open its reference view.</strong><span>It will use the same records as ${escHtml(world.name)}.</span></section>`
     }
   </div>`;
@@ -221,14 +221,22 @@ function uploadReference(): void {
 }
 
 async function handleReferenceUpload(input: HTMLInputElement): Promise<void> {
-  if (!editingId || !parentWorldId || !input.files?.[0]) return;
-  await addUploadedReference({
-    worldId: parentWorldId,
-    characterId: editingId,
-    dataUrl: await fileToDataUrl(input.files[0]),
-  });
+  if (!editingId || !parentWorldId || !input.files?.length) return;
+  const files = Array.from(input.files);
+  for (const file of files) {
+    await addUploadedReference({
+      worldId: parentWorldId,
+      characterId: editingId,
+      dataUrl: await fileToDataUrl(file),
+    });
+  }
   input.value = '';
-  App.toast('Character reference queued for local review', 'success');
+  App.toast(
+    files.length === 1
+      ? 'Character reference queued for local review'
+      : `${files.length} character references queued for local review`,
+    'success',
+  );
   App.refreshPage();
 }
 
