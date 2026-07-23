@@ -117,28 +117,38 @@ describe('reference classification schema', () => {
     ).toBeNull();
   });
 
-  it('rejects malformed optional facet collections', () => {
-    expect(
-      parseReferenceClassification(
-        {
-          subjectType: 'character',
-          use: 'action',
-          characterIds: ['mara'],
-          facets: { heldProps: ['sword', 3] },
+  it('drops malformed facet entries without failing the whole classification', () => {
+    // Facets are enrichment: one bad key or value must cost that facet, not the asset.
+    const value = parseReferenceClassification(
+      {
+        subjectType: 'character',
+        use: 'action',
+        characterIds: ['mara'],
+        facets: {
+          heldProps: ['sword', 3, ' sword '],
+          framing: 'not-a-framing',
+          viewDirection: 'front',
+          expression: '   ',
+          pose: 'mid-swing',
+          madeUpFacet: 'ignored',
         },
-        roster,
-      ),
-    ).toBeNull();
+        confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+      },
+      roster,
+    );
+
+    expect(value?.facets).toEqual({ viewDirection: 'front', pose: 'mid-swing', heldProps: ['sword'] });
     expect(
       parseReferenceClassification(
         {
           subjectType: 'interaction',
           use: 'spatial',
           characterIds: ['mara', 'theo'],
-          facets: { screenPositions: { mara: 'left', ghost: 'right' } },
+          facets: {},
         },
         roster,
       ),
+      'incompatible subject/use pairs are still structural failures',
     ).toBeNull();
   });
 
@@ -201,6 +211,68 @@ describe('reference classification schema', () => {
       state: 'needs-review',
       validationReason: 'low-confidence',
     });
+  });
+
+  it('keeps subject/link requirements as review conditions instead of schema failures', () => {
+    // An honest "no roster entity matches" answer must parse and land in review;
+    // a terminal invalid-schema here made unknown characters unclassifiable forever.
+    const unlinkedCharacter = parseReferenceClassificationDraft({
+      subjectType: 'character',
+      use: 'identity',
+      characterIds: [],
+      locationId: null,
+      facets: {},
+      description: 'An unknown swordsman.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+      proposedCharacterNames: ['Swordsman'],
+    });
+    expect(unlinkedCharacter).not.toBeNull();
+    expect(validateReferenceClassificationDraft(unlinkedCharacter!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+      classification: { proposedCharacterNames: ['Swordsman'] },
+    });
+
+    const unlinkedLocation = parseReferenceClassificationDraft({
+      subjectType: 'location',
+      use: 'establishing',
+      characterIds: [],
+      locationId: null,
+      facets: {},
+      description: 'A ruined tower.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+    });
+    expect(validateReferenceClassificationDraft(unlinkedLocation!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+    });
+
+    const soloInteraction = parseReferenceClassificationDraft({
+      subjectType: 'interaction',
+      use: 'relationship',
+      characterIds: ['mara'],
+      locationId: null,
+      facets: {},
+      description: 'Mara reaches toward someone off-frame.',
+      confidence: { subject: 0.9, links: 0.9, use: 0.9, facets: 0.9 },
+    });
+    expect(validateReferenceClassificationDraft(soloInteraction!, roster)).toMatchObject({
+      state: 'needs-review',
+      validationReason: 'subject-requirements',
+    });
+
+    // The strict import-path parser still refuses to promote these to usable records.
+    expect(
+      parseReferenceClassification(
+        {
+          subjectType: 'character',
+          use: 'identity',
+          characterIds: [],
+          facets: {},
+        },
+        roster,
+      ),
+    ).toBeNull();
   });
 
   it('drops unmatched screen-position keys while preserving only an entity proposal', () => {

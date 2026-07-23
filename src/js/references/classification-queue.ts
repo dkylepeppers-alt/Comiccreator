@@ -183,12 +183,12 @@ export function createClassificationQueue({
     try {
       outcome = await classifier.classify(asset);
     } catch {
+      // No mode: the router hides which backend threw, so don't guess one in diagnostics.
       outcome = {
         kind: 'failure',
         error: {
           stage: 'inference',
           code: 'inference-failed',
-          mode: 'local',
         },
       };
     }

@@ -93,6 +93,30 @@ data class ReferenceFacetsOutput(
         enumValues = ["dawn", "morning", "midday", "afternoon", "dusk", "night"],
     )
     val timeOfDay: String? = null,
+    @Guide(description = "Outfit or physical-state variant visible in the image")
+    val appearanceState: String? = null,
+    @Guide(description = "Visible facial expression")
+    val expression: String? = null,
+    @Guide(description = "Visible body pose")
+    val pose: String? = null,
+    @Guide(description = "What the subject is visibly doing")
+    val activity: String? = null,
+    @Guide(description = "Visible light quality and direction")
+    val lighting: String? = null,
+    @Guide(description = "Kind of interaction between visible characters")
+    val interactionType: String? = null,
+    @Guide(description = "How multiple visible subjects are arranged")
+    val spatialArrangement: String? = null,
+    @Guide(description = "Occlusion or partial-visibility notes")
+    val visibility: String? = null,
+    @Guide(description = "Visible weather")
+    val weather: String? = null,
+    @Guide(description = "Visible season")
+    val season: String? = null,
+    @Guide(description = "Physical contact between visible characters")
+    val physicalContact: String? = null,
+    @Guide(description = "Visibly held or carried items", maxItems = 10)
+    val heldProps: List<String>? = null,
 )
 
 @Generable("Classification confidence values")
@@ -296,6 +320,19 @@ private fun ReferenceFacetsOutput.toJson(): JSONObject = JSONObject().apply {
     identityCoverage?.let { put("identityCoverage", it) }
     spaceType?.let { put("spaceType", it) }
     timeOfDay?.let { put("timeOfDay", it) }
+    appearanceState?.let { put("appearanceState", it) }
+    expression?.let { put("expression", it) }
+    pose?.let { put("pose", it) }
+    activity?.let { put("activity", it) }
+    lighting?.let { put("lighting", it) }
+    interactionType?.let { put("interactionType", it) }
+    spatialArrangement?.let { put("spatialArrangement", it) }
+    visibility?.let { put("visibility", it) }
+    weather?.let { put("weather", it) }
+    season?.let { put("season", it) }
+    physicalContact?.let { put("physicalContact", it) }
+    // Wrap in JSONArray: raw Lists get stringified by JSONObject (see the characterIds fix).
+    heldProps?.takeIf { it.isNotEmpty() }?.let { put("heldProps", JSONArray(it)) }
 }
 
 private fun ReferenceConfidenceOutput.toJson(): JSONObject = JSONObject().apply {

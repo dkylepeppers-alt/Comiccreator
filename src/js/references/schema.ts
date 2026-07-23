@@ -69,27 +69,6 @@ const TIMES_OF_DAY = new Set<NonNullable<ReferenceFacets['timeOfDay']>>([
 ]);
 const SUBJECT_TYPES = new Set<ReferenceSubjectType>(Object.keys(SUBJECT_USES) as ReferenceSubjectType[]);
 const CONFIDENCE_FIELDS = new Set(['subject', 'links', 'use', 'facets']);
-const FACET_FIELDS = new Set<keyof ReferenceFacets>([
-  'framing',
-  'cameraElevation',
-  'viewDirection',
-  'identityCoverage',
-  'spaceType',
-  'timeOfDay',
-  'interactionType',
-  'spatialArrangement',
-  'lighting',
-  'visibility',
-  'appearanceState',
-  'expression',
-  'pose',
-  'activity',
-  'weather',
-  'season',
-  'physicalContact',
-  'screenPositions',
-  'heldProps',
-]);
 const FREE_TEXT_FACETS = new Set<keyof ReferenceFacets>([
   'interactionType',
   'spatialArrangement',
@@ -114,10 +93,14 @@ function cleanString(value: unknown): string | null {
   return cleaned || null;
 }
 
+/**
+ * Facets are enrichment, not structure: a single unknown key, misspelled controlled
+ * value, or empty phrase drops that one facet rather than terminally failing the
+ * whole classification. Only a facets payload that is not an object at all is a
+ * schema violation.
+ */
 function parseFacets(value: unknown, characterIds: ReadonlySet<string>): ReferenceFacets | null {
-  if (!isRecord(value) || Object.keys(value).some((key) => !FACET_FIELDS.has(key as keyof ReferenceFacets))) {
-    return null;
-  }
+  if (!isRecord(value)) return null;
 
   const facets: ReferenceFacets = {};
   const controlled = [
@@ -129,38 +112,32 @@ function parseFacets(value: unknown, characterIds: ReadonlySet<string>): Referen
     ['timeOfDay', TIMES_OF_DAY],
   ] as const;
   for (const [field, allowed] of controlled) {
-    if (value[field] === undefined) continue;
-    if (typeof value[field] !== 'string' || !(allowed as ReadonlySet<string>).has(value[field])) return null;
-    (facets as Record<string, unknown>)[field] = value[field];
+    if (typeof value[field] === 'string' && (allowed as ReadonlySet<string>).has(value[field])) {
+      (facets as Record<string, unknown>)[field] = value[field];
+    }
   }
 
   for (const field of FREE_TEXT_FACETS) {
-    if (value[field] === undefined) continue;
     const cleaned = cleanString(value[field]);
-    if (!cleaned) return null;
-    (facets as Record<string, unknown>)[field] = cleaned;
+    if (cleaned) (facets as Record<string, unknown>)[field] = cleaned;
   }
 
-  if (value.heldProps !== undefined) {
-    if (!Array.isArray(value.heldProps)) return null;
+  if (Array.isArray(value.heldProps)) {
     const heldProps: string[] = [];
     for (const item of value.heldProps) {
       const cleaned = cleanString(item);
-      if (!cleaned) return null;
-      if (!heldProps.includes(cleaned)) heldProps.push(cleaned);
+      if (cleaned && !heldProps.includes(cleaned)) heldProps.push(cleaned);
     }
-    facets.heldProps = heldProps;
+    if (heldProps.length) facets.heldProps = heldProps;
   }
 
-  if (value.screenPositions !== undefined) {
-    if (!isRecord(value.screenPositions)) return null;
+  if (isRecord(value.screenPositions)) {
     const screenPositions: Record<string, string> = {};
     for (const [characterId, position] of Object.entries(value.screenPositions)) {
       const cleaned = cleanString(position);
-      if (!characterIds.has(characterId) || !cleaned) return null;
-      screenPositions[characterId] = cleaned;
+      if (characterIds.has(characterId) && cleaned) screenPositions[characterId] = cleaned;
     }
-    facets.screenPositions = screenPositions;
+    if (Object.keys(screenPositions).length) facets.screenPositions = screenPositions;
   }
 
   return facets;
@@ -212,10 +189,11 @@ export function parseReferenceClassificationDraft(value: unknown): ReferenceClas
     return null;
   }
 
-  if (subjectType === 'character' && characterIds.length === 0) return null;
-  if (subjectType === 'interaction' && characterIds.length < 2) return null;
-  if (subjectType === 'location' && !locationId) return null;
-
+  // Subject/link requirements (a character image needs a character link, an
+  // interaction needs two, a location needs a location) are review conditions,
+  // not schema violations: an honest "this character is not in the roster yet"
+  // answer must land in needs-review via validateReferenceClassificationDraft,
+  // not die here as a terminal invalid-schema failure.
   const characterIdSet = new Set(characterIds);
   const facets = parseFacets(candidate.facets, characterIdSet);
   const confidence = parseConfidence(candidate.confidence);

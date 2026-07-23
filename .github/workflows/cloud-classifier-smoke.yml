@@ -1,0 +1,60 @@
+name: Cloud Classifier Live Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_live_api_charge:
+        description: 'I understand this sends paid live NanoGPT requests (one image + a few small vision calls)'
+        required: true
+        default: false
+        type: boolean
+      models:
+        description: 'Comma-separated chat model ids to probe (blank = built-in matrix)'
+        required: false
+        default: ''
+        type: string
+
+# The live API key is available only after the protected environment is approved.
+permissions: {}
+
+concurrency:
+  group: cloud-classifier-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  probe-classifier:
+    if: ${{ inputs.confirm_live_api_charge }}
+    environment:
+      name: nanogpt-live-test
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      NANOGPT_API_KEY: ${{ secrets.NANOGPT_API_KEY }}
+      SMOKE_MATRIX_MODELS: ${{ inputs.models }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run classifier matrix probe
+        run: npx vitest run --config vitest.smoke.config.ts scripts/classifier-matrix-smoke.ts
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: classifier-matrix-${{ github.run_id }}
+          path: .smoke-cache/
+          if-no-files-found: warn
+          retention-days: 7

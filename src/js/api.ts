@@ -214,7 +214,14 @@ async function chatCompletion(messages: ChatMessage[], options: ChatCompletionOp
   }
 
   const data = await res.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  // Some providers return content as an array of typed parts rather than a string.
+  const raw = data.choices?.[0]?.message?.content;
+  const content =
+    typeof raw === 'string'
+      ? raw
+      : Array.isArray(raw)
+        ? raw.map((part: any) => (typeof part === 'string' ? part : part?.text || '')).join('')
+        : '';
   appLogDebug(
     'chatCompletion',
     `Completed (model: ${model}, ${messages.length} messages, ${content.length} chars returned)`,
@@ -879,7 +886,9 @@ async function canClassifyReferenceImages(): Promise<boolean> {
 /**
  * Classify a reference image with a vision-capable model and return the raw response text.
  * Parsing and schema validation belong to the caller (`references/cloud-classifier.ts`),
- * so this stays a thin transport. Returns null when no usable model is configured.
+ * so this stays a thin transport. Returns null ONLY when no usable model is configured;
+ * an empty model response comes back as '' so it fails classification visibly instead of
+ * being mistaken for a configuration problem and retried forever.
  * Errors are thrown, not swallowed, so the classifier can distinguish a rate limit from
  * a bad answer.
  */
@@ -903,8 +912,10 @@ async function classifyReferenceImage(dataUrl: string, prompt: string): Promise<
       ],
     },
   ];
-  const response = await chatCompletion(messages, { model, maxTokens: 600, temperature: 0.1 });
-  return response?.trim() || null;
+  // Reasoning models spend completion tokens thinking before the JSON answer; 600
+  // was low enough to truncate them into an empty visible reply.
+  const response = await chatCompletion(messages, { model, maxTokens: 2000, temperature: 0.1 });
+  return typeof response === 'string' ? response.trim() : '';
 }
 
 /**
