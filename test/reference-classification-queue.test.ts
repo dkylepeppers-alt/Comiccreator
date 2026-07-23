@@ -344,6 +344,36 @@ describe('reference classification queue', () => {
     expect(unavailableRepository.listJobs).toHaveBeenCalledOnce();
   });
 
+  it('binds the default browser timer cleanup function to the global object', async () => {
+    const clearTimeout = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(function (this: typeof globalThis) {
+      if (this !== globalThis) throw new TypeError('Illegal invocation');
+    });
+    const setTimeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 1 as any);
+    try {
+      await repo.putJob({
+        id: 'classification-r1',
+        assetId: 'r1',
+        worldId: 'w1',
+        status: 'pending',
+        attemptCount: 0,
+        retryAt: undefined,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      classifier.classify.mockResolvedValue({ kind: 'waiting', reason: 'quota-busy', retryDelayMs: 1000 });
+      const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+      await queue.run();
+      queue.pause();
+
+      expect(setTimeout).toHaveBeenCalled();
+      expect(clearTimeout).toHaveBeenCalledWith(1);
+    } finally {
+      clearTimeout.mockRestore();
+      setTimeout.mockRestore();
+    }
+  });
+
   it('does not let an in-flight classifier overwrite a manual ready save', async () => {
     let resolveClassification!: (outcome: any) => void;
     classifier.classify.mockImplementation(
