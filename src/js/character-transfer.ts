@@ -56,6 +56,8 @@ interface SourceImage {
   id: string | null;
   dataUrl: string;
   thumbnailDataUrl?: string;
+  canonical?: Record<string, unknown>;
+  alias?: boolean;
 }
 
 function imageFingerprint(dataUrlValue: string): string {
@@ -73,35 +75,42 @@ function sourceImages(
 ): { valid: SourceImage[]; malformed: number } {
   const root = record(payload);
   const candidates = [
-    character.imageData,
-    ...(Array.isArray(character.images) ? character.images : []),
-    ...(Array.isArray(root?.references) ? root.references : []),
+    { value: character.imageData, canonical: false },
+    ...(Array.isArray(character.images) ? character.images : []).map((value) => ({ value, canonical: false })),
+    ...(Array.isArray(root?.references) ? root.references : []).map((value) => ({ value, canonical: true })),
   ];
   const valid: SourceImage[] = [];
   let malformed = 0;
   for (const candidate of candidates) {
-    if (candidate == null || candidate === '') continue;
-    const image = dataUrl(candidate);
+    const { value } = candidate;
+    if (value == null || value === '') continue;
+    const image = dataUrl(value);
     if (!image) malformed += 1;
     else if (!valid.some((current) => imageFingerprint(current.dataUrl) === imageFingerprint(image))) {
-      const source = record(candidate);
+      const source = record(value);
       valid.push({
         id: typeof source?.id === 'string' && source.id ? source.id : null,
         dataUrl: image,
         ...(typeof source?.thumbnailDataUrl === 'string' ? { thumbnailDataUrl: source.thumbnailDataUrl } : {}),
+        ...(candidate.canonical && source ? { canonical: source } : {}),
       });
+    } else {
+      const source = record(value);
+      const survivor = valid.find((current) => imageFingerprint(current.dataUrl) === imageFingerprint(image));
+      if (source && survivor && typeof source.id === 'string' && source.id) {
+        // Preserve a later canonical alias so its character relationship can be remapped to the surviving bytes.
+        valid.push({
+          id: source.id,
+          dataUrl: image,
+          alias: true,
+        });
+      }
     }
   }
   return { valid, malformed };
 }
 
-function canonicalCharacter(
-  source: Record<string, unknown>,
-  id: string,
-  worldId: string,
-  referenceId: string | null,
-  now: number,
-) {
+function canonicalCharacter(source: Record<string, unknown>, id: string, worldId: string, now: number) {
   const allowed = [
     'name',
     'genre',
@@ -117,8 +126,50 @@ function canonicalCharacter(
   const character: Record<string, unknown> = { id, worldId, linkedWorldId: worldId, updatedAt: now };
   for (const key of allowed) if (source[key] !== undefined) character[key] = source[key];
   if (character.createdAt === undefined) character.createdAt = now;
-  if (referenceId) character.preferredIdentityReferenceId = referenceId;
   return character;
+}
+
+function canonicalReferenceAsset(image: SourceImage, id: string, worldId: string, characterId: string, now: number) {
+  const asset: ReferenceAsset = {
+    id,
+    worldId,
+    dataUrl: image.dataUrl,
+    ...(image.thumbnailDataUrl ? { thumbnailDataUrl: image.thumbnailDataUrl } : {}),
+    subjectType: 'character',
+    use: 'identity',
+    characterIds: [characterId],
+    locationId: null,
+    facets: {},
+    description: '',
+    confidence: {},
+    provenance: { source: 'migrated', metadata: 'local' },
+    classificationState: 'pending',
+    acceptedAsIs: false,
+    autoUse: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const preserved = [
+    'subjectType',
+    'use',
+    'facets',
+    'description',
+    'confidence',
+    'proposedCharacterNames',
+    'proposedLocationName',
+    'provenance',
+    'classificationState',
+    'acceptedAsIs',
+    'autoUse',
+    'classificationVersion',
+    'createdAt',
+    'updatedAt',
+  ] as const;
+  const mutableAsset = asset as unknown as Record<string, unknown>;
+  for (const field of preserved) {
+    if (image.canonical?.[field] !== undefined) mutableAsset[field] = image.canonical[field];
+  }
+  return asset;
 }
 
 function pendingJob(asset: ReferenceAsset, now: number): ClassificationJob {
@@ -139,43 +190,47 @@ export function planCharacterImport(payload: unknown, options: CharacterImportOp
   const characterConflict = sourceId !== null && options.existingCharacterIds.includes(sourceId);
   const occupiedCharacterIds = new Set(options.existingCharacterIds);
   const occupiedReferenceIds = new Set(options.existingReferenceIds);
-  const mint = (occupied: Set<string>) => {
+  const mint = (occupied: Set<string>, reserved = new Set<string>()) => {
     let id = options.newId();
-    while (occupied.has(id)) id = options.newId();
+    while (occupied.has(id) || reserved.has(id)) id = options.newId();
     occupied.add(id);
     return id;
   };
   const id = sourceId && !characterConflict ? sourceId : mint(occupiedCharacterIds);
   const images = sourceImages(payload, source);
+  const incomingReferenceIds = new Set(images.valid.flatMap((image) => (image.id ? [image.id] : [])));
   const referenceConflicts: string[] = [];
   const referenceIdMap = new Map<string, string>();
-  const references = images.valid.map((image) => {
-    const assetId = image.id && !occupiedReferenceIds.has(image.id) ? image.id : mint(occupiedReferenceIds);
+  const assetIdByFingerprint = new Map<string, string>();
+  const references: ReferenceAsset[] = [];
+  for (const image of images.valid) {
+    const fingerprint = imageFingerprint(image.dataUrl);
+    const survivingId = assetIdByFingerprint.get(fingerprint);
+    if (image.alias && survivingId) {
+      if (image.id && !referenceIdMap.has(image.id)) referenceIdMap.set(image.id, survivingId);
+      continue;
+    }
+    const assetId =
+      image.id && !occupiedReferenceIds.has(image.id) ? image.id : mint(occupiedReferenceIds, incomingReferenceIds);
+    if (image.id && assetId === image.id) occupiedReferenceIds.add(assetId);
     if (image.id) {
       if (assetId !== image.id) referenceConflicts.push(image.id);
-      referenceIdMap.set(image.id, assetId);
+      if (!referenceIdMap.has(image.id)) referenceIdMap.set(image.id, assetId);
     }
-    const asset: ReferenceAsset = {
-      id: assetId,
-      worldId: options.worldId,
-      dataUrl: image.dataUrl,
-      ...(image.thumbnailDataUrl ? { thumbnailDataUrl: image.thumbnailDataUrl } : {}),
-      subjectType: 'character',
-      use: 'identity',
-      characterIds: [id],
-      locationId: null,
-      facets: {},
-      description: '',
-      confidence: {},
-      provenance: { source: 'migrated', metadata: 'local' },
-      classificationState: 'pending',
-      acceptedAsIs: false,
-      autoUse: true,
-      createdAt: options.now,
-      updatedAt: options.now,
-    };
-    return asset;
-  });
+    const asset = canonicalReferenceAsset(image, assetId, options.worldId, id, options.now);
+    references.push(asset);
+    assetIdByFingerprint.set(fingerprint, assetId);
+  }
+  const character = canonicalCharacter(source, id, options.worldId, options.now);
+  const preferredId =
+    typeof source.preferredIdentityReferenceId === 'string'
+      ? referenceIdMap.get(source.preferredIdentityReferenceId)
+      : references[0]?.id;
+  if (preferredId) character.preferredIdentityReferenceId = preferredId;
+  if (typeof source.identityAnchorImageId === 'string') {
+    const identityAnchorId = referenceIdMap.get(source.identityAnchorImageId);
+    if (identityAnchorId) character.identityAnchorImageId = identityAnchorId;
+  }
   return {
     preview: {
       name: source.name as string,
@@ -184,17 +239,7 @@ export function planCharacterImport(payload: unknown, options: CharacterImportOp
       malformedImageCount: images.malformed,
       idConflicts: [...(characterConflict && sourceId ? [sourceId] : []), ...referenceConflicts],
     },
-    character: canonicalCharacter(
-      source,
-      id,
-      options.worldId,
-      (typeof source.preferredIdentityReferenceId === 'string'
-        ? referenceIdMap.get(source.preferredIdentityReferenceId)
-        : undefined) ||
-        references[0]?.id ||
-        null,
-      options.now,
-    ),
+    character,
     references,
     jobs: references.map((asset) => pendingJob(asset, options.now)),
   };

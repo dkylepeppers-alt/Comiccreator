@@ -3,7 +3,7 @@ import type { PageModule } from '../utils.js';
 import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
-import { commitCharacterImport, planCharacterImport } from '../character-transfer.js';
+import { buildCharacterExport, commitCharacterImport, planCharacterImport } from '../character-transfer.js';
 import { localReferenceClassifier } from '../references/local-classifier.js';
 import {
   normalizeReferenceEditorSubject,
@@ -385,17 +385,23 @@ function cancelCharacterImport(): void {
 async function confirmCharacterImport(): Promise<void> {
   const worldId = (document.getElementById('character-import-world') as HTMLSelectElement | null)?.value;
   if (!worldId) return App.toast('Choose a destination world first', 'error');
+  let plan;
   try {
-    const plan = await importPlan(worldId);
+    plan = await importPlan(worldId);
     await commitCharacterImport(plan, { putBatch: DB.putBatch });
-    pendingCharacterImport = null;
-    App.hideModal();
-    App.toast(`Imported ${plan.preview.name}`, 'success');
-    if ((await localReferenceClassifier.getAvailability()).status === 'available')
-      void referenceClassificationQueue.run();
-    App.refreshPage();
   } catch (error) {
     App.toast(error instanceof Error ? error.message : 'Could not import the character', 'error');
+    return;
+  }
+  pendingCharacterImport = null;
+  App.hideModal();
+  App.toast(`Imported ${plan.preview.name}`, 'success');
+  App.refreshPage();
+  try {
+    if ((await localReferenceClassifier.getAvailability()).status === 'available')
+      void referenceClassificationQueue.run();
+  } catch {
+    // The committed import remains successful; model availability is best-effort and explicit.
   }
 }
 

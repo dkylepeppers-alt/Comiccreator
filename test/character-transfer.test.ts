@@ -185,4 +185,125 @@ describe('character transfer planning', () => {
       expect.objectContaining({ id: 'portrait', dataUrl: 'data:image/png;base64,TUFSQQ==' }),
     ]);
   });
+
+  it('preserves schema-v3 manual reference metadata while remapping canonical relationships', () => {
+    const exported = buildCharacterExport(
+      {
+        id: 'mara',
+        name: 'Mara',
+        preferredIdentityReferenceId: 'manual-portrait',
+        identityAnchorImageId: 'manual-portrait',
+      },
+      [
+        {
+          id: 'manual-portrait',
+          worldId: 'old-world',
+          dataUrl: 'data:image/png;base64,TUFSQQ==',
+          thumbnailDataUrl: 'data:image/png;base64,VEhVTUI=',
+          subjectType: 'character',
+          use: 'appearance',
+          characterIds: ['mara'],
+          locationId: null,
+          facets: { framing: 'medium' },
+          description: 'Manual portrait',
+          confidence: { subject: 0.4 },
+          proposedCharacterNames: ['Mara'],
+          proposedLocationName: null,
+          provenance: { source: 'uploaded', metadata: 'manual' },
+          classificationState: 'ready',
+          acceptedAsIs: true,
+          autoUse: false,
+          classificationVersion: 7,
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
+    );
+    const imported = planCharacterImport(exported, {
+      worldId: 'new-world',
+      existingCharacterIds: ['mara'],
+      existingReferenceIds: ['manual-portrait'],
+      newId: (() => {
+        const ids = ['mara-copy', 'portrait-copy'];
+        return () => ids.shift()!;
+      })(),
+      now: 100,
+    });
+
+    expect(imported.character).toMatchObject({
+      id: 'mara-copy',
+      worldId: 'new-world',
+      preferredIdentityReferenceId: 'portrait-copy',
+      identityAnchorImageId: 'portrait-copy',
+    });
+    expect(imported.references).toEqual([
+      expect.objectContaining({
+        id: 'portrait-copy',
+        worldId: 'new-world',
+        characterIds: ['mara-copy'],
+        subjectType: 'character',
+        use: 'appearance',
+        facets: { framing: 'medium' },
+        description: 'Manual portrait',
+        confidence: { subject: 0.4 },
+        provenance: { source: 'uploaded', metadata: 'manual' },
+        classificationState: 'ready',
+        acceptedAsIs: true,
+        autoUse: false,
+        classificationVersion: 7,
+        createdAt: 10,
+        updatedAt: 20,
+      }),
+    ]);
+  });
+
+  it('reserves incoming IDs before minting and remaps duplicate incoming IDs', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'duplicate' },
+        references: [
+          { id: 'duplicate', dataUrl: 'data:image/png;base64,QUFBQQ==', characterIds: ['mara'] },
+          { id: 'duplicate', dataUrl: 'data:image/png;base64,QkJCQg==', characterIds: ['mara'] },
+          { id: 'reserved-later', dataUrl: 'data:image/png;base64,Q0NDQw==', characterIds: ['mara'] },
+        ],
+      },
+      {
+        worldId: 'atlas',
+        existingCharacterIds: [],
+        existingReferenceIds: [],
+        newId: (() => {
+          const ids = ['reserved-later', 'minted-duplicate'];
+          return () => ids.shift()!;
+        })(),
+        now: 100,
+      },
+    );
+
+    expect(plan.references.map((reference) => reference.id)).toEqual([
+      'duplicate',
+      'minted-duplicate',
+      'reserved-later',
+    ]);
+    expect(new Set(plan.references.map((reference) => reference.id)).size).toBe(3);
+    expect(plan.character.preferredIdentityReferenceId).toBe('duplicate');
+  });
+
+  it('maps a later byte-deduplicated identity alias to its surviving reference', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'later-duplicate' },
+        references: [
+          { id: 'other', dataUrl: 'data:image/png;base64,T1RIRVI=', characterIds: ['mara'] },
+          { id: 'survivor', dataUrl: 'data:image/png;base64,TUFSQQ==', characterIds: ['mara'] },
+          { id: 'later-duplicate', dataUrl: 'data:image/jpeg;base64,TUFSQQ==', characterIds: ['mara'] },
+        ],
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+
+    expect(plan.references.map((reference) => reference.id)).toEqual(['other', 'survivor']);
+    expect(plan.character.preferredIdentityReferenceId).toBe('survivor');
+  });
 });
