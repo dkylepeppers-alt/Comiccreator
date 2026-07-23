@@ -110,6 +110,10 @@ export interface ClassificationErrorDetails {
   mode?: 'local';
   message?: string;
   retryDelayMs?: number;
+  /** Allowlisted ML Kit code for local diagnostics; native messages are never retained. */
+  nativeCode?: number;
+  /** Native response path used before TypeScript schema validation. */
+  nativeMode?: 'structured' | 'text';
   validationReason?: string;
   queueState?: ClassificationJobStatus;
   /** A safe, bounded model-output excerpt retained only for parse diagnostics. */

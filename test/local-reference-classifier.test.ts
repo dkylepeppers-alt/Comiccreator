@@ -128,6 +128,66 @@ describe('local reference classifier', () => {
     expect((result as any).error).not.toHaveProperty('message');
   });
 
+  it('uses typed native retry details for busy and background conditions', async () => {
+    const busy = Object.assign(new Error('native details must not be parsed'), {
+      code: 'busy',
+      data: { nativeCode: 9, retryDelayMs: 45_000, mode: 'structured' },
+    });
+    const background = Object.assign(new Error('native details must not be parsed'), {
+      code: 'background-use-blocked',
+      data: { nativeCode: 30, retryDelayMs: 20_000, mode: 'text' },
+    });
+    const plugin = {
+      classify: vi.fn().mockRejectedValueOnce(busy).mockRejectedValueOnce(background),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    };
+    const classifier = createLocalReferenceClassifier(plugin);
+
+    await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toEqual({
+      kind: 'waiting',
+      reason: 'quota-busy',
+      retryDelayMs: 45_000,
+    });
+    await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toEqual({
+      kind: 'waiting',
+      reason: 'app-background',
+      retryDelayMs: 20_000,
+    });
+  });
+
+  it('retains safe native mode and error-code data without retaining native messages', async () => {
+    const nativeFailure = Object.assign(new Error('private prompt and roster'), {
+      code: 'request-too-large',
+      data: { nativeCode: 12, mode: 'structured' },
+    });
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockRejectedValue(nativeFailure),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    const result = await classifier.classify({ asset, world, characters: [], locations: [] });
+    expect(result).toMatchObject({
+      kind: 'failure',
+      error: { stage: 'inference', code: 'inference-failed', nativeCode: 12, nativeMode: 'structured' },
+    });
+    expect((result as any).error).not.toHaveProperty('message');
+  });
+
+  it('accepts the native structured-output mode with validated JSON', async () => {
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: validJson, mode: 'structured' as const }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'classified',
+      classification: { subjectType: 'character' },
+    });
+  });
+
   it('extracts a fenced JSON object surrounded by model prose', async () => {
     const classifier = createLocalReferenceClassifier({
       classify: vi.fn().mockResolvedValue({ text: `Here is the result:\n\`\`\`json\n${validJson}\n\`\`\`` }),

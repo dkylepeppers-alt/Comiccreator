@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Structured-output response classes are instantiated by ML Kit's generated parser.
+-keep class com.dkylepeppers.comiccreator.ReferenceClassificationOutput { *; }
+-keep class com.dkylepeppers.comiccreator.ReferenceFacetsOutput { *; }
+-keep class com.dkylepeppers.comiccreator.ReferenceConfidenceOutput { *; }
