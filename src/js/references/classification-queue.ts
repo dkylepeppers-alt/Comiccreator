@@ -60,6 +60,12 @@ function nextClassificationVersion(asset: ReferenceAsset): number {
   return (asset.classificationVersion || 0) + 1;
 }
 
+/** Character links pinned at upload time always survive classification, even when the model misses them. */
+function withPinnedCharacterIds(asset: ReferenceAsset, characterIds: string[]): string[] {
+  const pinned = asset.pinnedCharacterIds || [];
+  return pinned.length ? [...new Set([...pinned, ...characterIds])] : characterIds;
+}
+
 function diagnostic(asset: ReferenceAsset, error: ClassificationErrorDetails, now: number): ClassificationDiagnostic {
   return {
     id: `diagnostic-${asset.id}-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -220,6 +226,7 @@ export function createClassificationQueue({
       {
         ...asset,
         ...outcome.classification,
+        characterIds: withPinnedCharacterIds(asset, outcome.classification.characterIds),
         provenance: { ...asset.provenance, metadata: outcome.backend ?? 'local' },
         classificationState: needsReview ? 'needs-review' : 'ready',
         acceptedAsIs: false,

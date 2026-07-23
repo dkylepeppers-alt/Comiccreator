@@ -2,7 +2,6 @@
 import type { PageModule } from '../utils.js';
 import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
-import API from '../api.js';
 import {
   normalizeReferenceEditorSubject,
   readReferenceEditorForm,
@@ -13,9 +12,11 @@ import {
   addUploadedReference,
   closeReferenceEditor,
   fileToDataUrl,
+  openGenerateReferenceDialog,
   openReferenceEditor,
   referenceRepository,
   referenceWorkspace,
+  submitGenerateReference,
 } from '../reference-workspace-runtime.js';
 
 let editingId: string | null = null;
@@ -135,7 +136,7 @@ async function renderEditor(): Promise<string> {
               </div>
             </div>
           </section>
-          <input type="file" id="reference-upload-input" class="hidden" accept="image/*" data-action-change="handleReferenceUpload">
+          <input type="file" id="reference-upload-input" class="hidden" accept="image/*" multiple data-action-change="handleReferenceUpload">
           ${workspaceHtml}`
         : `<section class="card reference-save-first"><strong>Save the world to open its reference archive.</strong><span>Locations, characters, and visual evidence all need a stable world ID.</span></section>`
     }
@@ -203,22 +204,24 @@ function uploadReference(): void {
 }
 
 async function handleReferenceUpload(input: HTMLInputElement): Promise<void> {
-  if (!editingId || !input.files?.[0]) return;
-  await addUploadedReference({ worldId: editingId, dataUrl: await fileToDataUrl(input.files[0]) });
+  if (!editingId || !input.files?.length) return;
+  const files = Array.from(input.files);
+  for (const file of files) {
+    await addUploadedReference({ worldId: editingId, dataUrl: await fileToDataUrl(file) });
+  }
   input.value = '';
-  App.toast('Reference added and queued for local review', 'success');
+  App.toast(
+    files.length === 1
+      ? 'Reference added and queued for local review'
+      : `${files.length} references added and queued for local review`,
+    'success',
+  );
   App.refreshPage();
 }
 
 async function generateReference(): Promise<void> {
   if (!editingId) return;
-  const promptText = window.prompt('Describe the world reference to generate');
-  if (!promptText?.trim()) return;
-  const dataUrl = await API.generateRefVariation(null, promptText.trim(), {});
-  if (!dataUrl) return App.toast('Reference generation failed', 'error');
-  await addUploadedReference({ worldId: editingId, dataUrl, source: 'generated' });
-  App.toast('Generated reference added', 'success');
-  App.refreshPage();
+  await openGenerateReferenceDialog({ worldId: editingId });
 }
 
 function setReferenceFilter(filter: ReferenceFilter): void {
@@ -334,6 +337,7 @@ const WorldsPage: PageModule & Record<string, any> = {
   'preview-reference': previewReference,
   'upload-reference': uploadReference,
   'generate-reference': generateReference,
+  'submit-generate-reference': submitGenerateReference,
   exportWorld,
   deleteWorld,
 };

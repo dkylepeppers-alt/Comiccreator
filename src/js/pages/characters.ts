@@ -2,7 +2,6 @@
 import type { PageModule } from '../utils.js';
 import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
-import API from '../api.js';
 import { buildCharacterExport, commitCharacterImport, planCharacterImport } from '../character-transfer.js';
 import {
   normalizeReferenceEditorSubject,
@@ -15,10 +14,12 @@ import {
   closeReferenceEditor,
   fileToDataUrl,
   isAnyClassifierAvailable,
+  openGenerateReferenceDialog,
   openReferenceEditor,
   referenceClassificationQueue,
   referenceRepository,
   referenceWorkspace,
+  submitGenerateReference,
 } from '../reference-workspace-runtime.js';
 
 let editingId: string | null = null;
@@ -157,7 +158,7 @@ async function renderEditor(): Promise<string> {
     </section>
     ${
       editingId
-        ? `<input type="file" id="reference-upload-input" class="hidden" accept="image/*" data-action-change="handleReferenceUpload">${workspaceHtml}`
+        ? `<input type="file" id="reference-upload-input" class="hidden" accept="image/*" multiple data-action-change="handleReferenceUpload">${workspaceHtml}`
         : `<section class="card reference-save-first"><strong>Save the character to open its reference view.</strong><span>It will use the same records as ${escHtml(world.name)}.</span></section>`
     }
   </div>`;
@@ -220,34 +221,28 @@ function uploadReference(): void {
 }
 
 async function handleReferenceUpload(input: HTMLInputElement): Promise<void> {
-  if (!editingId || !parentWorldId || !input.files?.[0]) return;
-  await addUploadedReference({
-    worldId: parentWorldId,
-    characterId: editingId,
-    dataUrl: await fileToDataUrl(input.files[0]),
-  });
+  if (!editingId || !parentWorldId || !input.files?.length) return;
+  const files = Array.from(input.files);
+  for (const file of files) {
+    await addUploadedReference({
+      worldId: parentWorldId,
+      characterId: editingId,
+      dataUrl: await fileToDataUrl(file),
+    });
+  }
   input.value = '';
-  App.toast('Character reference queued for local review', 'success');
+  App.toast(
+    files.length === 1
+      ? 'Character reference queued for local review'
+      : `${files.length} character references queued for local review`,
+    'success',
+  );
   App.refreshPage();
 }
 
 async function generateReference(): Promise<void> {
   if (!editingId || !parentWorldId) return;
-  const promptText = window.prompt('Describe the character reference to generate');
-  if (!promptText?.trim()) return;
-  const identity = (await referenceRepository.listByCharacter(parentWorldId, editingId)).find(
-    (asset) => asset.subjectType === 'character' && asset.use === 'identity' && asset.autoUse,
-  );
-  const dataUrl = await API.generateRefVariation(identity?.dataUrl || null, promptText.trim(), {});
-  if (!dataUrl) return App.toast('Reference generation failed', 'error');
-  await addUploadedReference({
-    worldId: parentWorldId,
-    characterId: editingId,
-    dataUrl,
-    source: 'generated',
-  });
-  App.toast('Generated character reference added', 'success');
-  App.refreshPage();
+  await openGenerateReferenceDialog({ worldId: parentWorldId, characterId: editingId });
 }
 
 function setReferenceFilter(filter: ReferenceFilter): void {
@@ -441,6 +436,7 @@ const CharactersPage: PageModule & Record<string, any> = {
   'preview-reference': previewReference,
   'upload-reference': uploadReference,
   'generate-reference': generateReference,
+  'submit-generate-reference': submitGenerateReference,
   importCharacter,
   previewCharacterImport,
   confirmCharacterImport,

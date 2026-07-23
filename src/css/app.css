@@ -2114,6 +2114,43 @@ textarea:focus-visible {
   object-fit: contain;
 }
 
+.generate-ref-sources {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.generate-ref-option {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+}
+
+.generate-ref-option img {
+  border-radius: var(--radius-sm);
+  height: 80px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.generate-ref-option span {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.generate-ref-option:has(input:checked) {
+  border-color: #35d0ba;
+  outline: 2px solid rgba(53, 208, 186, 0.5);
+}
+
 .reference-filter:focus-visible,
 .reference-preview:focus-visible,
 .reference-entity-link:focus-visible,

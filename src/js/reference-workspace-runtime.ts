@@ -7,6 +7,7 @@ import type { ClassifierOrder } from './references/classifier-router.js';
 import { createCloudReferenceClassifier } from './references/cloud-classifier.js';
 import { localReferenceClassifier } from './references/local-classifier.js';
 import { createReferenceRepository } from './references/repository.js';
+import { readGenerateReferenceDialog, renderGenerateReferenceDialog } from './reference-generation-dialog.js';
 import type { ReferenceAsset } from './references/types.js';
 
 export const referenceRepository = createReferenceRepository();
@@ -164,6 +165,7 @@ export async function addUploadedReference({
     subjectType: null,
     use: null,
     characterIds: characterId ? [characterId] : [],
+    ...(characterId ? { pinnedCharacterIds: [characterId] } : {}),
     locationId: null,
     facets: {},
     description: '',
@@ -176,7 +178,79 @@ export async function addUploadedReference({
     updatedAt: now,
   };
   await referenceRepository.putAsset(asset);
-  await referenceClassificationQueue.enqueue(asset.id);
-  void referenceClassificationQueue.run();
+  void referenceClassificationQueue.enqueue(asset.id).catch((err) => {
+    App.logError('addUploadedReference', err, `Failed to queue reference ${asset.id} for classification`);
+    App.toast('Reference saved, but automatic classification failed to start', 'error');
+  });
   return asset;
+}
+
+let generateReferenceWorldId: string | null = null;
+
+/**
+ * Open the shared "Generate reference" dialog for a world. The user picks the
+ * target character and which existing reference images to send to the model.
+ */
+export async function openGenerateReferenceDialog({
+  worldId,
+  characterId = null,
+}: {
+  worldId: string;
+  characterId?: string | null;
+}): Promise<void> {
+  const [world, allCharacters, references] = await Promise.all([
+    DB.get(DB.STORES.worlds, worldId),
+    DB.getAll(DB.STORES.characters),
+    referenceRepository.listByWorld(worldId),
+  ]);
+  if (!world) return;
+  generateReferenceWorldId = worldId;
+  const characters = allCharacters
+    .filter((character) => (character.worldId || character.linkedWorldId) === worldId)
+    .map(({ id, name }) => ({ id, name }));
+  App.showModal(
+    renderGenerateReferenceDialog({
+      worldName: world.name,
+      characters,
+      references,
+      defaultCharacterId: characterId,
+    }),
+  );
+  document.querySelector<HTMLElement>('#modal-content [autofocus]')?.focus();
+}
+
+/** Submit handler for the dialog; generates the image and stores it as a new reference. */
+export async function submitGenerateReference(): Promise<void> {
+  const worldId = generateReferenceWorldId;
+  const root = document.getElementById('modal-content');
+  if (!worldId || !root) return;
+  const { prompt, characterId, referenceIds } = readGenerateReferenceDialog(root);
+  if (!prompt) return App.toast('Describe the reference to generate', 'error');
+  const submit = root.querySelector<HTMLButtonElement>('[data-generate-ref-submit]');
+  if (submit?.disabled) return;
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Generating…';
+  }
+  try {
+    const sources = await Promise.all(referenceIds.map((id) => referenceRepository.getAsset(id)));
+    const imageDataUrls = sources.map((asset) => asset?.dataUrl).filter((dataUrl): dataUrl is string => !!dataUrl);
+    const dataUrl = await API.generateRefVariation(null, prompt, { imageDataUrls });
+    if (!dataUrl) return App.toast('Reference generation failed', 'error');
+    await addUploadedReference({
+      worldId,
+      characterId: characterId || undefined,
+      dataUrl,
+      source: 'generated',
+    });
+    generateReferenceWorldId = null;
+    App.hideModal();
+    App.toast('Generated reference added', 'success');
+    App.refreshPage();
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Generate';
+    }
+  }
 }
