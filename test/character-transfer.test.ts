@@ -306,4 +306,108 @@ describe('character transfer planning', () => {
     expect(plan.references.map((reference) => reference.id)).toEqual(['other', 'survivor']);
     expect(plan.character.preferredIdentityReferenceId).toBe('survivor');
   });
+
+  it('keeps later authoritative manual metadata when byte dedupe merges canonical references', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara', preferredIdentityReferenceId: 'manual-copy' },
+        references: [
+          {
+            id: 'local-copy',
+            dataUrl: 'data:image/png;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            provenance: { source: 'uploaded', metadata: 'local' },
+            classificationState: 'pending',
+            description: 'Queued local copy',
+          },
+          {
+            id: 'manual-copy',
+            dataUrl: 'data:image/jpeg;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            provenance: { source: 'uploaded', metadata: 'manual' },
+            classificationState: 'ready',
+            acceptedAsIs: true,
+            autoUse: false,
+            description: 'Authoritative manual copy',
+            facets: { framing: 'medium' },
+          },
+        ],
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+
+    expect(plan.references).toEqual([
+      expect.objectContaining({
+        id: 'local-copy',
+        provenance: { source: 'uploaded', metadata: 'manual' },
+        classificationState: 'ready',
+        acceptedAsIs: true,
+        autoUse: false,
+        description: 'Authoritative manual copy',
+        facets: { framing: 'medium' },
+      }),
+    ]);
+    expect(plan.character.preferredIdentityReferenceId).toBe('local-copy');
+  });
+
+  it('canonicalizes malformed accepted character and reference fields before planning writes', () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: {
+          id: 'mara',
+          name: 'Mara',
+          role: 'hero',
+          description: 42,
+          defaultVisualState: {
+            wardrobeDescription: 'blue coat',
+            carriedItems: ['satchel', 7],
+            injuries: 'not-an-array',
+          },
+          defaultVisualStateSources: { wardrobeDescription: 'manual', carriedItems: 'invalid' },
+        },
+        references: [
+          {
+            id: 'portrait',
+            dataUrl: 'data:image/png;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            subjectType: 'not-a-subject',
+            use: 'not-a-use',
+            facets: { framing: 'not-a-frame', heldProps: ['satchel', 9], screenPositions: { mara: 4 } },
+            description: 9,
+            confidence: { subject: 'high', links: 1.2, use: 0.8 },
+            proposedCharacterNames: ['Mara', 4],
+            proposedLocationName: 9,
+            provenance: { source: 'remote', metadata: 'manual' },
+            classificationState: 'unknown',
+            acceptedAsIs: 'yes',
+            autoUse: 0,
+            classificationVersion: -1,
+          },
+        ],
+      },
+      { worldId: 'atlas', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+
+    expect(plan.character).toMatchObject({ role: 'hero', defaultVisualState: { carriedItems: ['satchel'] } });
+    expect(plan.character).not.toHaveProperty('description');
+    expect(plan.character.defaultVisualState).not.toHaveProperty('injuries');
+    expect(plan.character.defaultVisualStateSources).toEqual({ wardrobeDescription: 'manual' });
+    expect(plan.references).toEqual([
+      expect.objectContaining({
+        subjectType: 'character',
+        use: 'identity',
+        facets: { heldProps: ['satchel'] },
+        description: '',
+        confidence: { use: 0.8 },
+        proposedCharacterNames: ['Mara'],
+        provenance: { source: 'migrated', metadata: 'local' },
+        classificationState: 'pending',
+        acceptedAsIs: false,
+        autoUse: true,
+      }),
+    ]);
+    expect(plan.references[0]).not.toHaveProperty('classificationVersion');
+  });
 });

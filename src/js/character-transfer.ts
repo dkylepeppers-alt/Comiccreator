@@ -1,4 +1,10 @@
-import type { ClassificationJob, ReferenceAsset } from './references/types.js';
+import type {
+  ClassificationJob,
+  ReferenceAsset,
+  ReferenceFacets,
+  ReferenceSubjectType,
+  ReferenceUse,
+} from './references/types.js';
 
 export interface CharacterImportPreview {
   name: string;
@@ -69,6 +75,14 @@ function imageFingerprint(dataUrlValue: string): string {
   }
 }
 
+function canonicalAuthority(value: Record<string, unknown> | undefined): number {
+  const provenance = record(value?.provenance);
+  if (provenance?.metadata === 'manual' || provenance?.metadata === 'accepted' || value?.acceptedAsIs === true) {
+    return 2;
+  }
+  return value ? 1 : 0;
+}
+
 function sourceImages(
   payload: unknown,
   character: Record<string, unknown>,
@@ -98,6 +112,10 @@ function sourceImages(
       const source = record(value);
       const survivor = valid.find((current) => imageFingerprint(current.dataUrl) === imageFingerprint(image));
       if (source && survivor && typeof source.id === 'string' && source.id) {
+        if (candidate.canonical && canonicalAuthority(source) > canonicalAuthority(survivor.canonical)) {
+          survivor.canonical = { ...(survivor.canonical || {}), ...source };
+          if (typeof source.thumbnailDataUrl === 'string') survivor.thumbnailDataUrl = source.thumbnailDataUrl;
+        }
         // Preserve a later canonical alias so its character relationship can be remapped to the surviving bytes.
         valid.push({
           id: source.id,
@@ -110,23 +128,142 @@ function sourceImages(
   return { valid, malformed };
 }
 
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
 function canonicalCharacter(source: Record<string, unknown>, id: string, worldId: string, now: number) {
-  const allowed = [
-    'name',
-    'genre',
-    'role',
-    'description',
-    'appearance',
-    'backstory',
-    'powers',
-    'defaultVisualState',
-    'defaultVisualStateSources',
-    'createdAt',
-  ];
-  const character: Record<string, unknown> = { id, worldId, linkedWorldId: worldId, updatedAt: now };
-  for (const key of allowed) if (source[key] !== undefined) character[key] = source[key];
-  if (character.createdAt === undefined) character.createdAt = now;
+  const character: Record<string, unknown> = {
+    id,
+    worldId,
+    linkedWorldId: worldId,
+    name: source.name,
+    createdAt: typeof source.createdAt === 'number' && Number.isFinite(source.createdAt) ? source.createdAt : now,
+    updatedAt: now,
+  };
+  for (const key of ['genre', 'role', 'description', 'appearance', 'backstory', 'powers'] as const) {
+    const value = stringValue(source[key]);
+    if (value !== undefined) character[key] = value;
+  }
+  const sourceDefaults = record(source.defaultVisualState);
+  if (sourceDefaults) {
+    const defaults: Record<string, unknown> = {};
+    for (const key of ['wardrobeDescription', 'hairState'] as const) {
+      const value = stringValue(sourceDefaults[key]);
+      if (value !== undefined) defaults[key] = value;
+    }
+    for (const key of ['carriedItems', 'injuries', 'temporaryChanges'] as const) {
+      const value = stringList(sourceDefaults[key]);
+      if (value !== undefined) defaults[key] = value;
+    }
+    character.defaultVisualState = defaults;
+  }
+  const sourceDefaultsSources = record(source.defaultVisualStateSources);
+  if (sourceDefaultsSources) {
+    const sources: Record<string, 'local' | 'manual'> = {};
+    for (const key of ['wardrobeDescription', 'hairState', 'carriedItems', 'injuries', 'temporaryChanges'] as const) {
+      const value = sourceDefaultsSources[key];
+      if (value === 'local' || value === 'manual') sources[key] = value;
+    }
+    character.defaultVisualStateSources = sources;
+  }
   return character;
+}
+
+const SUBJECT_TYPES = new Set<ReferenceSubjectType>(['character', 'location', 'interaction', 'prop', 'style']);
+const REFERENCE_USES = new Set<ReferenceUse>([
+  'identity',
+  'appearance',
+  'expression',
+  'pose',
+  'action',
+  'establishing',
+  'spatial',
+  'landmark',
+  'detail',
+  'relationship',
+  'design',
+  'state',
+  'rendering',
+]);
+const FACET_ENUMS = {
+  framing: new Set([
+    'extreme-close-up',
+    'close-up',
+    'medium-close-up',
+    'medium',
+    'three-quarter',
+    'full-body',
+    'wide',
+    'establishing',
+    'detail',
+  ]),
+  cameraElevation: new Set(['eye-level', 'high', 'low', 'overhead', 'aerial', 'ground-level']),
+  viewDirection: new Set([
+    'front',
+    'three-quarter-front',
+    'left-profile',
+    'right-profile',
+    'three-quarter-rear',
+    'rear',
+  ]),
+  identityCoverage: new Set(['face', 'upper-body', 'full-body']),
+  spaceType: new Set(['interior', 'exterior', 'threshold']),
+  timeOfDay: new Set(['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night']),
+} as const;
+
+function canonicalFacets(value: unknown): ReferenceFacets {
+  const source = record(value);
+  if (!source) return {};
+  const facets: Record<string, unknown> = {};
+  for (const [key, values] of Object.entries(FACET_ENUMS)) {
+    const candidate = source[key];
+    if (typeof candidate === 'string' && values.has(candidate as never)) facets[key] = candidate;
+  }
+  for (const key of [
+    'interactionType',
+    'spatialArrangement',
+    'lighting',
+    'visibility',
+    'appearanceState',
+    'expression',
+    'pose',
+    'activity',
+    'weather',
+    'season',
+    'physicalContact',
+  ]) {
+    const candidate = stringValue(source[key]);
+    if (candidate !== undefined) facets[key] = candidate;
+  }
+  const heldProps = stringList(source.heldProps);
+  if (heldProps !== undefined) facets.heldProps = heldProps;
+  const screenPositions = record(source.screenPositions);
+  if (screenPositions) {
+    const positions = Object.fromEntries(
+      Object.entries(screenPositions).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+    if (Object.keys(positions).length) facets.screenPositions = positions;
+  }
+  return facets as ReferenceFacets;
+}
+
+function canonicalConfidence(value: unknown): ReferenceAsset['confidence'] {
+  const source = record(value);
+  if (!source) return {};
+  return Object.fromEntries(
+    ['subject', 'links', 'use', 'facets'].flatMap((key) => {
+      const candidate = source[key];
+      return typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0 && candidate <= 1
+        ? [[key, candidate]]
+        : [];
+    }),
+  ) as ReferenceAsset['confidence'];
 }
 
 function canonicalReferenceAsset(image: SourceImage, id: string, worldId: string, characterId: string, now: number) {
@@ -149,25 +286,52 @@ function canonicalReferenceAsset(image: SourceImage, id: string, worldId: string
     createdAt: now,
     updatedAt: now,
   };
-  const preserved = [
-    'subjectType',
-    'use',
-    'facets',
-    'description',
-    'confidence',
-    'proposedCharacterNames',
-    'proposedLocationName',
-    'provenance',
-    'classificationState',
-    'acceptedAsIs',
-    'autoUse',
-    'classificationVersion',
-    'createdAt',
-    'updatedAt',
-  ] as const;
-  const mutableAsset = asset as unknown as Record<string, unknown>;
-  for (const field of preserved) {
-    if (image.canonical?.[field] !== undefined) mutableAsset[field] = image.canonical[field];
+  const canonical = image.canonical;
+  if (!canonical) return asset;
+  const subjectType = canonical.subjectType;
+  if (typeof subjectType === 'string' && SUBJECT_TYPES.has(subjectType as ReferenceSubjectType)) {
+    asset.subjectType = subjectType as ReferenceSubjectType;
+  }
+  const use = canonical.use;
+  if (typeof use === 'string' && REFERENCE_USES.has(use as ReferenceUse)) asset.use = use as ReferenceUse;
+  asset.facets = canonicalFacets(canonical.facets);
+  asset.description = stringValue(canonical.description) || '';
+  asset.confidence = canonicalConfidence(canonical.confidence);
+  const proposedCharacterNames = stringList(canonical.proposedCharacterNames);
+  if (proposedCharacterNames !== undefined) asset.proposedCharacterNames = proposedCharacterNames;
+  const proposedLocationName = canonical.proposedLocationName;
+  if (proposedLocationName === null) asset.proposedLocationName = null;
+  else if (typeof proposedLocationName === 'string') asset.proposedLocationName = proposedLocationName;
+  const provenance = record(canonical.provenance);
+  if (
+    provenance &&
+    (provenance.source === 'uploaded' || provenance.source === 'generated' || provenance.source === 'migrated') &&
+    (provenance.metadata === 'local' || provenance.metadata === 'manual' || provenance.metadata === 'accepted')
+  ) {
+    asset.provenance = provenance as ReferenceAsset['provenance'];
+  }
+  if (
+    canonical.classificationState === 'pending' ||
+    canonical.classificationState === 'ready' ||
+    canonical.classificationState === 'needs-review' ||
+    canonical.classificationState === 'could-not-classify'
+  ) {
+    asset.classificationState = canonical.classificationState;
+  }
+  if (typeof canonical.acceptedAsIs === 'boolean') asset.acceptedAsIs = canonical.acceptedAsIs;
+  if (typeof canonical.autoUse === 'boolean') asset.autoUse = canonical.autoUse;
+  if (
+    typeof canonical.classificationVersion === 'number' &&
+    Number.isInteger(canonical.classificationVersion) &&
+    canonical.classificationVersion >= 0
+  ) {
+    asset.classificationVersion = canonical.classificationVersion;
+  }
+  if (typeof canonical.createdAt === 'number' && Number.isFinite(canonical.createdAt)) {
+    asset.createdAt = canonical.createdAt;
+  }
+  if (typeof canonical.updatedAt === 'number' && Number.isFinite(canonical.updatedAt)) {
+    asset.updatedAt = canonical.updatedAt;
   }
   return asset;
 }
@@ -179,6 +343,7 @@ function pendingJob(asset: ReferenceAsset, now: number): ClassificationJob {
     worldId: asset.worldId,
     status: 'pending',
     attemptCount: 0,
+    assetVersion: asset.classificationVersion,
     createdAt: now,
     updatedAt: now,
   };

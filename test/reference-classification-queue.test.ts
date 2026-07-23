@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClassificationQueue, isAutomaticallyEligible } from '../src/js/references/classification-queue.js';
+import { planCharacterImport } from '../src/js/character-transfer.js';
 import { createReferenceRepository } from '../src/js/references/repository.js';
 import { createReferenceWorkspace } from '../src/js/reference-workspace.js';
 import type {
@@ -125,6 +126,36 @@ describe('reference classification queue', () => {
       characterIds: ['mara'],
     });
     expect(await repo.getJobByAsset('r1')).toMatchObject({ status: 'complete', attemptCount: 1 });
+  });
+
+  it('claims and processes a versioned pending asset imported from a schema-v3 character', async () => {
+    const plan = planCharacterImport(
+      {
+        schemaVersion: 3,
+        character: { id: 'mara', name: 'Mara' },
+        references: [
+          {
+            id: 'portrait',
+            dataUrl: 'data:image/png;base64,TUFSQQ==',
+            characterIds: ['mara'],
+            provenance: { source: 'uploaded', metadata: 'local' },
+            classificationState: 'pending',
+            classificationVersion: 7,
+          },
+        ],
+      },
+      { worldId: 'w1', existingCharacterIds: [], existingReferenceIds: [], newId: () => 'unused', now: 100 },
+    );
+    expect(plan.jobs[0].assetVersion).toBe(7);
+    await repo.putAssetAndJob(plan.references[0], plan.jobs[0]);
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.run();
+
+    expect(classifier.classify).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'portrait', classificationVersion: 7 }),
+    );
+    expect(await repo.getJobByAsset('portrait')).toMatchObject({ status: 'complete', assetVersion: 7 });
   });
 
   it('keeps failures reviewable and supports accept as-is', async () => {
