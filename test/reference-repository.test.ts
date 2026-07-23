@@ -235,6 +235,35 @@ describe('reference repository', () => {
     );
   });
 
+  it('persists allowlisted native diagnostic metadata', async () => {
+    await repo.recordDiagnostic({
+      id: 'native-metadata',
+      assetId: 'r1',
+      worldId: 'w1',
+      createdAt: Date.now(),
+      error: {
+        stage: 'validation',
+        code: 'invalid-schema',
+        mode: 'local',
+        nativeCode: 12,
+        nativeMode: 'structured',
+      },
+    });
+
+    await expect(repo.listDiagnostics('r1')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'native-metadata',
+        error: expect.objectContaining({
+          stage: 'validation',
+          code: 'invalid-schema',
+          mode: 'local',
+          nativeCode: 12,
+          nativeMode: 'structured',
+        }),
+      }),
+    ]);
+  });
+
   it('prunes expired diagnostics during reads even when no new diagnostic is written', async () => {
     memory.put('classificationDiagnostics', {
       id: 'stale',

@@ -188,6 +188,34 @@ describe('local reference classifier', () => {
     });
   });
 
+  it('reports the buggy stringified-characterIds structured payload as invalid-schema with diagnostics', async () => {
+    const stringifiedListJson = JSON.stringify({
+      subjectType: 'character',
+      use: 'identity',
+      characterIds: '[mara]',
+      locationId: null,
+      facets: { framing: 'medium' },
+      description: 'Mara at the gate.',
+      confidence: { subject: 0.9, links: 0.8, use: 0.9, facets: 0.8 },
+    });
+    const classifier = createLocalReferenceClassifier({
+      classify: vi.fn().mockResolvedValue({ text: stringifiedListJson, mode: 'structured' as const }),
+      getAvailability: vi.fn().mockResolvedValue({ status: 'available' as const }),
+      download: vi.fn(),
+    });
+
+    await expect(classifier.classify({ asset, world, characters: [mara], locations: [yard] })).resolves.toMatchObject({
+      kind: 'failure',
+      error: {
+        stage: 'validation',
+        code: 'invalid-schema',
+        mode: 'local',
+        nativeMode: 'structured',
+        rawOutputExcerpt: stringifiedListJson,
+      },
+    });
+  });
+
   it('extracts a fenced JSON object surrounded by model prose', async () => {
     const classifier = createLocalReferenceClassifier({
       classify: vi.fn().mockResolvedValue({ text: `Here is the result:\n\`\`\`json\n${validJson}\n\`\`\`` }),

@@ -116,7 +116,7 @@ export interface ClassificationErrorDetails {
   nativeMode?: 'structured' | 'text';
   validationReason?: string;
   queueState?: ClassificationJobStatus;
-  /** A safe, bounded model-output excerpt retained only for parse diagnostics. */
+  /** A safe, bounded model-output excerpt retained only for parse and schema-validation diagnostics. */
   rawOutputExcerpt?: string;
 }
 
