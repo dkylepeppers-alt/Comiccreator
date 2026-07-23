@@ -132,7 +132,8 @@ const DIAGNOSTIC_MAX_COUNT = 500;
 const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): ClassificationDiagnostic {
-  const { stage, code, mode, retryDelayMs, validationReason, queueState, rawOutputExcerpt } = diagnostic.error;
+  const { stage, code, mode, retryDelayMs, nativeCode, nativeMode, validationReason, queueState, rawOutputExcerpt } =
+    diagnostic.error;
   const safeExcerpt = safeDiagnosticExcerpt(rawOutputExcerpt);
   return {
     id: diagnostic.id,
@@ -145,6 +146,8 @@ function sanitizeDiagnostic(diagnostic: ClassificationDiagnostic): Classificatio
       code,
       ...(mode ? { mode } : {}),
       ...(retryDelayMs === undefined ? {} : { retryDelayMs }),
+      ...(nativeCode === undefined ? {} : { nativeCode }),
+      ...(nativeMode ? { nativeMode } : {}),
       ...(validationReason ? { validationReason } : {}),
       ...(queueState ? { queueState } : {}),
       ...(safeExcerpt ? { rawOutputExcerpt: safeExcerpt } : {}),
