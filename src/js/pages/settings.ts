@@ -57,6 +57,7 @@ async function render() {
   const storedCompanionMode = await DB.getSetting('singleImageCompanionMode', null);
   const companion = migrateCompanionSettings(storedCompanionMode, singleImageModel);
   const imageRequestTimeoutMs = await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS);
+  const classificationBackend = await DB.getSetting('classificationBackend', 'cloud');
   const [
     legacyWorlds,
     legacyCharacters,
@@ -326,9 +327,19 @@ async function render() {
       </div>
 
       <div class="card mt-md">
-        <h3 class="card-title mb-sm">On-device Reference Classification</h3>
-        <p class="text-sm text-muted mb-sm">Gemini Nano classifies reference images on supported Android devices. Images remain on the device, and model downloads are always explicit.</p>
+        <h3 class="card-title mb-sm">Reference Classification</h3>
+        <p class="text-sm text-muted mb-sm">Reference images are tagged automatically so panel generation can pick the right ones.</p>
+        <div class="form-group">
+          <label class="form-label" for="set-classifybackend">Classifier</label>
+          <select id="set-classifybackend" class="form-input">
+            <option value="cloud" ${classificationBackend === 'cloud' ? 'selected' : ''}>Cloud model (recommended)</option>
+            <option value="local-then-cloud" ${classificationBackend === 'local-then-cloud' ? 'selected' : ''}>On-device first, cloud if unavailable</option>
+            <option value="local" ${classificationBackend === 'local' ? 'selected' : ''}>On-device only</option>
+          </select>
+          <div class="form-hint">The cloud model uses your caption model and sees the image itself, so it is noticeably more accurate. The on-device model (Gemini Nano, supported Android devices only) keeps images on the device but is significantly weaker.</div>
+        </div>
         <p class="text-sm mb-sm">${classificationProgress.complete} / ${classificationProgress.total} completed · ${classificationProgress.pending} queued · ${classificationProgress.running} running · ${classificationProgress.failed} failed</p>
+        <div id="cloud-classifier-status" class="text-sm text-muted mb-sm">Checking cloud model…</div>
         <div id="local-llm-status" class="text-sm text-muted mb-sm">Checking availability…</div>
         <button class="btn btn-secondary btn-block" id="local-llm-download-btn" data-action="downloadLocalModel">Download Local Model</button>
         <details class="mt-md" data-local-diagnostics>
@@ -442,6 +453,16 @@ async function onMount() {
   // Close dropdowns when clicking outside
   document.addEventListener('click', handleOutsideClick);
   await refreshLocalLlmStatus();
+  await refreshCloudClassifierStatus();
+}
+
+async function refreshCloudClassifierStatus(): Promise<void> {
+  const statusEl = document.getElementById('cloud-classifier-status');
+  if (!statusEl) return;
+  const ready = await API.canClassifyReferenceImages().catch(() => false);
+  statusEl.textContent = ready
+    ? 'Cloud model ready.'
+    : 'Cloud model unavailable — set an API key and choose a vision-capable caption model above.';
 }
 
 async function refreshLocalLlmStatus(): Promise<void> {
@@ -998,6 +1019,7 @@ async function save() {
   await DB.setSetting('useRefImages', document.getElementById('set-userefimgs').checked);
   await DB.setSetting('includeAppearanceText', document.getElementById('set-includeappearance').checked);
   await DB.setSetting('captionModel', document.getElementById('set-captionmodel').value);
+  await DB.setSetting('classificationBackend', document.getElementById('set-classifybackend').value);
 
   await DB.setSetting('showExplicitContent', document.getElementById('set-explicitcontent').checked);
   await DB.setSetting('dynamicImageSizes', document.getElementById('set-dynamicsizes').checked);
@@ -1025,6 +1047,7 @@ async function save() {
   const repoInput = document.getElementById('set-update-repo');
   if (repoInput) await DB.setSetting('updateRepo', repoInput.value.trim() || DEFAULT_UPDATE_REPO);
 
+  await refreshCloudClassifierStatus();
   App.toast('Settings saved!', 'success');
 }
 

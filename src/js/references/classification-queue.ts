@@ -153,7 +153,7 @@ export function createClassificationQueue({
     const error: ClassificationErrorDetails = {
       stage: 'inference',
       code: outcome.reason === 'quota-busy' ? 'busy' : 'plugin-unavailable',
-      mode: 'local',
+      mode: outcome.mode ?? 'local',
       retryDelayMs: outcome.retryDelayMs,
       queueState: 'pending',
     };
@@ -208,7 +208,7 @@ export function createClassificationQueue({
           {
             stage: 'validation',
             code: outcome.validationReason === 'unmatched-entity-links' ? 'unmatched-entity-links' : 'low-confidence',
-            mode: 'local',
+            mode: outcome.backend ?? 'local',
             validationReason: outcome.validationReason,
             queueState: 'complete',
           },
@@ -220,7 +220,7 @@ export function createClassificationQueue({
       {
         ...asset,
         ...outcome.classification,
-        provenance: { ...asset.provenance, metadata: 'local' },
+        provenance: { ...asset.provenance, metadata: outcome.backend ?? 'local' },
         classificationState: needsReview ? 'needs-review' : 'ready',
         acceptedAsIs: false,
         updatedAt: now(),

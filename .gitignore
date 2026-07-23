@@ -8,3 +8,9 @@ coverage/
 cloud-sync-*.png
 dropdown-panel-preview.png
 .staged-js-*.js
+
+# Live smoke-probe image cache
+.smoke-cache/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

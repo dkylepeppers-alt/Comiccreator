@@ -148,11 +148,13 @@ describe('local reference classifier', () => {
       kind: 'waiting',
       reason: 'quota-busy',
       retryDelayMs: 45_000,
+      mode: 'local',
     });
     await expect(classifier.classify({ asset, world, characters: [], locations: [] })).resolves.toEqual({
       kind: 'waiting',
       reason: 'app-background',
       retryDelayMs: 20_000,
+      mode: 'local',
     });
   });
 

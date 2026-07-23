@@ -4,7 +4,6 @@ import { escHtml, slugifyName } from '../utils.js';
 import DB from '../db.js';
 import API from '../api.js';
 import { buildCharacterExport, commitCharacterImport, planCharacterImport } from '../character-transfer.js';
-import { localReferenceClassifier } from '../references/local-classifier.js';
 import {
   normalizeReferenceEditorSubject,
   readReferenceEditorForm,
@@ -15,6 +14,7 @@ import {
   addUploadedReference,
   closeReferenceEditor,
   fileToDataUrl,
+  isAnyClassifierAvailable,
   openReferenceEditor,
   referenceClassificationQueue,
   referenceRepository,
@@ -398,8 +398,7 @@ async function confirmCharacterImport(): Promise<void> {
   App.toast(`Imported ${plan.preview.name}`, 'success');
   App.refreshPage();
   try {
-    if ((await localReferenceClassifier.getAvailability()).status === 'available')
-      void referenceClassificationQueue.run();
+    if (await isAnyClassifierAvailable()) void referenceClassificationQueue.run();
   } catch {
     // The committed import remains successful; model availability is best-effort and explicit.
   }

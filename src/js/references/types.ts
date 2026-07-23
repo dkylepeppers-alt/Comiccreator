@@ -79,7 +79,7 @@ export interface ReferenceAsset {
   proposedLocationName?: string | null;
   provenance: {
     source: 'uploaded' | 'generated' | 'migrated';
-    metadata: 'local' | 'manual' | 'accepted';
+    metadata: 'cloud' | 'local' | 'manual' | 'accepted';
   };
   classificationState: ClassificationState;
   acceptedAsIs: boolean;
@@ -107,7 +107,7 @@ export type ReferenceClassificationDraft = ReferenceClassification;
 export interface ClassificationErrorDetails {
   stage: ClassificationStage;
   code: ClassificationErrorCode;
-  mode?: 'local';
+  mode?: 'local' | 'cloud';
   message?: string;
   retryDelayMs?: number;
   /** Allowlisted ML Kit code for local diagnostics; native messages are never retained. */
@@ -126,8 +126,16 @@ export type ClassificationOutcome =
       classification: ReferenceClassificationDraft;
       state?: Extract<ClassificationState, 'ready' | 'needs-review'>;
       validationReason?: string;
+      /** Which backend produced this, recorded on the asset so review can show provenance. */
+      backend?: 'cloud' | 'local';
     }
-  | { kind: 'waiting'; reason: ClassificationWaitingReason; retryDelayMs: number }
+  | {
+      kind: 'waiting';
+      reason: ClassificationWaitingReason;
+      retryDelayMs: number;
+      /** Which backend produced this wait, so availability and quota diagnostics name the right one. */
+      mode?: 'local' | 'cloud';
+    }
   | { kind: 'failure'; error: ClassificationErrorDetails };
 
 export interface ClassificationDiagnostic {

@@ -1,11 +1,49 @@
+import API from './api.js';
 import DB from './db.js';
 import { createReferenceWorkspace } from './reference-workspace.js';
 import { createClassificationQueue } from './references/classification-queue.js';
+import { createClassifierRouter } from './references/classifier-router.js';
+import type { ClassifierOrder } from './references/classifier-router.js';
+import { createCloudReferenceClassifier } from './references/cloud-classifier.js';
 import { localReferenceClassifier } from './references/local-classifier.js';
 import { createReferenceRepository } from './references/repository.js';
 import type { ReferenceAsset } from './references/types.js';
 
 export const referenceRepository = createReferenceRepository();
+
+export const cloudReferenceClassifier = createCloudReferenceClassifier({
+  classifyImage: (dataUrl, prompt) => API.classifyReferenceImage(dataUrl, prompt),
+  isConfigured: () => API.canClassifyReferenceImages(),
+});
+
+const VALID_ORDERS: ClassifierOrder[] = ['cloud', 'local', 'local-then-cloud'];
+
+/** Cloud is the default on both the PWA and Android; it is multimodal and far more accurate. */
+export async function getClassifierOrder(): Promise<ClassifierOrder> {
+  const stored = await DB.getSetting<ClassifierOrder>('classificationBackend', 'cloud');
+  return VALID_ORDERS.includes(stored as ClassifierOrder) ? (stored as ClassifierOrder) : 'cloud';
+}
+
+export const referenceClassifier = createClassifierRouter({
+  cloud: cloudReferenceClassifier,
+  local: localReferenceClassifier,
+  getOrder: getClassifierOrder,
+});
+
+/** True when any backend the current order permits can classify right now. */
+export async function isAnyClassifierAvailable(): Promise<boolean> {
+  const order = await getClassifierOrder();
+  const backends =
+    order === 'local' ? [localReferenceClassifier] : [cloudReferenceClassifier, localReferenceClassifier];
+  for (const backend of backends) {
+    try {
+      if ((await backend.getAvailability()).status === 'available') return true;
+    } catch {
+      /* treat an availability error as unavailable and keep checking */
+    }
+  }
+  return false;
+}
 
 export const referenceClassificationQueue = createClassificationQueue({
   repository: referenceRepository,
@@ -15,13 +53,13 @@ export const referenceClassificationQueue = createClassificationQueue({
       if (!world) {
         return {
           kind: 'failure' as const,
-          error: { stage: 'validation' as const, code: 'missing-asset' as const, mode: 'local' as const },
+          error: { stage: 'validation' as const, code: 'missing-asset' as const },
         };
       }
       const characters = (await DB.getAll(DB.STORES.characters))
         .filter((character) => (character.worldId || character.linkedWorldId) === asset.worldId)
         .map(({ id, name, appearance }) => ({ id, name, appearance }));
-      return localReferenceClassifier.classify({
+      return referenceClassifier.classify({
         asset,
         world: {
           id: world.id,
