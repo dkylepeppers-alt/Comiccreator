@@ -100,10 +100,18 @@ export function buildClassificationPrompt(input: ClassificationInput): string {
       aliases,
     })),
   };
+  const pinnedCharacterIds = (input.asset.pinnedCharacterIds || []).filter((id) =>
+    input.characters.some((character) => character.id === id),
+  );
   return [
     'Classify the supplied comic reference image using only visible evidence and the stable-ID roster below.',
     'Return one raw JSON object only. No Markdown, no commentary, and never invent IDs.',
     `Roster: ${JSON.stringify(roster)}`,
+    ...(pinnedCharacterIds.length
+      ? [
+          `The uploader identified this image as a reference for character ID(s) ${JSON.stringify(pinnedCharacterIds)}; include them in characterIds and weigh them when choosing subjectType and use.`,
+        ]
+      : []),
     `Allowed subject/use pairs: ${JSON.stringify(SUBJECT_SCHEMA)}`,
     `Controlled facets (choose exactly one listed value): ${JSON.stringify(FACET_VOCABULARY)}`,
     `Free-text facets (a short literal phrase from the image): ${JSON.stringify(FREE_TEXT_FACET_GUIDE)}`,

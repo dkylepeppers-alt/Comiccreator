@@ -165,6 +165,7 @@ export async function addUploadedReference({
     subjectType: null,
     use: null,
     characterIds: characterId ? [characterId] : [],
+    ...(characterId ? { pinnedCharacterIds: [characterId] } : {}),
     locationId: null,
     facets: {},
     description: '',

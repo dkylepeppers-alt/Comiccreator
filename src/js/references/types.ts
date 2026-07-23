@@ -77,6 +77,8 @@ export interface ReferenceAsset {
   /** Editable names retained when a model's entity link is not in the current roster. */
   proposedCharacterNames?: string[];
   proposedLocationName?: string | null;
+  /** Character links fixed at upload time (e.g. uploaded from that character's page); always kept after classification. */
+  pinnedCharacterIds?: string[];
   provenance: {
     source: 'uploaded' | 'generated' | 'migrated';
     metadata: 'cloud' | 'local' | 'manual' | 'accepted';

@@ -158,6 +158,30 @@ describe('reference classification queue', () => {
     expect(await repo.getJobByAsset('portrait')).toMatchObject({ status: 'complete', assetVersion: 7 });
   });
 
+  it('keeps the character pinned at upload time even when the classifier misses it', async () => {
+    await repo.putAsset(asset({ pinnedCharacterIds: ['hero'] }));
+    classifier.classify.mockResolvedValueOnce({
+      kind: 'classified',
+      classification: { ...classification, characterIds: [] },
+    });
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.enqueue('r1');
+    await queue.run();
+
+    expect(await repo.getAsset('r1')).toMatchObject({ classificationState: 'ready', characterIds: ['hero'] });
+  });
+
+  it('merges pinned characters with the classifier answer without duplicates', async () => {
+    await repo.putAsset(asset({ pinnedCharacterIds: ['mara'] }));
+    const queue = createClassificationQueue({ repository: repo, classifier, now });
+
+    await queue.enqueue('r1');
+    await queue.run();
+
+    expect((await repo.getAsset('r1'))?.characterIds).toEqual(['mara']);
+  });
+
   it('keeps failures reviewable and supports accept as-is', async () => {
     classifier.classify.mockResolvedValueOnce({
       kind: 'failure',

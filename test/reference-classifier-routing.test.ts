@@ -114,6 +114,15 @@ describe('cloud reference classifier', () => {
     expect(prompt).toContain('proposedLocationName');
   });
 
+  it('tells the model which character the uploader pinned, ignoring ids not in the roster', () => {
+    const pinnedInput: ClassificationInput = {
+      ...input,
+      asset: { ...asset, pinnedCharacterIds: ['mara', 'deleted-character'] },
+    };
+    expect(buildClassificationPrompt(pinnedInput)).toContain('reference for character ID(s) ["mara"]');
+    expect(buildClassificationPrompt(input)).not.toContain('reference for character ID(s)');
+  });
+
   it('teaches the model the full facet vocabulary with a rich worked example', () => {
     // The editor exposes free-text facets (expression, pose, lighting, …); until the
     // prompt named them, no model could ever return more than the six controlled
