@@ -7,9 +7,11 @@ import API from '../api.js';
 import { IMAGE_REQUEST_TIMEOUT_MS } from '../generation-progress.js';
 import { migrateCompanionSettings } from '../image-generation-config.js';
 import { saveBackupFile } from '../export-actions.js';
+import { exportFile } from '../file-export.js';
 import { buildBackup, parseBackup, importBackup } from '../settings/backup-import.js';
 import { loadModelCatalog } from '../settings/model-loader.js';
 import { localReferenceClassifier } from '../references/local-classifier.js';
+import { buildDiagnosticExport } from '../references/diagnostic-privacy.js';
 import { planLegacyMigration, runLegacyMigration } from '../references/legacy-migration.js';
 import { referenceClassificationQueue, referenceRepository } from '../reference-workspace-runtime.js';
 
@@ -55,12 +57,20 @@ async function render() {
   const storedCompanionMode = await DB.getSetting('singleImageCompanionMode', null);
   const companion = migrateCompanionSettings(storedCompanionMode, singleImageModel);
   const imageRequestTimeoutMs = await DB.getSetting('imageRequestTimeoutMs', IMAGE_REQUEST_TIMEOUT_MS);
-  const [legacyWorlds, legacyCharacters, legacyComics, classificationProgress, migrationProgress] = await Promise.all([
+  const [
+    legacyWorlds,
+    legacyCharacters,
+    legacyComics,
+    classificationProgress,
+    migrationProgress,
+    classificationDiagnostics,
+  ] = await Promise.all([
     DB.getAll(DB.STORES.worlds),
     DB.getAll(DB.STORES.characters),
     DB.getAll(DB.STORES.comics),
     referenceClassificationQueue.getProgress(),
     DB.getSetting('referenceMigrationProgress', null),
+    referenceRepository.listDiagnostics(),
   ]);
   const migrationPlan = planLegacyMigration({
     worlds: legacyWorlds,
@@ -318,9 +328,26 @@ async function render() {
       <div class="card mt-md">
         <h3 class="card-title mb-sm">On-device Reference Classification</h3>
         <p class="text-sm text-muted mb-sm">Gemini Nano classifies reference images on supported Android devices. Images remain on the device, and model downloads are always explicit.</p>
-        <p class="text-sm mb-sm">${classificationProgress.complete + classificationProgress.failed} / ${classificationProgress.total} processed · ${classificationProgress.pending} queued · ${classificationProgress.failed} need review</p>
+        <p class="text-sm mb-sm">${classificationProgress.complete} / ${classificationProgress.total} completed · ${classificationProgress.pending} queued · ${classificationProgress.running} running · ${classificationProgress.failed} failed</p>
         <div id="local-llm-status" class="text-sm text-muted mb-sm">Checking availability…</div>
         <button class="btn btn-secondary btn-block" id="local-llm-download-btn" data-action="downloadLocalModel">Download Local Model</button>
+        <details class="mt-md" data-local-diagnostics>
+          <summary>Local diagnostic log (${classificationDiagnostics.length})</summary>
+          <p class="text-sm text-muted mb-sm">Stored only on this device. Export is explicit and excludes images, prompts, rosters, and world descriptions.</p>
+          ${
+            classificationDiagnostics.length
+              ? `<ul class="text-sm text-muted">${classificationDiagnostics
+                  .slice(-5)
+                  .reverse()
+                  .map(
+                    (item) =>
+                      `<li>${escHtml(new Date(item.createdAt).toLocaleString())} · ${escHtml(item.error.stage)} · ${escHtml(item.error.code)}</li>`,
+                  )
+                  .join('')}</ul>`
+              : '<p class="text-sm text-muted">No local classifier diagnostics recorded.</p>'
+          }
+          <button class="btn btn-secondary btn-block" data-action="exportClassificationDiagnostics" ${classificationDiagnostics.length ? '' : 'disabled'}>Export Local Diagnostics</button>
+        </details>
       </div>
 
       ${
@@ -1013,6 +1040,26 @@ async function exportData() {
   await saveBackupFile(data);
 }
 
+async function exportClassificationDiagnostics(): Promise<void> {
+  try {
+    const diagnostics = await referenceRepository.listDiagnostics();
+    if (!diagnostics.length) return App.toast('No local classifier diagnostics to export', 'info');
+    const delivery = await exportFile({
+      filename: `comic-creator-local-diagnostics-${Date.now()}.json`,
+      mimeType: 'application/json',
+      data: JSON.stringify(buildDiagnosticExport(diagnostics)),
+      title: 'Comic Creator Local Diagnostics',
+    });
+    App.toast(
+      delivery === 'share' ? 'Share sheet opened for local diagnostics' : 'Local diagnostics exported',
+      'success',
+    );
+  } catch (error) {
+    logError('exportClassificationDiagnostics()', error);
+    App.toast('Could not export local diagnostics', 'error');
+  }
+}
+
 async function importData(input: any): Promise<void> {
   const file = input.files[0];
   if (!file) return;
@@ -1074,6 +1121,7 @@ const SettingsPage: PageModule & Record<string, any> = {
   testConnection,
   save,
   exportData,
+  exportClassificationDiagnostics,
   importData,
   clearData,
   confirmClear,

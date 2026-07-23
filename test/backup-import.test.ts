@@ -217,8 +217,8 @@ describe('importBackup', () => {
   });
 });
 
-describe('schema-v2 backups', () => {
-  it('exports only canonical schema-version-2 collections', async () => {
+describe('canonical backups', () => {
+  it('exports only canonical schema-version-3 collections', async () => {
     const records: Record<string, unknown[]> = {
       worlds: [{ id: 'w1', name: 'Atlas', images: [{ dataUrl: 'old', embedding: [1] }] }],
       locations: [{ id: 'l1', worldId: 'w1', name: 'Yard', aliases: [] }],
@@ -236,7 +236,7 @@ describe('schema-v2 backups', () => {
 
     const payload = await buildBackup(dependencies, new Date('2026-07-22T00:00:00.000Z'));
 
-    expect(payload.schemaVersion).toBe(2);
+    expect(payload.schemaVersion).toBe(3);
     expect(payload.referenceAssets).toEqual(records.referenceAssets);
     expect(payload.locations).toEqual(records.locations);
     expect(JSON.stringify(payload)).not.toMatch(/embedding|referenceKey|locationKey|"tag"|"images"/);

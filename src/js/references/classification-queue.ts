@@ -363,7 +363,6 @@ export function createClassificationQueue({
     };
   }
 
-  queueMicrotask(() => void run().catch(() => undefined));
   return {
     enqueue,
     run,

@@ -1,6 +1,27 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { dbMock } = vi.hoisted(() => ({
+  dbMock: {
+    STORES: {
+      worlds: 'worlds',
+      characters: 'characters',
+      comics: 'comics',
+      pages: 'pages',
+      presets: 'presets',
+      imagePresets: 'imagePresets',
+      locations: 'locations',
+      referenceAssets: 'referenceAssets',
+      classificationJobs: 'classificationJobs',
+    },
+    getSetting: vi.fn(async (_key: string, fallback: unknown) => fallback),
+    getAll: vi.fn(async () => []),
+    setSetting: vi.fn(),
+  },
+}));
+
+vi.mock('../src/js/db.js', () => ({ default: dbMock }));
+
 // settings.ts calls API.fetchTextModels/fetchImageModels via the real API module by default.
 // We mock it here so we can hand back a deliberately malformed model record (missing `id`) that
 // makes renderModelList -> model-catalog.ts's extractProvider() throw, without touching
@@ -20,16 +41,28 @@ vi.mock('../src/js/references/local-classifier.js', () => ({
 
 vi.mock('../src/js/reference-workspace-runtime.js', () => ({
   referenceClassificationQueue: { getProgress: vi.fn(), resumeAfterLocalModelDownload: vi.fn() },
-  referenceRepository: {},
+  referenceRepository: { listDiagnostics: vi.fn() },
 }));
 
 import API from '../src/js/api.js';
 import SettingsPage from '../src/js/pages/settings.js';
 import { localReferenceClassifier } from '../src/js/references/local-classifier.js';
-import { referenceClassificationQueue } from '../src/js/reference-workspace-runtime.js';
+import { referenceClassificationQueue, referenceRepository } from '../src/js/reference-workspace-runtime.js';
 
 describe('settings.ts loadModels render-failure recovery', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.getSetting.mockImplementation(async (_key: string, fallback: unknown) => fallback);
+    dbMock.getAll.mockResolvedValue([]);
+    vi.mocked(referenceClassificationQueue.getProgress).mockResolvedValue({
+      total: 0,
+      pending: 0,
+      running: 0,
+      complete: 0,
+      failed: 0,
+      paused: false,
+    });
+    vi.mocked(referenceRepository.listDiagnostics).mockResolvedValue([]);
     document.body.innerHTML = `
       <div id="text-model-status" class="hidden"></div>
       <div id="text-model-count"></div>
@@ -98,5 +131,24 @@ describe('settings.ts loadModels render-failure recovery', () => {
     await SettingsPage.downloadLocalModel();
 
     expect(referenceClassificationQueue.resumeAfterLocalModelDownload).toHaveBeenCalledOnce();
+  });
+
+  it('renders a clearly local, explicitly exported diagnostic surface', async () => {
+    vi.mocked(referenceRepository.listDiagnostics).mockResolvedValue([
+      {
+        id: 'd1',
+        assetId: 'r1',
+        worldId: 'w1',
+        createdAt: 1,
+        error: { stage: 'inference', code: 'busy' },
+      },
+    ] as any);
+
+    const html = await SettingsPage.render();
+
+    expect(html).toContain('Local diagnostic log (1)');
+    expect(html).toContain('Stored only on this device');
+    expect(html).toContain('data-action="exportClassificationDiagnostics"');
+    expect(html).not.toContain('data:image');
   });
 });

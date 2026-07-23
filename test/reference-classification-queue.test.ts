@@ -330,15 +330,17 @@ describe('reference classification queue', () => {
     expect(await queue.retryAllFailed()).toBe(0);
   });
 
-  it('contains a startup recovery failure until IndexedDB is available', async () => {
+  it('does not access persistence until startup explicitly runs the queue', async () => {
     const unavailableRepository = {
       ...repo,
       listJobs: vi.fn().mockRejectedValue(new Error('IndexedDB is not available')),
     };
 
-    createClassificationQueue({ repository: unavailableRepository, classifier, now });
+    const queue = createClassificationQueue({ repository: unavailableRepository, classifier, now });
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(unavailableRepository.listJobs).not.toHaveBeenCalled();
 
+    await expect(queue.run()).rejects.toThrow('IndexedDB is not available');
     expect(unavailableRepository.listJobs).toHaveBeenCalledOnce();
   });
 

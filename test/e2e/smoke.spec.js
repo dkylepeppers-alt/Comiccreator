@@ -98,7 +98,7 @@ test.describe('Core navigation', () => {
     await expect(page.locator('#content h2').filter({ hasText: /settings/i })).toBeVisible();
     await page.evaluate(async () => {
       const database = await new Promise((resolve, reject) => {
-        const request = indexedDB.open('ComicCreatorDB', 5);
+        const request = indexedDB.open('ComicCreatorDB', 6);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });

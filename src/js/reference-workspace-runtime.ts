@@ -46,6 +46,32 @@ export const referenceWorkspace = createReferenceWorkspace({
   listLocations: (worldId) => referenceRepository.listLocations(worldId),
 });
 
+interface QueueLifecycle {
+  run(): Promise<void>;
+  pause(): void;
+  resume(): Promise<void>;
+}
+
+interface VisibilityTarget extends EventTarget {
+  visibilityState: string;
+}
+
+/** Start recovery after DB initialization and suspend local inference whenever the app is hidden. */
+export function installReferenceQueueLifecycle(
+  queue: QueueLifecycle = referenceClassificationQueue,
+  documentTarget: VisibilityTarget = document,
+): () => void {
+  const containFailure = (operation: Promise<void>) => void operation.catch(() => undefined);
+  const handleVisibility = () => {
+    if (documentTarget.visibilityState === 'visible') containFailure(queue.resume());
+    else queue.pause();
+  };
+  documentTarget.addEventListener('visibilitychange', handleVisibility);
+  if (documentTarget.visibilityState === 'visible') containFailure(queue.run());
+  else queue.pause();
+  return () => documentTarget.removeEventListener('visibilitychange', handleVisibility);
+}
+
 let referenceEditorRestoreFocus: HTMLElement | null = null;
 let referenceEditorEscapeListenerAttached = false;
 
