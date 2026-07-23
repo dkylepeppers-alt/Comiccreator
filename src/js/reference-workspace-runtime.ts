@@ -178,8 +178,10 @@ export async function addUploadedReference({
     updatedAt: now,
   };
   await referenceRepository.putAsset(asset);
-  await referenceClassificationQueue.enqueue(asset.id);
-  void referenceClassificationQueue.run();
+  void referenceClassificationQueue.enqueue(asset.id).catch((err) => {
+    App.logError('addUploadedReference', err, `Failed to queue reference ${asset.id} for classification`);
+    App.toast('Reference saved, but automatic classification failed to start', 'error');
+  });
   return asset;
 }
 

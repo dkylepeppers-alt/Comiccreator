@@ -1110,9 +1110,9 @@ const CHARACTER_WORLD_VARIATIONS: RefVariation[] = [
 
 /**
  * Generate a single reference image variation using the image API.
- * @param {string} sourceDataUrl - The source reference image to base the variation on
+ * @param {string|null} sourceDataUrl - Optional single source reference image to base the variation on
  * @param {string} prompt - The specific prompt for this variation
- * @param {Object} [options] - Optional overrides (model, resolution)
+ * @param {Object} [options] - Optional overrides (model, resolution, imageDataUrls)
  * @returns {Promise<string|null>} - The generated image as a data URL, or null on failure
  */
 async function generateRefVariation(
