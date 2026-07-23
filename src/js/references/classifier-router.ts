@@ -70,7 +70,7 @@ export function createClassifierRouter(dependencies: ClassifierRouterDependencie
         deferred = deferred ?? outcome;
       }
 
-      return deferred ?? { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000 };
+      return deferred ?? { kind: 'waiting', reason: 'model-unavailable', retryDelayMs: 60_000, mode: order[0] };
     },
   };
 }
