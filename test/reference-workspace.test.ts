@@ -195,6 +195,57 @@ describe('reference workspace', () => {
     );
   });
 
+  it('preserves classifier-only facets when saving a manual classification for an uploaded image', async () => {
+    const records = [
+      asset({
+        classificationState: 'ready',
+        provenance: { source: 'uploaded', metadata: 'local' },
+        characterIds: ['mara', 'brin'],
+        facets: {
+          framing: 'close-up',
+          viewDirection: 'front',
+          lighting: 'harsh noon light',
+          cameraElevation: 'eye-level',
+          identityCoverage: 'full-face',
+          spaceType: 'exterior',
+          timeOfDay: 'midday',
+          heldProps: ['lantern'],
+          screenPositions: { mara: 'left', brin: 'right' },
+        },
+      }),
+    ];
+    const deps = dependencies(records);
+    const workspace = createReferenceWorkspace(deps);
+
+    await workspace.handleAction({
+      action: 'save-reference-classification',
+      referenceId: 'r1',
+      classification: {
+        subjectType: 'character',
+        use: 'identity',
+        characterIds: ['mara'],
+        locationId: null,
+        facets: { framing: 'medium', pose: 'arms crossed' },
+        description: 'Edited identity image',
+      },
+    });
+
+    expect(deps.repository.putAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        facets: {
+          framing: 'medium',
+          pose: 'arms crossed',
+          cameraElevation: 'eye-level',
+          identityCoverage: 'full-face',
+          spaceType: 'exterior',
+          timeOfDay: 'midday',
+          heldProps: ['lantern'],
+          screenPositions: { mara: 'left' },
+        },
+      }),
+    );
+  });
+
   it('rejects a ready manual classification that links a non-world character', async () => {
     const deps = dependencies();
     const workspace = createReferenceWorkspace(deps);

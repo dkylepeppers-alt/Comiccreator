@@ -206,8 +206,37 @@ function option(value: string, label: string, selected: boolean, disabled = fals
   return `<option value="${escHtml(value)}"${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}>${escHtml(label)}</option>`;
 }
 
+const EDITABLE_FACET_FIELDS = [
+  ['framing', 'Framing'],
+  ['viewDirection', 'View direction'],
+  ['appearanceState', 'Appearance state'],
+  ['expression', 'Expression'],
+  ['pose', 'Pose'],
+  ['activity', 'Activity'],
+  ['interactionType', 'Interaction type'],
+  ['spatialArrangement', 'Spatial arrangement'],
+  ['lighting', 'Lighting'],
+] as const;
+
 function facetInput(name: string, label: string, value: string | undefined): string {
   return `<div class="form-group"><label class="form-label" for="reference-facet-${escHtml(name)}">${escHtml(label)}</label><input id="reference-facet-${escHtml(name)}" name="facet-${escHtml(name)}" value="${escHtml(value || '')}"></div>`;
+}
+
+function mergeEditedFacets(
+  existing: ReferenceFacets,
+  edited: ReferenceFacets,
+  characterIds: readonly string[],
+): ReferenceFacets {
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [field] of EDITABLE_FACET_FIELDS) delete merged[field];
+  Object.assign(merged, edited);
+  const screenPositions = (merged as ReferenceFacets).screenPositions;
+  if (screenPositions) {
+    const kept = Object.fromEntries(Object.entries(screenPositions).filter(([id]) => characterIds.includes(id)));
+    if (Object.keys(kept).length) merged.screenPositions = kept;
+    else delete merged.screenPositions;
+  }
+  return merged as ReferenceFacets;
 }
 
 function errorLabel(job: ClassificationJob | undefined): string {
@@ -289,19 +318,7 @@ export function readReferenceEditorForm(form: HTMLElement): ManualClassification
   const subjectType = value('subjectType') as ReferenceSubjectType | '';
   const use = value('use') as ReferenceUse | '';
   const facets = Object.fromEntries(
-    [
-      'framing',
-      'viewDirection',
-      'appearanceState',
-      'expression',
-      'pose',
-      'activity',
-      'interactionType',
-      'spatialArrangement',
-      'lighting',
-    ]
-      .map((name) => [name, value(`facet-${name}`)])
-      .filter(([, facetValue]) => facetValue),
+    EDITABLE_FACET_FIELDS.map(([name]) => [name, value(`facet-${name}`)]).filter(([, facetValue]) => facetValue),
   ) as ReferenceFacets;
   return {
     subjectType: subjectType || null,
@@ -421,7 +438,7 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
           <div class="form-group"><label class="form-label" for="reference-proposed-character-names">Proposed unmatched character names</label><input id="reference-proposed-character-names" name="proposedCharacterNames" value="${escHtml((asset.proposedCharacterNames || []).join(', '))}" placeholder="Names separated by commas"></div>
           <div class="form-group"><label class="form-label" for="reference-proposed-location-name">Proposed unmatched location</label><input id="reference-proposed-location-name" name="proposedLocationName" value="${escHtml(asset.proposedLocationName || '')}" placeholder="Name from the image"></div>
         </div>
-        <fieldset class="reference-facets"><legend>Useful facets</legend><div class="reference-form-grid">${facetInput('framing', 'Framing', asset.facets.framing)}${facetInput('viewDirection', 'View direction', asset.facets.viewDirection)}${facetInput('appearanceState', 'Appearance state', asset.facets.appearanceState)}${facetInput('expression', 'Expression', asset.facets.expression)}${facetInput('pose', 'Pose', asset.facets.pose)}${facetInput('activity', 'Activity', asset.facets.activity)}${facetInput('interactionType', 'Interaction type', asset.facets.interactionType)}${facetInput('spatialArrangement', 'Spatial arrangement', asset.facets.spatialArrangement)}${facetInput('lighting', 'Lighting', asset.facets.lighting)}</div></fieldset>
+        <fieldset class="reference-facets"><legend>Useful facets</legend><div class="reference-form-grid">${EDITABLE_FACET_FIELDS.map(([name, label]) => facetInput(name, label, asset.facets[name])).join('')}</div></fieldset>
         <div class="form-group"><label class="form-label" for="reference-description">Description</label><textarea id="reference-description" name="description" rows="4" placeholder="Describe the visual information this reference preserves">${escHtml(asset.description)}</textarea></div>
         <dl class="reference-editor-provenance"><div><dt>Classification source</dt><dd>${escHtml(asset.provenance.source)} / ${escHtml(asset.provenance.metadata)}</dd></div><div><dt>Classification mode</dt><dd>${asset.provenance.metadata === 'manual' ? 'Manual' : 'Local'}</dd></div><div><dt>Failure reason</dt><dd>${escHtml(errorLabel(job))}</dd></div></dl>
         <div class="modal-actions">
@@ -496,6 +513,7 @@ export function createReferenceWorkspace(dependencies: ReferenceWorkspaceDepende
         const updated: ReferenceAsset = {
           ...asset,
           ...normalized,
+          facets: mergeEditedFacets(asset.facets, normalized.facets, normalized.characterIds),
           confidence: {},
           provenance: { ...asset.provenance, metadata: 'manual' },
           classificationState: action === 'save-reference-classification' ? 'ready' : 'needs-review',
