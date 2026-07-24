@@ -57,9 +57,9 @@ function narrowModelCapability(value: unknown): NarrowedModelCapability | null {
 function supportsImageInput(capability: NarrowedModelCapability | null): boolean {
   if (!capability) return true;
   if (capability.supportsEdit === true) return true;
-  if (typeof capability.maxInputImages === 'number' && capability.maxInputImages > 0) return true;
+  if (typeof capability.maxInputImages === 'number') return capability.maxInputImages > 0;
   if (Array.isArray(capability.inputModalities)) return capability.inputModalities.includes('image');
-  return capability.supportsEdit === undefined;
+  return capability.supportsEdit !== false;
 }
 
 function emptyAllocation(): ReferenceResolution {
