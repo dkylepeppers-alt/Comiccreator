@@ -21,6 +21,7 @@ import { PROMPT_VERSION } from '../visual-continuity.js';
 import { sanitizeImagePrompt } from '../utils.js';
 import { createReferenceRepository } from '../references/repository.js';
 import { resolvePanelReferences } from '../references/resolver.js';
+import { modelSupportsImageInput } from '../model-catalog.js';
 import type { PanelReferenceRequest } from '../references/types.js';
 import { runContinuityGeneration } from './continuity/orchestrator.js';
 import type { CreateState, GenerationContext } from './types.js';
@@ -280,7 +281,16 @@ export async function generatePanelImages(ctx: GenerationContext, pageData: any,
     : null;
   const imagePromptPrefix = imagePresetData?.promptPrefix || (await DB.getSetting('imagePromptPrefix', ''));
   const maxRefImages = await DB.getSetting('maxRefImages', 4);
-  const useReferenceImages = await DB.getSetting('useRefImages', true);
+  const refSettingEnabled = await DB.getSetting('useRefImages', true);
+  // The legacy pipeline sends panel requests without a model override, so the
+  // configured image model is the one that must accept reference images.
+  const imageModelId = await DB.getSetting('imageModel', 'gpt-image-1');
+  const imageModelMeta = await API.getImageModelMeta(imageModelId, { signal: ctx.signal() });
+  const modelAcceptsReferences = modelSupportsImageInput(imageModelMeta) !== false;
+  if (refSettingEnabled && !modelAcceptsReferences) {
+    ctx.toast(`${imageModelId} does not accept reference images — generating without them`, 'info');
+  }
+  const useReferenceImages = refSettingEnabled && modelAcceptsReferences;
   const enrichEnabled = await DB.getSetting('enrichImagePrompts', false);
   const negativePrompt = await DB.getSetting('negativePrompt', '');
   const worldId = ctx.state.selectedWorld || ctx.state.world?.id || '';

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { KNOWN_IMAGE_SIZES, getModelSizesStatic, extractProvider, buildModelDetails } from '../src/js/model-catalog.js';
+import {
+  KNOWN_IMAGE_SIZES,
+  getModelSizesStatic,
+  extractProvider,
+  buildModelDetails,
+  modelSupportsImageInput,
+} from '../src/js/model-catalog.js';
 import { parseComicResponse, parsePlannedPageResponse } from '../src/js/api-parsing.js';
 import { buildSystemPrompt } from '../src/js/prompt-building.js';
 import { compareVersions } from '../src/js/utils.js';
@@ -325,5 +331,25 @@ describe('api getModelSizes static fallback', () => {
       expect(Array.isArray(sizes), `${modelId} should map to an array`).toBeTruthy();
       expect(sizes.length > 0, `${modelId} should have at least one size`).toBeTruthy();
     }
+  });
+});
+
+describe('modelSupportsImageInput', () => {
+  it('returns null when metadata is unavailable', () => {
+    expect(modelSupportsImageInput(null)).toBe(null);
+    expect(modelSupportsImageInput(undefined)).toBe(null);
+  });
+
+  it('returns true when any capability signal indicates image input', () => {
+    expect(modelSupportsImageInput({ id: 'm', supports_edit: true })).toBe(true);
+    expect(modelSupportsImageInput({ id: 'm', supports_edit: false, maxInputImages: 3 })).toBe(true);
+    expect(modelSupportsImageInput({ id: 'm', supports_edit: false, inputModalities: ['text', 'image'] })).toBe(true);
+  });
+
+  it('returns false when metadata exists with no image-input signal', () => {
+    expect(modelSupportsImageInput({ id: 'm', supports_edit: false })).toBe(false);
+    expect(
+      modelSupportsImageInput({ id: 'm', supports_edit: false, maxInputImages: null, inputModalities: ['text'] }),
+    ).toBe(false);
   });
 });

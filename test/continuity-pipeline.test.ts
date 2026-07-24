@@ -305,6 +305,38 @@ describe('buildContinuityGenerationPlan', () => {
     expect(plan.blockedPanels).toEqual([]);
   });
 
+  it('omits references and reference-map prompt text for models without image input', () => {
+    const plan = buildContinuityGenerationPlan(
+      planningInput({
+        pageModelId: 'text-to-image-only',
+        pageModel: { supports_edit: false, maxOutputImages: 1, sizes: ['1920x1920'] },
+        companionModelId: 'text-to-image-only',
+        companionModel: { supports_edit: false, maxOutputImages: 1, sizes: ['1920x1920'] },
+      }),
+    );
+
+    expect(plan.strategy).toBe('independent-panels');
+    expect(plan.warnings).toContain('text-to-image-only does not accept reference images — generating without them');
+    expect(plan.referenceManifest).toEqual([]);
+    expect(plan.requests.every((request) => request.imageDataUrls.length === 0)).toBe(true);
+    expect(plan.compiledPrompts.every((prompt) => !prompt.includes('Reference image'))).toBe(true);
+  });
+
+  it('keeps sending references when image-input capability metadata is unknown', () => {
+    const plan = buildContinuityGenerationPlan(
+      planningInput({
+        pageModelId: 'unknown-meta-model',
+        pageModel: null,
+        companionModelId: 'unknown-meta-model',
+        companionModel: null,
+      }),
+    );
+
+    expect(plan.strategy).toBe('independent-panels');
+    expect(plan.requests.every((request) => request.imageDataUrls.length > 0)).toBe(true);
+    expect(plan.warnings.some((warning) => warning.includes('does not accept reference images'))).toBe(false);
+  });
+
   it('preserves helper prompt, manifest, and warning ordering contracts', () => {
     const input = planningInput({
       warnings: ['preflight warning'],

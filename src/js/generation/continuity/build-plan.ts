@@ -22,6 +22,8 @@ interface NarrowedModelCapability {
   readonly maxInputImages?: number | null;
   readonly maxOutputImages?: number | null;
   readonly sizes?: readonly unknown[] | null;
+  readonly supportsEdit?: boolean;
+  readonly inputModalities?: readonly unknown[] | null;
 }
 
 function readOptionalNumber(value: unknown): number | null | undefined {
@@ -42,7 +44,22 @@ function narrowModelCapability(value: unknown): NarrowedModelCapability | null {
     maxInputImages: readOptionalNumber(metadata.maxInputImages),
     maxOutputImages: readOptionalNumber(metadata.maxOutputImages),
     sizes: readOptionalSizes(metadata.sizes),
+    ...(typeof metadata.supports_edit === 'boolean' ? { supportsEdit: metadata.supports_edit } : {}),
+    inputModalities: readOptionalSizes(metadata.inputModalities),
   };
+}
+
+/**
+ * Whether the model can accept reference (input) images. Unknown metadata
+ * (null capability) is treated as capable so imprecise catalogs never
+ * silently drop references — only explicit "no image input" metadata does.
+ */
+function supportsImageInput(capability: NarrowedModelCapability | null): boolean {
+  if (!capability) return true;
+  if (capability.supportsEdit === true) return true;
+  if (typeof capability.maxInputImages === 'number' && capability.maxInputImages > 0) return true;
+  if (Array.isArray(capability.inputModalities)) return capability.inputModalities.includes('image');
+  return capability.supportsEdit === undefined;
 }
 
 function emptyAllocation(): ReferenceResolution {
@@ -193,11 +210,23 @@ export function buildContinuityGenerationPlan(input: ContinuityPlanningInput): C
   const warnings = [...(input.warnings || [])];
   const targetPanels = input.targetPanelIndexes === undefined ? null : new Set<number>(input.targetPanelIndexes);
 
-  const pageAllocation = input.useReferenceImages ? resolveForPage(input, pageBudget) : emptyAllocation();
+  const pageAcceptsReferences = supportsImageInput(pageModel);
+  const panelAcceptsReferences = supportsImageInput(panelModel);
+  if (input.useReferenceImages && !pageAcceptsReferences) {
+    warnings.push(`${input.pageModelId} does not accept reference images — generating without them`);
+  }
+  if (input.useReferenceImages && !panelAcceptsReferences && panelModelId !== input.pageModelId) {
+    warnings.push(`${panelModelId} does not accept reference images — panel requests will omit them`);
+  }
+
+  const pageAllocation =
+    input.useReferenceImages && pageAcceptsReferences ? resolveForPage(input, pageBudget) : emptyAllocation();
   warnings.push(...pageAllocation.warnings);
 
   const panelAllocations = input.panels.map((_, panelIndex) =>
-    input.useReferenceImages ? resolveForPanel(input, panelIndex, panelBudget) : emptyAllocation(),
+    input.useReferenceImages && panelAcceptsReferences
+      ? resolveForPanel(input, panelIndex, panelBudget)
+      : emptyAllocation(),
   );
   const allocationFailures = freezeAllocationFailures(
     panelAllocations.flatMap((allocation, panelIndex) =>

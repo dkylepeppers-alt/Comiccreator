@@ -118,6 +118,25 @@ export function normalizeImageModel(m: any): ImageModel {
   };
 }
 
+/**
+ * Whether an image model can accept reference (input) images.
+ * Returns null when metadata is unavailable — callers must then take the
+ * conservative path and keep sending references.
+ *
+ * A model is considered image-input capable when any capability signal says
+ * so: image-to-image support (`supports_edit`), a positive input-image limit,
+ * or an input modality list that includes images. It is only considered
+ * incapable when metadata exists and none of those signals are present, so
+ * imprecise metadata never silently drops references.
+ */
+export function modelSupportsImageInput(model: ImageModel | null | undefined): boolean | null {
+  if (!model) return null;
+  if (model.supports_edit === true) return true;
+  if (typeof model.maxInputImages === 'number' && model.maxInputImages > 0) return true;
+  if (Array.isArray(model.inputModalities) && model.inputModalities.includes('image')) return true;
+  return false;
+}
+
 // Fallback lists used only when API is unreachable and no cache exists
 export const FALLBACK_TEXT_MODELS: string[] = [
   'openai/gpt-5-mini',
