@@ -34,7 +34,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.1",
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^28.1.0",
+    "jsdom": "^30.0.1",
     "nanogptjs": "^1.0.4",
     "prettier": "^3.9.6",
     "sharp": "^0.35.3",
