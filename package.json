@@ -31,7 +31,7 @@
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@playwright/test": "^1.63.0",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.2",
     "eslint": "^10.11.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
